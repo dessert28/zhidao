@@ -1,0 +1,80 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: zhidao-backend
+
+  # ---------------- 数据源 ----------------
+  # 省赛用 H2 内存库：评委 clone 下来 mvn spring-boot:run 就能跑，不用装 MySQL。
+  # 国赛切 MySQL 只需改 spring.profiles.active=mysql（见 application-mysql.yml）
+  datasource:
+    url: jdbc:h2:mem:zhidao;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jackson:
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+# ---------------- MyBatis-Plus ----------------
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL，生产关掉
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      # 逻辑删除统一字段名 deleted（docs/09 三条硬约束之二）
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ---------------- 智诊通自有配置 ----------------
+zhidao:
+  jwt:
+    # 演示用固定密钥；生产从环境变量注入
+    secret: ${ZHIDAO_JWT_SECRET:zhidao-demo-secret-key-change-in-production-0123456789}
+    expire-minutes: 120
+  # 提醒引擎：扫表间隔与提前提醒窗口
+  reminder:
+    scan-cron: "0 */5 * * * *"
+    advance-hours: 24
+    lookback-hours: 48
+  # 院区适配：省赛两个 Mock，用 -1 / -2 区分（负数表示 Mock，绝不可能是真实院区）
+  hospital:
+    mock:
+      enabled: true
+
+# ---------------- 接口文档 ----------------
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+
+logging:
+  level:
+    com.zhidao: debug
+    # 关掉 Security 的默认噪音
+    org.springframework.security: warn
