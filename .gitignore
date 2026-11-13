@@ -1,0 +1,38 @@
+# 依赖与构建产物
+node_modules/
+*.log
+dist/
+build/
+.next/
+out/
+target/
+*.class
+*.jar
+*.war
+
+# 环境变量（真实配置永不入库）
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE 与系统
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Archify 中间校验产物（保留 .html 与 candidate.json）
+.archify/**/run*/
+.archify/**/*.finalize.json
+.archify/**/*.finalize-summary.json
+.archify/**/*.browser-check.json
+.archify/**/*.delivery.json

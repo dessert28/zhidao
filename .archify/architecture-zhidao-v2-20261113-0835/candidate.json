@@ -1,0 +1,495 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "智诊通 · 五智能体导诊系统",
+    "subtitle": "多智能体分诊 · Agentic RAG 自纠循环 · 端侧隐私边界",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-zhidao-v2-20261113-0835/zhidao-v2.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      960
+    ]
+  },
+  "components": [
+    {
+      "id": "patient",
+      "type": "external",
+      "label": "患者",
+      "sublabel": "手机 / 语音输入",
+      "pos": [
+        25,
+        470
+      ],
+      "size": [
+        118,
+        64
+      ]
+    },
+    {
+      "id": "nextjs",
+      "type": "frontend",
+      "label": "Next.js 患者端",
+      "sublabel": "生成式 UI 渲染",
+      "pos": [
+        330,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "pii",
+      "type": "security",
+      "label": "端侧脱敏",
+      "sublabel": "WebGPU 本地推理",
+      "pos": [
+        330,
+        760
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "原文不出设备"
+    },
+    {
+      "id": "idb",
+      "type": "database",
+      "label": "IndexedDB",
+      "sublabel": "病历原文",
+      "pos": [
+        330,
+        245
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "Supervisor 调度",
+      "sublabel": "决策 + 路由",
+      "pos": [
+        535,
+        470
+      ],
+      "size": [
+        155,
+        64
+      ]
+    },
+    {
+      "id": "triage",
+      "type": "backend",
+      "label": "Triage 分诊",
+      "sublabel": "槽位追问",
+      "pos": [
+        740,
+        245
+      ],
+      "size": [
+        145,
+        64
+      ]
+    },
+    {
+      "id": "retrieval",
+      "type": "backend",
+      "label": "Retrieval 循证",
+      "sublabel": "检索 + 接地",
+      "pos": [
+        740,
+        470
+      ],
+      "size": [
+        145,
+        64
+      ]
+    },
+    {
+      "id": "scheduler",
+      "type": "backend",
+      "label": "Scheduler 排程",
+      "sublabel": "号源 + 时间线",
+      "pos": [
+        740,
+        760
+      ],
+      "size": [
+        145,
+        64
+      ]
+    },
+    {
+      "id": "reviewer",
+      "type": "backend",
+      "label": "Reviewer 审查",
+      "sublabel": "四维打分",
+      "pos": [
+        915,
+        470
+      ],
+      "size": [
+        132,
+        64
+      ]
+    },
+    {
+      "id": "redflag",
+      "type": "security",
+      "label": "红线规则引擎",
+      "sublabel": "确定性前置拦截",
+      "pos": [
+        535,
+        245
+      ],
+      "size": [
+        155,
+        64
+      ],
+      "tag": "不经 LLM"
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "大模型 API",
+      "sublabel": "DeepSeek / Qwen",
+      "pos": [
+        535,
+        50
+      ],
+      "size": [
+        155,
+        64
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "MCP 工具层",
+      "sublabel": "三件套工具",
+      "pos": [
+        915,
+        760
+      ],
+      "size": [
+        132,
+        64
+      ]
+    },
+    {
+      "id": "spring",
+      "type": "backend",
+      "label": "Spring Boot 业务",
+      "sublabel": "病历 / 提醒",
+      "pos": [
+        1060,
+        245
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "pgvector",
+      "type": "database",
+      "label": "pgvector",
+      "sublabel": "医疗知识库",
+      "pos": [
+        1060,
+        50
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "mysql",
+      "type": "database",
+      "label": "MySQL",
+      "sublabel": "业务数据",
+      "pos": [
+        1060,
+        470
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "hosp",
+      "type": "external",
+      "label": "医院 A / B",
+      "sublabel": "挂号 · 叫号 · 报告",
+      "pos": [
+        1060,
+        680
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Mock 适配器"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "浏览器端 · 数据不出设备",
+      "wraps": [
+        "nextjs",
+        "pii",
+        "idb"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "多智能体编排层",
+      "wraps": [
+        "supervisor",
+        "triage",
+        "retrieval",
+        "scheduler",
+        "reviewer",
+        "redflag"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "业务与数据域",
+      "wraps": [
+        "spring",
+        "mcp",
+        "pgvector",
+        "mysql"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "p-to-next",
+      "from": "patient",
+      "to": "nextjs",
+      "label": "语音/文字",
+      "variant": "emphasis"
+    },
+    {
+      "id": "next-to-pii",
+      "from": "nextjs",
+      "to": "pii",
+      "label": "脱敏",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "pii-to-idb",
+      "from": "pii",
+      "to": "idb",
+      "label": "原文存本地",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "next-to-sup",
+      "from": "nextjs",
+      "to": "supervisor",
+      "label": "SSE 事件流",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "sup-to-redflag",
+      "from": "supervisor",
+      "to": "redflag",
+      "label": "前置检查",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "sup-to-triage",
+      "from": "supervisor",
+      "to": "triage",
+      "label": "分诊",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "sup-to-retr",
+      "from": "supervisor",
+      "to": "retrieval",
+      "label": "循证",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "sup-to-sched",
+      "from": "supervisor",
+      "to": "scheduler",
+      "label": "排程",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "retr-to-llm",
+      "from": "retrieval",
+      "to": "llm",
+      "label": "生成",
+      "fromSide": "top",
+      "toSide": "right"
+    },
+    {
+      "id": "triage-to-llm",
+      "from": "triage",
+      "to": "llm",
+      "label": "推理",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "retr-to-pg",
+      "from": "retrieval",
+      "to": "pgvector",
+      "label": "混合检索",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "rev-review",
+      "from": "triage",
+      "to": "reviewer",
+      "label": "候选答案",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "retr-to-rev",
+      "from": "retrieval",
+      "to": "reviewer",
+      "label": "接地结果",
+      "variant": "dashed"
+    },
+    {
+      "id": "sched-to-rev",
+      "from": "scheduler",
+      "to": "reviewer",
+      "label": "排程方案",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "rev-feedback",
+      "from": "reviewer",
+      "to": "supervisor",
+      "label": "低分回退",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "id": "rev-to-spring",
+      "from": "reviewer",
+      "to": "spring",
+      "label": "通过落库"
+    },
+    {
+      "id": "rev-to-front",
+      "from": "reviewer",
+      "to": "nextjs",
+      "label": "最终答案",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "sched-to-mcp",
+      "from": "scheduler",
+      "to": "mcp",
+      "label": "工具调用",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "mcp-to-hosp",
+      "from": "mcp",
+      "to": "hosp",
+      "label": "院方接口",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "spring-to-mysql",
+      "from": "spring",
+      "to": "mysql",
+      "label": "JDBC",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "spring-to-pg",
+      "from": "spring",
+      "to": "pgvector",
+      "label": "知识入库",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "五个智能体",
+      "items": [
+        "Supervisor 决策并给出理由，前端可见",
+        "Triage 槽位追问，红线规则前置拦截",
+        "Retrieval 证据不足自动重检，最多 2 轮",
+        "Scheduler 排依赖与并行，副作用需人确认",
+        "Reviewer 四维打分，低分回退重做"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "四道安全防线",
+      "items": [
+        "红线规则引擎不经 LLM，命中即短路",
+        "接地检查：每句话必须能溯源",
+        "过敏 / 用药 / 重复检查交叉检查",
+        "LLM 失败时强制追加免责声明"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Agentic RAG",
+      "items": [
+        "混合检索 向量 + BM25 + RRF",
+        "bge-reranker 重排 Top20 → Top5",
+        "证据充分性判断与 query 改写",
+        "父子分块，召回父块补全上下文"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "隐私边界",
+      "items": [
+        "病历原文只进 IndexedDB",
+        "WebGPU 端侧跑 PII 脱敏模型",
+        "出设备只有脱敏文本与结构化字段",
+        "服务端日志不记录原文"
+      ]
+    }
+  ]
+}
