@@ -17,9 +17,15 @@
  * 所以**事件永远同时带 props 和 html**，不是二选一。
  * ------------------------------------------------------------------ */
 
-import { createElement, type ReactElement } from 'react';
+import { createElement, Fragment, type ReactElement } from 'react';
 import { renderToString } from 'react-dom/server';
-import type { Department, RedFlag, ReviewerPayload, TimelineTask } from '@shared/types/contract';
+import type {
+  Department,
+  RedFlag,
+  ReviewerPayload,
+  Source,
+  TimelineTask,
+} from '@shared/types/contract';
 
 /* ============================ 卡片组件 ============================ */
 
@@ -293,6 +299,91 @@ export function ReviewTraceCard({ scores, action }: ReviewTraceProps) {
 /* ============================ 字典 ============================ */
 
 /**
+ * 引用来源卡。
+ *
+ * 这是 RAG 里最能被评审直接看见的部分 —— 「AI 说的这句话从哪来」。
+ * 所以刻意做成可展开的列表，标注来源与相关度，
+ * 而不是塞一行小字脚注。
+ *
+ * 分数用条形长度表示，因为具体数字对患者没有意义，
+ * 但"这几篇里哪篇更相关"有意义。
+ */
+export function SourcesCard({ sources, lowEvidence }: SourcesCardProps) {
+  if (sources.length === 0) return null;
+
+  return createElement(
+    'div',
+    { className: 'rounded-xl border border-gray-200 bg-white p-4' },
+    createElement(
+      'div',
+      { className: 'mb-2.5 flex items-center gap-2' },
+      createElement(
+        'span',
+        { className: 'text-xs font-medium text-gray-600' },
+        `依据 ${sources.length} 篇资料`,
+      ),
+      lowEvidence
+        ? createElement(
+            'span',
+            { className: 'rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700' },
+            '资料较少',
+          )
+        : null,
+    ),
+    createElement(
+      'ol',
+      { className: 'space-y-2' },
+      ...sources.map((s, i) =>
+        createElement(
+          'li',
+          { key: s.docId, className: 'flex gap-2.5' },
+          createElement(
+            'span',
+            {
+              className:
+                'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] font-medium text-gray-500',
+            },
+            String(i + 1),
+          ),
+          createElement(
+            'div',
+            { className: 'min-w-0 flex-1' },
+            createElement(
+              'div',
+              { className: 'flex items-baseline gap-2' },
+              createElement('span', { className: 'text-sm text-gray-800' }, s.title),
+              // 相关度条：宽度映射 score，避免让患者读无意义的数字
+              // 注意用 style 对象而不是字符串 —— React 会拒绝 CSS 字符串
+              // 并抛异常，而异常被 renderEventToHtml 吞掉后表现为"卡片没渲染"
+              createElement(
+                'span',
+                { className: 'ml-auto h-1 w-12 shrink-0 rounded bg-gray-100' },
+                createElement('span', {
+                  className: 'block h-1 rounded bg-brand-500',
+                  style: { width: `${Math.round(s.score * 100)}%` },
+                }),
+              ),
+            ),
+            createElement(
+              'p',
+              { className: 'mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500' },
+              s.snippet,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/* ============================ 注册表 ============================ */
+
+interface SourcesCardProps {
+  sources: Source[];
+  lowEvidence?: boolean;
+}
+
+/**
  * 事件类型 → 渲染器。
  *
  * 无状态（纯展示）的卡片在这里渲染成 HTML 下发；
@@ -312,6 +403,24 @@ export const COMPONENT_REGISTRY = {
 
   review_trace: (props: { scores: ReviewerPayload['scores']; action: 'pass' | 'retry' }) =>
     createElement(ReviewTraceCard, { scores: props.scores, action: props.action }),
+
+  /**
+   * 引用卡挂在 tool_result 上。
+   * 只有 hybrid_search 的结果才有 sources，其它工具返回会被
+   * SourcesCard 内部的空数组判断挡掉。
+   *
+   * 注意：不满足条件时返回 createElement(Fragment) 而不是 null ——
+   * renderToString(null) 会抛异常，enrich 捕获后就会退回无 html 的原事件，
+   * 结果是"该渲染却什么都没渲染"。返回空 fragment 渲染成空串，
+   * renderEventToHtml 会把空串当无卡片处理，语义更清楚。
+   */
+  tool_result: (props: { result?: unknown }) => {
+    const r = props.result as { sources?: Source[] } | undefined;
+    if (!r?.sources || !Array.isArray(r.sources) || r.sources.length === 0) {
+      return createElement(Fragment, null);
+    }
+    return createElement(SourcesCard, { sources: r.sources });
+  },
 } as const;
 
 export type RenderableEventType = keyof typeof COMPONENT_REGISTRY;

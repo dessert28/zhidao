@@ -14,6 +14,7 @@ import { sseHeaders, toSseStream, type OutboundEvent } from '../sse.js';
 import { makeSupervisor, routeByRules } from '../agents/supervisor.js';
 import { makeTriage, type TriageInputPayload } from '../agents/triage.js';
 import { makeReviewer, sanitizeAnswer, type ReviewInputPayload } from '../agents/reviewer.js';
+import { makeRetrieval } from '../agents/retrieval.js';
 import { checkRedFlag } from '../agents/rules/red-flag.js';
 
 export const chatRoutes = new Hono();
@@ -125,17 +126,45 @@ chatRoutes.post('/', async (c) => {
           return;
         }
 
-        case 'retrieve':
-          // M7 接 RAG；当前明说能力边界，不假装能答
-          emit({
-            type: 'token',
-            text: '这个问题需要查资料。本版本的知识库检索还在接入中，暂时只能给你一般性建议。',
-          });
-          emit({
-            type: 'caveat',
-            text: '未检索到具体资料，以下内容不构成医疗建议。',
-          });
+        case 'retrieve': {
+          const retrieval = makeRetrieval();
+          const out = await retrieval(baseInput({ text: body.text }));
+
+          emitEvents(emit, out.events);
+
+          const p = out.payload;
+
+          // 无证据：如实说，不拿"一般性建议"糊过去
+          if (out.status !== 'ok' || p.sources.length === 0) {
+            emit({
+              type: 'token',
+              text: '这个问题我没在资料库里找到可靠依据。可以换个说法再问一次，或者直接咨询医生。',
+            });
+            return;
+          }
+
+          emit({ type: 'token', text: p.answer });
+
+          // 检索到的答案同样要过 Reviewer —— 有引用不代表内容一定安全
+          const reviewer = makeReviewer();
+          const reviewed = await reviewer(
+            baseInput<ReviewInputPayload>({
+              candidateAnswer: p.answer,
+              evidenceCount: p.sources.length,
+              lowScoreStreak: body.lowScoreStreak ?? 0,
+            }),
+          );
+
+          emitEvents(emit, reviewed.events);
+
+          if (reviewed.status === 'blocked') {
+            emit({
+              type: 'token',
+              text: '这段内容涉及用药细节，超出本系统的能力范围。请直接咨询医生或药师。',
+            });
+          }
           return;
+        }
 
         case 'schedule':
           emit({
