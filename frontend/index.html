@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>智诊通 · 患者端智能导诊</title>
+    <meta
+      name="description"
+      content="把一次就诊拆成「去之前—在院内—回家后」三段，做成一生连续的跨院管理。病历留在你的设备上，我们只做整理、提醒与风险提示。"
+    />
+    <meta name="theme-color" content="#0f766e" />
+    <!-- 中文字体栈：优先系统字体，保证首屏零字体请求 -->
+    <style>
+      :root {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+          'Microsoft YaHei', 'Source Han Sans SC', 'Noto Sans CJK SC', sans-serif;
+      }
+      /* 骨架屏：JS 未就绪时也不是白屏 */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fafafa;
+        color: #0f766e;
+        font-size: 14px;
+        letter-spacing: 0.05em;
+      }
+      #root:not(:empty) ~ #boot {
+        display: none;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 text-gray-900 antialiased">
+    <div id="root"></div>
+    <div id="boot">智诊通 · 正在载入…</div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
