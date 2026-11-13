@@ -33,6 +33,7 @@ tmp/
 temp/
 *.tmp
 *.bak
+*.tsbuildinfo
 
 # Archify 中间校验产物（保留 .html 与 candidate.json）
 .archify/**/run*/
