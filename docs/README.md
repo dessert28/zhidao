@@ -1,7 +1,7 @@
 # 智诊通 · 患者端智能导诊系统
 
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）参赛项目
-> 文档版本：v1.1 ｜ 更新日期：2026-11-13 ｜ 状态：**开发进行中（M1 完成）**
+> 文档版本：v1.1 ｜ 更新日期：2026-11-13 ｜ 状态：**开发进行中（M7 完成，Spring Boot 待建）**
 
 > **评审入口**：仓库根 [`README.md`](../README.md) 是面向评委的 10 分钟阅读路径。本目录是开发期的设计推导与决策记录。
 
@@ -73,24 +73,24 @@
 | 节点 | 内容 | 状态 |
 | --- | --- | --- |
 | M0 | 设计阶段（13 份文档） | ✅ 完成 |
-| **M1** | **Agent 内核骨架**：契约 + 红线规则引擎 + Supervisor + SSE 接入 | ✅ **完成**（44 用例全绿） |
+| **M1** | **Agent 内核骨架**：契约 + 红线规则引擎 + Supervisor + SSE 接入 | ✅ **完成** |
 | M2 | 根 README（评委 10 分钟路径）+ `.env.example` | ✅ 完成 |
-| M3 | Triage + Reviewer 两个 Agent | ⬜ 下一步 |
-| M4 | 端侧脱敏 + IndexedDB | ⬜ |
-| M5 | 生成式 UI 组件字典 + 前端页面 | ⬜ |
-| M6 | Spring Boot 业务层（课设复用） | ⬜ |
-| M7 | RAG 检索 + 引用展示 | ⬜ |
+| M3 | Triage + Reviewer 两个 Agent | ✅ 完成 |
+| M4 | 端侧脱敏（7 类 PII，浏览器内完成） | ✅ 完成 |
+| M5 | 生成式 UI 组件字典（6 类卡片）+ 前端页面 | ✅ 完成 |
+| M6 | Spring Boot 业务层（课设复用） | ⬜ 下一步 |
+| M7 | RAG 检索 + 引用展示（BM25 + 自纠循环） | ✅ 完成 |
+
+> 测试总量：**195 用例全绿**。`pnpm exec tsc -b --noEmit` 与 `pnpm exec vite build` 均通过。
 
 ---
 
 ## 下一步（按顺序）
 
-1. Triage Agent（槽位采集 + 追问上限 + 置信度分级）+ Reviewer（四维自评 + 回退）
-2. 视觉基调（30 分钟，Day 1 第一件事）
-3. 端侧脱敏 + IndexedDB 原文边界
-4. 生成式 UI 组件字典 + 前端页面骨架
-5. Spring Boot 七张 entity + 七张 mapper + 三条 `@Scheduled`
-6. 重跑 archify finalize 同步 `zhidao-v2.html`
+1. Spring Boot 七张 entity + 七张 mapper + 三条 `@Scheduled`（课设同步交付）
+2. 接入真实 LLM（`planViaLlm` 已在位，接 `streamObject` 即生效）
+3. 重跑 archify finalize 同步 `zhidao-v2.html`
+4. 省赛提交前打磨：视觉细节 + 演示视频脚本
 
 ---
 
