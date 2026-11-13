@@ -10,6 +10,10 @@ target/
 *.jar
 *.war
 
+# 包管理：只保留 pnpm 的锁文件（docs/10 D8）
+package-lock.json
+yarn.lock
+
 # 环境变量（真实配置永不入库）
 .env
 .env.local

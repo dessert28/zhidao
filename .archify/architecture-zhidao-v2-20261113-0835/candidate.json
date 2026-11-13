@@ -30,7 +30,7 @@
     {
       "id": "nextjs",
       "type": "frontend",
-      "label": "Next.js 患者端",
+      "label": "React+Vite 患者端",
       "sublabel": "生成式 UI 渲染",
       "pos": [
         330,

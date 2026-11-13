@@ -52,7 +52,14 @@ interface AgentInput<T> {
   userId: string;              // 用户 id（脱敏后）
   payload: T;                  // 各 Agent 专属载荷
   facts: SessionFacts;         // 会话事实：过敏、用药、既往史、当前挂号状态
-  memory: MemorySnapshot;      // 三层记忆快照
+  memory: MemorySnapshot;      // 三层记忆快照，结构见下
+}
+
+// 三层记忆快照（对应 09-数据模型.md 4.4 chat_turn）
+interface MemorySnapshot {
+  sliding: Turn[];             // 滑窗层：本会话最近 6 轮 → chat_turn 按 turn_no DESC LIMIT 6
+  summary: string | null;      // 摘要层：会话要点压缩 → chat_turn.memory_summary
+  semanticHits: MemoryHit[];   // 语义召回层：跨会话相关片段 → pgvector
 }
 
 // 输出信封
@@ -67,6 +74,14 @@ interface AgentOutput<T> {
 ```
 
 > **设计要点**：`status` 四态是硬约束。任何 Agent 失败都必须走 `failed` 或 `blocked`，**不允许抛异常穿透**——这是"失败降级"能成立的前提。
+
+> **三层记忆的落点（2026-11-13 定案）**：原方案照抄 xinyu 的「Redis 滑窗 → LLM 摘要 → pgvector 召回」，但 `10` D6 不引 Redis，滑窗层一度没有归宿。现定为 **MySQL 滑窗（方案 B）**，三层全部落地，且随账号跨设备：
+>
+> | 层 | 实现 |
+> | --- | --- |
+> | `sliding` | `chat_turn` 按 `(user_id, session_id, turn_no DESC) LIMIT 6`，走 `idx_window` 索引 |
+> | `summary` | `chat_turn.memory_summary`，每满 10 轮或会话结束由 LLM 压缩写回 |
+> | `semanticHits` | pgvector 不变 |
 
 ---
 
@@ -414,21 +429,125 @@ interface AgentOutput<T> {
 | `department_card` | `{departments[]}` | 科室推荐卡片 |
 | `booking_preview_card` | `{preorder}` | 预约预览卡片 + 确认/取消按钮 |
 | `timeline_card` | `{tasks[]}` | 就诊时间线卡片 |
-| `review_trace` | `{scores}` | 可折叠的"质量评估"面板 |
+| `review_trace` | `{scores, action}` | 可折叠的"质量评估"面板；`action` 显式为 `pass` / `retry` |
+| `retry` | `{reason, from, to, round}` | 回退态：Reviewer 判低分时拓扑图那条红线在前端的可见形态 |
+| `speech` | `{text, lang, seq}` | TTS 播报 + 同步字幕（输出侧多模态） |
 | `caveat` | `string` | 黄色警示条 |
 | `emergency` | `{type, guidance}` | 全屏红色紧急提示 |
 | `done` | `{answer, sources[]}` | 收尾 |
 
-> 这张表就是前端组件的开发清单，也是"AI 交互体验 3%"的验收标准：**流式、思考可见、错误有兜底**。
+**共 14 种事件。** 三处新增的理由：
+
+| 事件 | 补它的原因 |
+| --- | --- |
+| `retry` | `05` §0.2 拓扑图上有 Reviewer → Supervisor 的「低分回退」红色虚线，但原事件表没有对应事件。评委会指着那条线问"回退时界面显示什么"，没有 `retry` 就答不上。 |
+| `speech` | 多模态不能只做输入侧。官方 5% 的措辞是「多模态**融合**是否自然流畅」，语音出 + 字幕同步才是双向。 |
+| `review_trace.action` | 把"通过 / 重新生成"显式化，让 §0.2 的回退边在前端可观测，不依赖隐式重发。 |
+
+> 这张表就是前端组件的开发清单，也是"AI 交互体验 3%"的验收标准：**流式、思考可见、错误有兜底、回退可见**。
 
 ---
 
-## 7. 开发分工建议（3 人）
+## 7. 状态机与出错态（细粒度）
+
+> 背景：`12-赛题符合性审计.md` 指出——`09` §3.3 只画了 `booking_order` 的六态，`05` §0.3 只定了四态信封，**但边界场景全空**：按钮双击、锁号失败、网络断开、多标签页版本不一致。这些是评委最容易问、也最容易答不上来的地方。本节把它们定死，前端照此实现。
+
+### 7.0 两张图的分工
+
+| 层 | 管什么 | 在哪 |
+| --- | --- | --- |
+| **业务状态机** | `booking_order` 的六个业务态（PREVIEW→HOLDING→PENDING→CONFIRMED…） | `09-数据模型.md` §3.3 |
+| **UI 状态机** | 前端每个可交互区域当前能不能点、点了显示什么 | 本节 7.1 |
+| **Agent 状态** | 单轮内编排走到哪一步 | `05` §0.3 `AgentOutput.status` 四态 |
+
+三者不重合，混在一起讲就会出漏洞。**本节只解决 UI 状态机。**
+
+### 7.1 按钮状态机（并发与幂等的前端侧）
+
+每个会触发写入的按钮（确认预约、取消、生成提醒）都走这五态：
+
+```dsh-ui
+{"title":"写入类按钮五态","gap":10,"items":[
+{"type":"mermaid","code":"stateDiagram-v2\n  [*] --> idle: 渲染完成\n  idle --> pending: 用户点击，本帧立即置灰\n  pending --> success: 服务端 200 且 preorderId 匹配\n  pending --> failed: 4xx/5xx/超时\n  pending --> conflict: 409 幂等冲突或锁号被抢\n  success --> idle: 1.5s 后恢复\n  failed --> idle: 显示错误文案\n  conflict --> idle: 强制刷新号源列表\n  pending --> timeout: 30s 无响应\n  timeout --> idle: 提示网络异常，允许重试"}
+]}
+```
+
+| 态 | 按钮表现 | 数据动作 |
+| --- | --- | --- |
+| `idle` | 可点，`--primary` 填充 | 无 |
+| `pending` | 禁用 + loading 图标 + 文案改「处理中…」 | 已发请求，`idempotencyKey` 不变 |
+| `success` | 短暂显示 ✓ 再回 idle | 刷新 `booking_order` 列表 |
+| `failed` | 恢复可点 + 上方 `caveat` 条 | 保留原输入，允许原 key 重试 |
+| `conflict` | 恢复可点 + 强提示 | **必须重新拉号源**，不能原样重试 |
+
+**三条硬规则**
+
+| 规则 | 实现 | 防的问题 |
+| --- | --- | --- |
+| 点击即刻置灰 | 在 `onClick` 第一行同步置 `pending`，不等响应 | 双击 / 长按连发 |
+| `idempotencyKey` 在进入 `pending` 前生成一次 | 存进组件 state，重试时复用 | 重试产生两条单 |
+| `conflict` 不准直接重试 | 状态转移强制走「重新拉列表」 | 对着已失效的号源反复点 |
+
+### 7.2 出错态与用户可见文案
+
+| 场景 | `AgentOutput.status` | 前端表现 | 文案（直接可用） |
+| --- | --- | --- | --- |
+| 号源查询超时 >5s | `failed` | `caveat` 黄条，不显示任何号源 | 「号源查询超时，请稍后重试。我们没有猜号源——请以医院实际信息为准。」 |
+| 锁号被抢先 | `failed` + `HOLDING→FAILED` | 卡片变灰 + 刷新按钮 | 「这个号刚被别人锁走了，已为你刷新最新号源。」 |
+| 某院服务不可用 | `failed`（该院维度） | 该院卡片置灰，其他院正常 | 「XX医院服务暂时不可用，其他医院可正常预约。」 |
+| 网络断开 | 无响应 | 全局顶部离线条 | 「网络已断开，正在重连。已输入的内容不会丢失。」 |
+| LLM 规划失败 | `failed` + `degraded` | 保留模板结果的标记 | 「已按标准顺序为你安排，未使用智能规划。」 |
+| 红线拦截（过敏冲突） | `blocked` | 红色阻断卡，**确认按钮不渲染** | 「检测到与你的过敏史冲突，此操作已被阻止。请咨询医生。」 |
+| 紧急症状 | `blocked` + `emergency` | 全屏红 | 「请立即拨打 120 或前往急诊。」 |
+| 信息不足 | `need_clarify` | 追问气泡 + 快捷选项 | 「为了给出准确建议，还需要了解：…」 |
+
+**原则**：每个 `status` 都必须有**默认可见的 UI**，不能只在 console 里记一笔。四态是硬约束（§0.3），前端也必须有四套分支。
+
+### 7.3 多标签页与版本不一致
+
+`patient_auth` 的会话是 JWT，多个标签页共享同一个 `user_id`。三个一致性问题：
+
+| 问题 | 现象 | 处理 |
+| --- | --- | --- |
+| **同一号源被两个标签页锁** | A 页点确认成功，B 页仍显示可预约 | `BroadcastChannel('booking')` 广播成功事件，B 页收到即刷新 |
+| **会话过期** | 401 后不知道该跳哪 | 拦截 401 → 跳登录，`returnUrl` 存 `sessionStorage` |
+| **前端版本更新** | 旧页面用旧代码请求新接口 | `vite` 注入 `buildId` 到响应头；不匹配时提示「有新版本，刷新后继续」 |
+
+**演示话术**（评委问"多设备同时操作怎么办"）：
+
+> "写入路径的幂等靠服务端唯一索引兜底（`uk_idempotency`），前端的五态按钮只是减噪，不是正确性保证。就算两个标签页同时点，数据库也只会有一条单。"
+
+### 7.4 SSE 断线重连
+
+| 场景 | 处理 |
+| --- | --- |
+| 流式过程中网络抖动 | `EventSource` 自带重连，但**不能直接重放**——会重复事件 |
+| 重连策略 | 带 `Last-Event-ID` 头；服务端按 id 续传，没有则从 `plan` 重来并前置一条 `caveat` |
+| 断线超过 30s | 停止重连，显示「连接已断开」+ 手动重试按钮 |
+| 页面切到后台再回来 | 主动断连，回来时全量拉取该 `sessionId` 的最新状态 |
+
+**为什么不用自动无限重连**：评审现场演示断网时，无限重连会让界面在"正在重连…"里卡死，比明确报错更难看。
+
+### 7.5 落地清单（前端 A 的 Day 2-3 任务）
+
+| 项 | 产出 |
+| --- | --- |
+| `useWriteAction` hook | 封装五态 + `idempotencyKey` 生成 + 失败分支 |
+| `<StatusBanner>` 组件 | 消费 `caveat` / `emergency` / 离线态，统一位置 |
+| `<OfflineGuard>` | 监听 `online/offline`，全局离线条 |
+| `BroadcastChannel` 封装 | `booking` / `auth` 两个 channel |
+| `useSSE` hook 补 `Last-Event-ID` | 断线续传 |
+
+> 这一节的每条都能在答辩时指着代码讲。**评委问"网络断了怎么办"是最常见的刁难，现在有答案。**
+
+---
+
+## 8. 开发分工建议（3 人）
 
 | 角色 | 负责 | 交付物 |
 | --- | --- | --- |
-| 前端 A | 页面骨架、生成式 UI 组件、事件流消费 | `app/` + `components/chat/` |
-| 前端 B | 端侧脱敏、IndexedDB、语音、PWA 提醒 | `lib/privacy/` + `lib/audio/` |
+| 前端 A | 页面骨架、生成式 UI 组件、事件流消费 | `frontend/src/pages/` + `frontend/src/components/chat/` + `frontend/server/` |
+| 前端 B | 端侧脱敏、IndexedDB、语音、PWA 提醒 | `frontend/src/lib/privacy/` + `frontend/src/lib/audio/` + `frontend/src/lib/db/` |
 | 后端 | Spring Boot 业务层、提醒引擎、MCP 适配器 | `backend/` |
 
-Agent 编排（LangGraph）由前端 A 主导，后端配合提供工具接口。
+Agent 编排（**自研 TS 状态机**，见 `10-技术决策-补充.md` D1，非 LangGraph）由前端 A 主导，落在 `frontend/server/agents/`；后端配合提供工具接口。
