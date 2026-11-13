@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEventStream } from '../hooks/useEventStream';
 import { TurnView } from '../components/EventRenderer';
+import { RedactionPreview } from '../components/RedactionPreview';
+import { redact } from '../lib/privacy/redact';
 
 /**
  * 示例问题刻意分类，让评审一眼看到四类路径：
@@ -31,7 +33,10 @@ export default function ChatPage() {
   const submit = (text: string) => {
     const t = text.trim();
     if (!t || busy) return;
-    void send({ text: t });
+    // 隐私边界：**发送前先在本机脱敏**，进入网络的是脱敏后的文本。
+    // 这一步必须在客户端做 —— 服务端才脱敏的话，原文已经出去了。
+    const safe = redact(t).text;
+    void send({ text: safe });
     setInput('');
     taRef.current?.focus();
   };
@@ -82,6 +87,7 @@ export default function ChatPage() {
 
       {/* 输入区：固定在底部，移动端不遮挡 */}
       <div className="sticky bottom-0 -mx-4 mt-4 border-t border-gray-100 bg-gray-50/95 px-4 py-3 backdrop-blur">
+        {input.trim() ? <div className="mb-2"><RedactionPreview raw={input} /></div> : null}
         <div className="flex items-end gap-2">
           <textarea
             ref={taRef}
