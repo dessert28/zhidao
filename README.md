@@ -289,6 +289,7 @@ pnpm typecheck              # tsc --noEmit，strict
 
 | 文档 | 内容 |
 | --- | --- |
+| [`HANDOFF.md`](HANDOFF.md) | 开发交接：环境搭建、当前进度、下一步优先级、踩过的坑 |
 | [`docs/README.md`](docs/README.md) | 13 份文档的索引与阅读顺序 |
 | [`docs/03`](docs/03-整体架构.md) | 架构图、三条链路、边界划分 |
 | [`docs/05`](docs/05-Agent契约表.md) | 五智能体的输入输出、工具、五张降级矩阵 |
