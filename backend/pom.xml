@@ -36,6 +36,20 @@
     <mybatis-plus.version>3.5.6</mybatis-plus.version>
     <knife4j.version>4.5.0</knife4j.version>
     <jjwt.version>0.12.5</jjwt.version>
+
+    <!--
+      强制 UTF-8。
+      不写这三行的后果（在这台机器上真实踩到，且只在测试里暴露）：
+        1. 中文 Windows 的 JVM 默认 file.encoding=GBK
+        2. maven-resources-plugin 拷 data.sql 到 target/classes 时按平台编码读，
+           UTF-8 的中文字节被当 GBK 解成乱码再写回去 —— 文件"没报错"，内容是坏的
+        3. maven-compiler-plugin 编译时源码里的中文字面量同样按 GBK 解，
+           提示语全变问号，且编译器一声不吭
+      症状是"代码看着没问题，跑出来中文全是乱码"，比编译报错难查得多。
+      project.build.sourceEncoding 管编译与资源，file.encoding 管运行时。
+    -->
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
 
   <dependencies>
@@ -111,10 +125,28 @@
 
   <build>
     <plugins>
+      <!--
+        运行时也锁 UTF-8。
+        只设 project.build.sourceEncoding 只解决"编译/拷资源"，
+        fork 出去的 JVM 仍然读 file.encoding=GBK，读 UTF-8 文件时会二次损坏。
+        两个都要设，缺一不可。
+
+        surefire 管 test，spring-boot-maven-plugin 的 jvmArguments 管 spring-boot:run，
+        后者尤其重要：评委和答辩现场跑的就是这一条命令。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-Dfile.encoding=UTF-8</argLine>
+        </configuration>
+      </plugin>
+
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <configuration>
+          <jvmArguments>-Dfile.encoding=UTF-8</jvmArguments>
           <excludes>
             <exclude>
               <groupId>org.projectlombok</groupId>

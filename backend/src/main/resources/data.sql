@@ -4,13 +4,22 @@
 -- 这是**演示数据**，不是真实患者数据。
 -- 刻意做成一眼能看出是假的：姓名/手机号都不出现（schema 里也没这些字段），
 -- 只有年份和科室，因为服务端本来就不需要知道更多。
+--
+-- 时间基准：2026-11-14（省赛提交期）。所有相对日期都围绕它写死，
+-- 这样"距就诊 24 小时""复查已过期"这类提醒规则演示时一定能触发。
+-- 若在别的日期演示，改下面这 5 个时间点即可。
 -- ============================================================
 
 -- 演示账号：demo / demo1234
--- 密码哈希是 BCrypt("demo1234")，cost=10。
--- 明文写在注释里是因为这是公开的演示账号，不是密钥。
+--
+-- 哈希是**真实算出来**的 BCrypt("demo1234")，cost=10。
+-- 注意：这里曾经放过网上流传的那串
+--   $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+-- 它出现在无数 Spring Security 教程里，但它对应的明文**不是** demo1234
+-- （实测 matches("demo1234") == false），照抄进去的症状是"登录永远 401，
+-- 而密码明明没写错"。改用下面这串之前，先用 BCryptPasswordEncoder 验一次。
 INSERT INTO sys_user (username, password_hash, role) VALUES
-  ('demo', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'PATIENT');
+  ('demo', '$2a$10$A8hrJ98MEdtngRppd5VVTOnxcg6SSOrhtjYUo9l3o3qQEY7.AYcwG', 'PATIENT');
 
 -- 两个 Mock 院区。名字带"演示"二字，防止被误认成真实医院。
 INSERT INTO hospital (hospital_code, name, level, city, adapter_type) VALUES
@@ -34,19 +43,15 @@ INSERT INTO medical_record (user_id, hospital_code, visit_date, department, diag
    '血压 158/96 mmHg。建议低盐饮食，继续监测，两周后复查。',
    '门诊病历-20261102.pdf', 88064, 'MANUAL');
 
--- 预约单：一条已确认，一条待确认
-INSERT INTO booking_order (user_id, hospital_code, department, visit_time, status, remark) VALUES
-  (1, 'MOCK-A', '内分泌科', '2026-11-15 08:30:00', 'CONFIRMED', '空腹抽血，需禁食'),
-  (1, 'MOCK-B', '心血管内科', '2026-11-22 14:00:00', 'CREATED', NULL);
+-- 预约单：一条已确认（明天早上，触发"今晚禁食"提醒），一条待确认
+INSERT INTO booking_order (user_id, hospital_code, department, visit_time, status, external_order_no, remark) VALUES
+  (1, 'MOCK-A', '内分泌科', '2026-11-15 08:30:00', 'CONFIRMED', 'MOCK-A-1001', '空腹抽血，需禁食'),
+  (1, 'MOCK-B', '心血管内科', '2026-11-22 14:00:00', 'CREATED', NULL, NULL);
 
--- 提醒任务：覆盖三种状态，让引擎一启动就有活干
+-- 提醒任务：只种一条**已经过期但仍在补发窗口内**的，用来验证引擎的扫描与补发。
+-- 其余两类（复查到期、预约待确认）故意不种 —— 让引擎自己算出来，
+-- 否则"引擎跑起来了"和"种子数据本来就是那样"分不清。
 INSERT INTO reminder_task (user_id, ref_type, ref_id, title, detail, reason, due_at, status) VALUES
   (1, 'BOOKING', 1, '明天早上空腹抽血，今晚 22 点后禁食',
    '内分泌科复诊需要空腹血糖，请从今晚 22 点后停止进食，可少量饮水。',
-   '距就诊还有 24 小时，且该科室开具了空腹抽血项目', '2026-11-14 22:00:00', 'PENDING'),
-  (1, 'RECORD', 2, '距离上次查糖化血红蛋白已满 3 个月',
-   '上一次糖化血红蛋白是 9 月 12 日，建议复查。',
-   '检查项目时效性规则：糖化血红蛋白建议每 3 个月复查', '2026-12-12 09:00:00', 'PENDING'),
-  (1, 'BOOKING', 2, '下周的心血管内科预约还未确认',
-   '11 月 22 日下午的号还没有确认，请及时确认或取消。',
-   '预约单状态为 CREATED 且距就诊不足 7 天', '2026-11-20 10:00:00', 'PENDING');
+   '距就诊还有 24 小时，且该科室开具了空腹抽血项目', '2026-11-14 00:30:00', 'PENDING');
