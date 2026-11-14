@@ -1,0 +1,539 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "智诊通 · 患者端跨院导诊系统",
+    "subtitle": "端侧脱敏 · 五智能体编排 · 可解释提醒引擎",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-zhidao-v3-20261114-122500/zhidao-v3.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/dessert28/zhidao",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "8ac02421be77cfa9ef9c04bbce8c9233d97f9282"
+    }
+  },
+  "components": [
+    {
+      "id": "patient",
+      "type": "external",
+      "label": "患者",
+      "sublabel": "浏览器 / 手机",
+      "icon": "person",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "spa",
+      "type": "frontend",
+      "label": "React SPA",
+      "sublabel": "Vite 6 · TS strict",
+      "icon": "frontend",
+      "pos": [
+        240,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/router.tsx",
+          "line": 14,
+          "label": "路由级懒加载"
+        },
+        {
+          "path": "frontend/src/pages/ChatPage.tsx",
+          "line": 22,
+          "label": "问诊主页"
+        }
+      ]
+    },
+    {
+      "id": "redact",
+      "type": "security",
+      "label": "端侧脱敏",
+      "sublabel": "7 类 PII · 规则引擎",
+      "icon": "security",
+      "tag": "原文不出设备",
+      "pos": [
+        240,
+        150
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/lib/privacy/redact.ts",
+          "line": 123
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "frontend",
+      "label": "语音输入 / 播报",
+      "sublabel": "Web Speech · speechSynthesis",
+      "icon": "frontend",
+      "pos": [
+        240,
+        450
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/hooks/useSpeechInput.ts",
+          "line": 125
+        },
+        {
+          "path": "frontend/src/hooks/useTts.ts",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "id": "sse",
+      "type": "frontend",
+      "label": "SSE 消费",
+      "sublabel": "fetch + ReadableStream",
+      "icon": "frontend",
+      "pos": [
+        500,
+        300
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/hooks/useEventStream.ts",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "id": "bff",
+      "type": "backend",
+      "label": "Node BFF",
+      "sublabel": "Hono · 持密钥 · 发 SSE",
+      "icon": "backend",
+      "pos": [
+        720,
+        300
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/routes/chat.ts",
+          "line": 66
+        }
+      ]
+    },
+    {
+      "id": "redflag",
+      "type": "security",
+      "label": "红线规则引擎",
+      "sublabel": "5 类急症 · 确定性正则",
+      "icon": "security",
+      "tag": "命中即短路",
+      "pos": [
+        720,
+        130
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/agents/rules/red-flag.ts",
+          "line": 92
+        }
+      ]
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "Supervisor",
+      "sublabel": "决策 + reason 必填",
+      "icon": "backend",
+      "pos": [
+        950,
+        300
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/agents/supervisor.ts",
+          "line": 118
+        }
+      ]
+    },
+    {
+      "id": "triage",
+      "type": "backend",
+      "label": "Triage",
+      "sublabel": "槽位采集 · 追问≤3 轮",
+      "icon": "backend",
+      "pos": [
+        1170,
+        190
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/agents/triage.ts",
+          "line": 227
+        }
+      ]
+    },
+    {
+      "id": "retrieval",
+      "type": "backend",
+      "label": "Retrieval",
+      "sublabel": "BM25 · 接地检查",
+      "icon": "backend",
+      "pos": [
+        1170,
+        300
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/agents/retrieval.ts",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "id": "reviewer",
+      "type": "backend",
+      "label": "Reviewer",
+      "sublabel": "四维自评 · 规则优先",
+      "icon": "backend",
+      "pos": [
+        1170,
+        410
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/agents/reviewer.ts",
+          "line": 285
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "大模型 API",
+      "sublabel": "OpenAI 兼容 · 三家可换",
+      "icon": "cloud",
+      "tag": "无 Key 则降级",
+      "pos": [
+        945.0,
+        520
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "frontend/server/llm/client.ts",
+          "line": 155
+        },
+        {
+          "path": "frontend/server/env.ts",
+          "line": 43,
+          "label": ".env 加载"
+        }
+      ]
+    },
+    {
+      "id": "spring",
+      "type": "backend",
+      "label": "Spring Boot 3",
+      "sublabel": "业务闭环 · 五组接口",
+      "icon": "backend",
+      "pos": [
+        720.0,
+        620
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "backend/src/main/java/com/zhidao/controller/PatientController.java",
+          "line": 28
+        },
+        {
+          "path": "backend/src/main/java/com/zhidao/security/JwtUtil.java",
+          "line": 48,
+          "label": "JWT"
+        }
+      ]
+    },
+    {
+      "id": "reminder",
+      "type": "backend",
+      "label": "提醒引擎",
+      "sublabel": "@Scheduled 每 5 分钟",
+      "icon": "clock",
+      "tag": "每条带 reason",
+      "pos": [
+        460,
+        620
+      ],
+      "size": [
+        150,
+        74
+      ],
+      "sources": [
+        {
+          "path": "backend/src/main/java/com/zhidao/service/ReminderEngine.java",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "id": "adapter",
+      "type": "backend",
+      "label": "院区适配器",
+      "sublabel": "MOCK-A / MOCK-B",
+      "icon": "backend",
+      "pos": [
+        720.0,
+        730
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "backend/src/main/java/com/zhidao/adapter/HospitalAdapterRegistry.java",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "id": "h2",
+      "type": "database",
+      "label": "H2 / MySQL",
+      "sublabel": "6 张表 · 逻辑删除",
+      "icon": "database",
+      "pos": [
+        950,
+        700
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "backend/src/main/resources/schema.sql",
+          "line": 25,
+          "label": "建表"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "浏览器 · 原文不出设备",
+      "wraps": [
+        "spa",
+        "redact",
+        "voice"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "服务端 · 持密钥与业务数据",
+      "wraps": [
+        "bff",
+        "redflag",
+        "supervisor",
+        "triage",
+        "retrieval",
+        "reviewer",
+        "spring",
+        "reminder",
+        "adapter",
+        "h2"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "patient-spa",
+      "from": "patient",
+      "to": "spa",
+      "label": "输入症状",
+      "variant": "emphasis"
+    },
+    {
+      "id": "spa-redact",
+      "from": "spa",
+      "to": "redact",
+      "label": "发送前遮蔽",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "spa-voice",
+      "from": "spa",
+      "to": "voice",
+      "label": "朗读回答",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "spa-sse",
+      "from": "spa",
+      "to": "sse",
+      "label": "useEventStream"
+    },
+    {
+      "id": "sse-bff",
+      "from": "sse",
+      "to": "bff",
+      "label": "POST /api/chat",
+      "variant": "emphasis"
+    },
+    {
+      "id": "bff-redflag",
+      "from": "bff",
+      "to": "redflag",
+      "label": "先查红线",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "bff-supervisor",
+      "from": "bff",
+      "to": "supervisor",
+      "label": "分发"
+    },
+    {
+      "id": "supervisor-triage",
+      "from": "supervisor",
+      "to": "triage",
+      "variant": "dashed"
+    },
+    {
+      "id": "supervisor-retrieval",
+      "from": "supervisor",
+      "to": "retrieval"
+    },
+    {
+      "id": "supervisor-reviewer",
+      "from": "supervisor",
+      "to": "reviewer",
+      "variant": "dashed"
+    },
+    {
+      "id": "supervisor-llm",
+      "from": "supervisor",
+      "to": "llm",
+      "label": "脱敏文本",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "bff-spring",
+      "from": "bff",
+      "to": "spring",
+      "label": "JWT + JSON",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "spring-reminder",
+      "from": "spring",
+      "to": "reminder",
+      "label": "扫表生成"
+    },
+    {
+      "id": "spring-adapter",
+      "from": "spring",
+      "to": "adapter",
+      "label": "按院区分发",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "spring-h2",
+      "from": "spring",
+      "to": "h2",
+      "label": "MyBatis-Plus"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "隐私边界",
+      "items": [
+        "病历原文只存浏览器 IndexedDB，服务端连存原文的列都没有",
+        "进模型的是遮蔽后的文本：「患者，男，61 岁」而不是姓名",
+        "语音输入与播报均由浏览器原生完成，不经第三方"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "安全与降级",
+      "items": [
+        "红线 5 类急症用确定性正则，命中即短路，根本不调模型",
+        "每个 Agent 由 safeRun 包裹，异常转 failed 不穿透到 SSE",
+        "无 LLM_API_KEY 时全链路自动走规则路由，评审本地不白屏"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "三个差异化",
+      "items": [
+        "跨院统一时间轴：数据在患者手里，不需医院授权",
+        "提醒引擎：每条提醒都带「为什么提醒你」的 reason",
+        "只提示不判断：用药冲突说「请让医生确认能否同服」"
+      ]
+    }
+  ]
+}

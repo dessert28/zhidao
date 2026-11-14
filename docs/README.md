@@ -58,7 +58,7 @@
 | 10 | 医疗合规与数据隐私 | `08` | ✅ |
 | 11 | 数据模型（7 张表 DDL） | `09` | ✅ |
 | 12 | 赛程排期（P0 砍到 5 项 + 三人 × 五天矩阵） | `07` §7 | ✅ |
-| 13 | 架构图（含多智能体） | `.archify/architecture-zhidao-v2-20261113-0835/` | ⚠️ HTML 待重跑 finalize |
+| 13 | 架构图（含多智能体） | `.archify/architecture-zhidao-v3-20261114-122500/` | ✅ 2026-11-14 重绘，finalize 四关全过 |
 
 **还有 3 项设计缺口**（2026-11-14 校订）：
 
@@ -96,7 +96,7 @@
 1. **接入真实 LLM**：`planViaLlm` / `triage.analyze` / `reviewer.judge` 三处 deps 接口都已留好，
    当前都没人传实现。这是「大模型集成质量 8%」唯一的缺口
 2. 端侧 ONNX 脱敏（最后一个空壳）：`detectWithModel()` 接 Transformers.js + WebGPU
-3. 文档收尾：`02` 补 OpenMed 说明与端侧小模型对比表；`.archify/zhidao-v2.html` 重跑 finalize
+3. 文档收尾：`02` 补 OpenMed 说明与端侧小模型对比表（架构图已于 2026-11-14 重绘为 v3）
 4. 省赛提交前打磨：视觉细节 + 演示视频脚本
 
 > 已完成的 M6（后端七张表 + 五组接口 + 三条 `@Scheduled` 规则）不再列入。

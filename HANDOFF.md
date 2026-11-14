@@ -199,7 +199,7 @@ DeepSeek / Qwen / Moonshot 的 OpenAI 兼容层都支持，但**小参数模型�
 ### P2 · 文档收尾
 
 - `docs/02` 缺 OpenMed 说明和小模型对比表 ⬜
-- `.archify/zhidao-v2.html` 仍是旧版（还画着 Next.js），要重跑 finalize ⬜
+- ~~`.archify/zhidao-v2.html` 旧版~~ ✅ 2026-11-14 重绘为 v3（`.archify/architecture-zhidao-v3-20261114-122500/`），finalize 四关全过
 - ~~`docs/12` §3.5「视觉基调未定」过时~~ ✅ 2026-11-14 已在 §3.5 标注已解决
 
 ### 明确不做（不要临时加回来）
