@@ -27,8 +27,12 @@ INSERT INTO hospital (hospital_code, name, level, city, adapter_type) VALUES
   ('MOCK-B', '演示市中心医院（示例）',   '三甲', '演示市', 'MOCK');
 
 -- 患者档案：男，1965 年生（所以 2026 年是 61 岁 —— 这是"跨院老年患者"的主场景）
-INSERT INTO patient_profile (user_id, birth_year, gender, allergy_json, chronic_json) VALUES
-  (1, 1965, 'MALE', '["青霉素"]', '["高血压","2型糖尿病"]');
+--
+-- 用药清单是刻意造的：阿司匹林与氨氯地平分别来自两家医院的处方，
+-- 患者自己汇总在这里。用它演示「不同医院都开了药，请让医生确认能否同服」。
+-- 注意：这是我们**只提示不判断**的边界，不是相互作用分析。
+INSERT INTO patient_profile (user_id, birth_year, gender, allergy_json, chronic_json, medication_json) VALUES
+  (1, 1965, 'MALE', '["青霉素"]', '["高血压","2型糖尿病"]', '["阿司匹林肠溶片","二甲双胍","氨氯地平"]');
 
 -- 跨院就诊记录：故意让两家医院的数据时间交错，
 -- 用来演示"同一件事在不同医院被重复做"

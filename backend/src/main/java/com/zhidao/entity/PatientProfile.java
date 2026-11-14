@@ -42,6 +42,17 @@ public class PatientProfile {
     /** 慢病 JSON 数组，如 {@code ["高血压","2型糖尿病"]} */
     private String chronicJson;
 
+    /**
+     * 在用的药 JSON 数组，如 {@code ["阿司匹林肠溶片","二甲双胍"]}。
+     *
+     * <p>为什么单独一列而不并进 {@code chronicJson}：用药冲突检测要按
+     * 药名做精确匹配，和慢病名混在一个数组里，每次都得先猜哪一项是药。
+     *
+     * <p>数据来源是患者自己整理（跨院处方汇总），不是医院开方 ——
+     * 所以这里只用于「提示」，不用于任何自动判断（docs/08 §1）。
+     */
+    private String medicationJson;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

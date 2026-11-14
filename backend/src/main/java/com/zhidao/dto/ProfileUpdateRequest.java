@@ -21,6 +21,7 @@ import jakarta.validation.constraints.Min;
  * @param gender    MALE / FEMALE / OTHER
  * @param allergies 逗号分隔，如 "青霉素,磺胺"
  * @param chronics  逗号分隔，如 "高血压,2型糖尿病"
+ * @param medications 逗号分隔，如 "阿司匹林肠溶片,二甲双胍"
  */
 public record ProfileUpdateRequest(
         @Min(value = 1900, message = "出生年份不早于 1900")
@@ -31,6 +32,8 @@ public record ProfileUpdateRequest(
 
         String allergies,
 
-        String chronics
+        String chronics,
+
+        String medications
 ) {
 }

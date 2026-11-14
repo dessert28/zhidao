@@ -218,6 +218,70 @@ describe('Reviewer 主流程', () => {
     expect(out.events.some((e) => e.type === 'emergency')).toBe(true);
   });
 
+  describe('急症指引不应被判成急症描述（实测误报）', () => {
+    it('「若出现…应立即拨打 120」这类安全提示不触发 emergency', async () => {
+      // 实测场景：用户问两种药同服注意什么，模型给了句正确的就医指引，
+      // 旧逻辑按急症词匹配，直接弹红色急诊卡 —— 用户只是问用药
+      const reviewer = makeReviewer();
+      const out = await reviewer(
+        input({
+          candidateAnswer:
+            '单次测量偏高不足以说明问题，建议在不同日、不同时间段测量并记录。若头晕同时伴有一侧肢体无力、言语不清、口角歪斜，应按卒中处理，立即拨打 120。',
+          evidenceCount: 1,
+        }),
+      );
+      expect(out.events.some((e) => e.type === 'emergency')).toBe(false);
+      expect(out.status).not.toBe('blocked');
+    });
+
+    it('「出现胸痛请立即就医」同样不触发', async () => {
+      const reviewer = makeReviewer();
+      const out = await reviewer(
+        input({ candidateAnswer: '如果出现胸痛、呼吸困难，请立即就医或拨打 120。', evidenceCount: 1 }),
+      );
+      expect(out.events.some((e) => e.type === 'emergency')).toBe(false);
+    });
+
+    /** 反向用例：真正的病情描述一条都不能放过 */
+    it('纯粹描述急症仍然拦截', async () => {
+      for (const desc of [
+        '患者一侧肢体无力，口角歪斜。',
+        '你这是急性心梗，需要立刻手术。',
+        '病人意识不清，已经昏过去了。',
+        '现在正在大出血，出血不止。',
+      ]) {
+        const reviewer = makeReviewer();
+        const out = await reviewer(input({ candidateAnswer: desc }));
+        expect(
+          out.events.some((e) => e.type === 'emergency'),
+          `漏报：${desc}`,
+        ).toBe(true);
+      }
+    });
+
+    /**
+     * 最关键的一条：**加了"心梗"这个词之后，带指引的句子仍不能被拦**。
+     *
+     * 这一条是在给 red-flag 补上「急性心梗」诊断名之后必须有的。
+     * 两个改动各自正确，叠在一起可能互相打脸 ——
+     * 所以必须有一条同时踩到两者的用例。
+     */
+    it('含「心梗」但带就医指引的句子，仍不触发 emergency', async () => {
+      const reviewer = makeReviewer();
+      const out = await reviewer(
+        input({
+          candidateAnswer:
+            '血压偏高本身不等于心梗。但若出现持续胸痛、大汗淋漓，须警惕急性心肌梗死，请立即拨打 120。',
+          evidenceCount: 1,
+        }),
+      );
+      // 第一句讲的是"不等于心梗"（描述），第二句是带指引的假设句
+      // 两句都含有"心梗"，但都不该触发急诊卡
+      const emg = out.events.filter((e) => e.type === 'emergency');
+      expect(emg, `误报急诊：${JSON.stringify(emg)}`).toHaveLength(0);
+    });
+  });
+
   it('过敏交叉检查产生 caveat 事件', async () => {
     const reviewer = makeReviewer();
     const out = await reviewer(

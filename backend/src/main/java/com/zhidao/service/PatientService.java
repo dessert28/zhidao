@@ -49,6 +49,7 @@ public class PatientService {
         empty.setUserId(userId);
         empty.setAllergyJson("[]");
         empty.setChronicJson("[]");
+        empty.setMedicationJson("[]");
         return empty;
     }
 
@@ -78,6 +79,9 @@ public class PatientService {
         if (req.allergies() != null) {
             p.setAllergyJson(toJson(splitCsv(req.allergies())));
         }
+        if (req.medications() != null) {
+            p.setMedicationJson(toJson(splitCsv(req.medications())));
+        }
         if (req.chronics() != null) {
             p.setChronicJson(toJson(splitCsv(req.chronics())));
         }
@@ -85,6 +89,7 @@ public class PatientService {
         if (isNew) {
             if (p.getAllergyJson() == null) p.setAllergyJson("[]");
             if (p.getChronicJson() == null) p.setChronicJson("[]");
+            if (p.getMedicationJson() == null) p.setMedicationJson("[]");
             profileMapper.insert(p);
         } else {
             profileMapper.updateById(p);

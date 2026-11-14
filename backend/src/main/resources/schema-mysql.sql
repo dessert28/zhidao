@@ -65,6 +65,9 @@ CREATE TABLE patient_profile (
   gender        VARCHAR(10),
   allergy_json  VARCHAR(2000) NOT NULL DEFAULT '[]',
   chronic_json  VARCHAR(2000) NOT NULL DEFAULT '[]',
+  -- 在用的药（跨院处方汇总）。为什么单独一列而不是并进 chronic_json：
+  -- 用药冲突检测要按药名精确匹配，和慢病混在一起还得先拆
+  medication_json VARCHAR(2000) NOT NULL DEFAULT '[]',
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted       TINYINT(1)   NOT NULL DEFAULT 0,

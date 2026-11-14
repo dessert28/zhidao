@@ -184,7 +184,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | 缺失 | 影响 | 说明 |
 | --- | --- | --- |
 | ~~前端不调后端~~ | ✅ **2026-11-15 已打通** | `server/routes/backend-proxy.ts` + `src/lib/api.ts`；病历页真读跨院记录与提醒，标记完成写回数据库 |
-| 用药冲突提示 | README 承诺的差异化之一 | `reviewer.ts` 里有 `drugConflictCheck()`，但**没接进主链路**（下一项） |
+| ~~用药冲突提示~~ | ✅ **2026-11-15 已打通** | 根因不是"函数没接"，是 `currentMedications` 永远为空：`patient_profile` 没有用药字段、前端从不传 facts。补了 `medication_json` 列 + `usePatientFacts` 后实测触发 |
 | 跨院重复检查提示 | README 承诺的差异化之一 | `dedupe_key` 只在提醒引擎里做幂等，没做检查去重 |
 | MCP 工具层 | 4% 分值 | `agents/tools/` 目录不存在 |
 | 向量检索 | RAG 6% 只到 BM25 | 无 pgvector，无 RRF 融合 |
@@ -216,7 +216,7 @@ README §1.3 说「去之前 / 在院内 / 回家后」三段都做：
 | 优先 | 事项 | 成本 | 收益 |
 | --- | --- | --- | --- |
 | ~~1~~ | ~~前端接后端~~ | ✅ 2026-11-15 完成 | 跨院时间轴与提醒已可见 |
-| 2 | 用药冲突接进 Reviewer 主链路 | 2 小时 | 兑现第二个差异化 |
+| ~~2~~ | ~~用药冲突接进主链路~~ | ✅ 2026-11-15 完成 | 第二个差异化已可见 |
 | 3 | 排程最小闭环：`schedule` 分支调后端 `/api/bookings` | 半天 | 补齐"在院内" |
 | 4 | 跨院重复检查提示 | 半天 | 第三个差异化 |
 

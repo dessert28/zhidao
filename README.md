@@ -232,7 +232,7 @@ mvn test                 # 28 passed
 | --- | --- | --- |
 | 真实 LLM 调用 | ✅ **已用真实 Key 跑通**（2026-11-14） | `pnpm verify:llm` 四关全过；Supervisor/Triage/Reviewer 三个 Agent 均确认走模型（`plan.reason` 与科室理由都是模型生成的推理，非规则文案）。单轮端到端 8.5s，答辩前建议再做一次延迟优化 |
 | ~~前端未接后端~~ | ✅ **2026-11-15 已打通** | 病历页真读跨院记录与提醒（`/api/backend/*` 经 BFF 转发）；标记完成写回数据库。**「跨院时间轴」这个差异点现在可见了** |
-| 用药冲突 / 跨院重复检查 | ⚠️ 函数写了但没接进主链路 | `reviewer.ts` 的 `drugConflictCheck()` 存在但未被 `chat.ts` 调用；`dedupe_key` 只用于提醒幂等，未做检查去重 |
+| 用药冲突提示 | ✅ **2026-11-15 已打通** | 补了 `patient_profile.medication_json` + `usePatientFacts` 注入 SessionFacts；回答同时提到两种在用药时触发「请让医生确认能否同服」 |
 | 号源查询与预约 | ❌ 只有一句「正在接入中」 | `chat.ts` 的 `case 'schedule'` 是占位；`timeline_card` / `booking_preview_card` 事件从未被发出 |
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 真握手 | ⚠️ 工具签名对齐，不起独立 server 进程 | 5 天排期取舍；评委看 MCP 4% 看的是工具编排能力，不是握手协议 |

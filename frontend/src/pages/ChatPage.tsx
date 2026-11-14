@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEventStream } from '../hooks/useEventStream';
 import { useSpeechInput } from '../hooks/useSpeechInput';
+import { usePatientFacts } from '../hooks/usePatientFacts';
 import { TurnView } from '../components/EventRenderer';
 import { RedactionPreview } from '../components/RedactionPreview';
 import { redact } from '../lib/privacy/redact';
@@ -25,6 +26,9 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  /** 患者事实：过敏史 / 慢病 / 在用药 —— Reviewer 交叉检查的输入 */
+  const { facts: patientFacts, loaded: factsLoaded } = usePatientFacts();
 
   /**
    * 语音输入。
@@ -54,7 +58,15 @@ export default function ChatPage() {
     // 隐私边界：**发送前先在本机脱敏**，进入网络的是脱敏后的文本。
     // 这一步必须在客户端做 —— 服务端才脱敏的话，原文已经出去了。
     const safe = redact(t).text;
-    void send({ text: safe });
+    /*
+     * 带上患者事实（过敏史/慢病/在用药）。
+     *
+     * 这三个字段是 Reviewer 做交叉检查的输入：
+     * 不传的话 `drugConflictCheck()` 拿到的永远是空数组，
+     * README 承诺的「跨院用药冲突提示」就永远不会触发。
+     * 后端没起时 facts 是空数组 —— 只少两个检查，不影响对话。
+     */
+    void send({ text: safe, facts: patientFacts });
     setInput('');
     taRef.current?.focus();
   };
@@ -77,6 +89,20 @@ export default function ChatPage() {
           <p className="mt-2 text-sm leading-relaxed text-gray-500">
             我会帮你判断该挂哪个科、要准备什么。涉及急症时我会直接提示你去急诊，不走其他流程。
           </p>
+
+          {/*
+            让"系统知道你的用药"这件事可见。
+            否则「跨院用药冲突提示」触发时，用户不知道 AI 是怎么知道的。
+          */}
+          {factsLoaded && patientFacts.currentMedications.length > 0 ? (
+            <p className="mt-2 text-xs leading-relaxed text-gray-400">
+              已读取你的用药清单（{patientFacts.currentMedications.join('、')}）
+              {patientFacts.allergies.length > 0
+                ? `、过敏史（${patientFacts.allergies.join('、')}）`
+                : ''}
+              ，回答时会一并核对。
+            </p>
+          ) : null}
 
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
             {EXAMPLES.map((e) => (

@@ -71,6 +71,32 @@ export interface PatientProfile {
   gender: string | null;
   allergies: string[];
   chronics: string[];
+  /** 在用的药（跨院处方汇总）。用于「用药冲突提示」，只提示不判断 */
+  medications: string[];
+}
+
+/**
+ * 把档案转成对话用的 SessionFacts。
+ *
+ * <p>这条转换是「跨院用药冲突提示」的**唯一数据入口**：
+ * Reviewer 的 `drugConflictCheck()` 早就在跑了，但因为前端从不传 facts，
+ * 它拿到的 `currentMedications` 永远是空数组 —— 函数形同虚设。
+ *
+ * <p>字段名与 `@shared/types/contract` 的 SessionFacts 对齐，
+ * 不在这里改名：多一层映射就多一处可能对不上的地方。
+ */
+export function toSessionFacts(p: PatientProfile | null): {
+  allergies: string[];
+  chronicConditions: string[];
+  currentMedications: string[];
+  bookingState: null;
+} {
+  return {
+    allergies: p?.allergies ?? [],
+    chronicConditions: p?.chronics ?? [],
+    currentMedications: p?.medications ?? [],
+    bookingState: null,
+  };
 }
 
 export interface BookingOrder {

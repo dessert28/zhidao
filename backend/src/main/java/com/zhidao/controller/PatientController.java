@@ -43,6 +43,9 @@ public class PatientController {
         // 存的是 JSON 串，接口给的是数组 —— 调用方不该关心我们的存储格式
         data.put("allergies", patientService.parseJsonList(p.getAllergyJson()));
         data.put("chronics", patientService.parseJsonList(p.getChronicJson()));
+        // 在用的药。前端拿它做「跨院用药冲突提示」的输入 ——
+        // 只提示不判断：我们不知道剂量、疗程、为什么要开（docs/08 §1）
+        data.put("medications", patientService.parseJsonList(p.getMedicationJson()));
         return ApiResult.ok(data);
     }
 
