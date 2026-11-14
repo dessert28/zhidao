@@ -76,11 +76,7 @@ export type ModelState =
  * <p>所以这里指向同源的 `/`（BFF 的模型代理路由）。
  * 好处：无 CORS、服务端可缓存（第二次启动不再依赖外网）、
  * 镜像挂了只需改服务端一个环境变量。
- *
- * <p>用相对路径而不是绝对 URL → 请求自动同源，
- * 部署到哪个域名都不用改代码。
  */
-const DEFAULT_REMOTE_HOST = '';
 
 /** 模型仓库。Xenova 是 transformers.js 官方的 ONNX 转换仓库 */
 const MODEL_ID = 'Xenova/distilbert-base-multilingual-cased-ner-hrl';
@@ -126,21 +122,25 @@ export function onModelStateChange(fn: (s: ModelState) => void): () => void {
 /**
  * 解析 remoteHost（transformers.js 拼 URL 的前缀）。
  *
- * <p>空字符串是**有效值**，表示"用同源相对路径"。
- * 注意不能给成 `location.origin`：那会让 dev 期变成
- * `http://localhost:5173/Xenova/...`，虽然也能命中 BFF，
- * 但生产部署换域名时就要改代码。相对路径天然跟着页面走。
+ * <p><b>必须是绝对 URL。</b>
  *
- * <p>localStorage 覆盖留给"临时换源调试"：
- * {@code localStorage.setItem('zhidao:hf-mirror', 'https://hf-mirror.com')}
- * —— 但注意那样会绕开 BFF，浏览器 CORS 会拦（见文件头说明）。
+ * <p>第一版这里返回空字符串，想让 transformers.js 拼出同源的相对路径
+ * {@code /Xenova/.../resolve/main/config.json}。实测**不行**：
+ * 空字符串状态下它没有发出任何模型请求，也不报错，
+ * 最后在推理时报 "this.tokenizer is not a function" ——
+ * 因为 tokenizer 压根没加载成功，而错误信息离真正原因隔了十万八千里。
+ *
+ * <p>所以用 {@code location.origin}：拼出来仍是同源请求（不会触发 CORS），
+ * 部署换域名时它自动跟着页面走，不需要改代码。
  */
 function remoteHost(): string {
   if (typeof localStorage !== 'undefined') {
     const override = localStorage.getItem('zhidao:hf-mirror');
-    if (override !== null) return override;
+    if (override) return override;
   }
-  return DEFAULT_REMOTE_HOST;
+  // SSR / 非浏览器环境下没有 location，回退到官方源（Node 侧有代理兜底）
+  if (typeof location === 'undefined') return 'https://huggingface.co';
+  return location.origin;
 }
 
 /* ============================ 加载 ============================ */
@@ -252,8 +252,17 @@ export async function detectEntities(raw: string): Promise<ModelEntity[] | null>
     }
 
     return entities;
-  } catch {
-    // 推理失败不改变 state —— 模型本身是好的，可能只是这一句太长
+  } catch (err) {
+    /*
+     * 推理失败不改变 state —— 模型权重是好的，可能只是这一句太长或者
+     * 后端（wasm/webgpu）在某个输入上崩了。
+     *
+     * 但**必须留下痕迹**：第一版这里是空 catch，
+     * 结果是无头浏览器里推理整条静默失败、界面显示"模型已就绪"
+     * 却一个实体都标不出来，排查时完全无从下手。
+     * 吞异常没问题，吞掉异常的名字不行。
+     */
+    console.warn('[ner] 推理失败，本轮退回纯规则遮蔽:', err instanceof Error ? err.message : err);
     return null;
   }
 }

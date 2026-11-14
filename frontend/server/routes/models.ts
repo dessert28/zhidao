@@ -119,11 +119,28 @@ modelRoutes.get('/:repo{.+}/resolve/main/:file{.+}', async (c) => {
 
   const cached = cachePathFor(repo, file);
 
+  /*
+   * Content-Type 必须按扩展名给，**不能一律 octet-stream**。
+   *
+   * transformers.js 读文件后按 content-type 决定怎么解析：
+   * application/json → 当配置/词表解析；octet-stream → 当二进制缓冲。
+   *
+   * 第一版一律返回 octet-stream，症状是：config.json 与 tokenizer.json
+   * 全部 200 拿到，但 pipeline 认为 tokenizer 没加载成功，
+   * 最后报 "this.tokenizer is not a function" —— 报错点和真实原因
+   * 隔了整整两层，靠读代码根本想不到。
+   */
+  const contentTypeFor = (name: string): string => {
+    if (/\.json$/i.test(name)) return 'application/json';
+    if (/\.txt$/i.test(name)) return 'text/plain; charset=utf-8';
+    return 'application/octet-stream';
+  };
+
   /* ---------- 命中缓存：直接吐本地文件 ---------- */
   if (cached && existsSync(cached)) {
     const data = await readFile(cached);
     return c.body(new Uint8Array(data), 200, {
-      'Content-Type': 'application/octet-stream',
+      'Content-Type': contentTypeFor(file),
       // 模型文件是内容寻址的（同名即同内容），可以放心长缓存
       'Cache-Control': 'public, max-age=31536000, immutable',
       'X-Zhidao-Cache': 'hit',
@@ -150,7 +167,7 @@ modelRoutes.get('/:repo{.+}/resolve/main/:file{.+}', async (c) => {
   }
 
   const headers: Record<string, string> = {
-    'Content-Type': resp.headers.get('content-type') ?? 'application/octet-stream',
+    'Content-Type': contentTypeFor(file),
     'Cache-Control': 'public, max-age=31536000, immutable',
     'X-Zhidao-Cache': 'miss',
   };

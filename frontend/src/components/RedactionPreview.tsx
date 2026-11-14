@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { redact, summarizeHits, type PiiType } from '../lib/privacy/redact';
-import { mergeHits, type ModelEntityLike } from '../lib/privacy/merge';
+import { mergeHits, type ModelEntityLike, type RedactionHitLike } from '../lib/privacy/merge';
 import { useModelState } from '../hooks/useModelState';
 
 const TYPE_LABEL: Record<PiiType, string> = {
@@ -40,31 +40,10 @@ const TYPE_LABEL: Record<PiiType, string> = {
  * 而且模型可能永远下不下来（网络受限）。规则结果必须先出来，
  * 用户看到"至少这些已经被遮了"才安心。
  */
-function Highlighted({ raw }: { raw: string }) {
-  const [modelHits, setModelHits] = useState<ModelEntityLike[] | null>(null);
+function Highlighted({ raw, hits }: { raw: string; hits: RedactionHitLike[] }) {
   const modelState = useModelState();
 
-  // 规则结果：同步算出来，先渲染
-  const ruleResult = useMemo(() => redact(raw), [raw]);
-
-  // 模型结果：异步补充。raw 变化时重新跑
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const { detectEntities } = await import('../lib/privacy/ner');
-      const entities = await detectEntities(raw);
-      if (!cancelled) setModelHits(entities);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [raw]);
-
   const parts = useMemo(() => {
-    const hits = mergeHits(ruleResult.hits, modelHits);
-
     // hits 的 start/end 基于原文，而 text 已替换过，长度不同。
     // 这里改为直接在原文上按区间切分，自己拼替换文本 —— 避免位置错位。
     const segs: Array<{ kind: 'text' | 'masked'; value: string }> = [];
@@ -80,7 +59,7 @@ function Highlighted({ raw }: { raw: string }) {
       segs.push({ kind: 'text', value: raw.slice(cursor) });
     }
     return { segs, hits };
-  }, [raw, ruleResult, modelHits]);
+  }, [raw, hits]);
 
   return (
     <div className="space-y-2">
@@ -157,7 +136,63 @@ function ModelStatus({ state }: { state: ReturnType<typeof useModelState> }) {
 
 export function RedactionPreview({ raw }: { raw: string }) {
   const [open, setOpen] = useState(false);
-  const count = useMemo(() => redact(raw).hits.length, [raw]);
+
+  /*
+   * 模型检测必须在**折叠状态下也开始跑**，不能只在展开时才启动。
+   *
+   * 第一版把 Highlighted（含 detectEntities 的 effect）放在 open 分支里，
+   * 结果是：用户不点"查看"就永远不会加载模型，
+   * 而顶栏那行计数只统计规则命中 —— 显示"未检测到个人信息"，
+   * 实际上自由叙述里的姓名根本没检查过。
+   *
+   * 这是隐私产品里最坏的一种 bug：不是漏了功能，是**给了错误的安全感**。
+   * 所以现在提到外层，输入一出现就开始检测。
+   */
+  const [modelHits, setModelHits] = useState<ModelEntityLike[] | null>(null);
+  const modelState = useModelState();
+  const ruleResult = useMemo(() => redact(raw), [raw]);
+
+  useEffect(() => {
+    if (!raw.trim()) {
+      setModelHits(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { detectEntities } = await import('../lib/privacy/ner');
+      const entities = await detectEntities(raw);
+      if (!cancelled) setModelHits(entities);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [raw]);
+
+  // 计数也走合并后的结果，否则顶栏与展开后的内容会对不上
+  const merged = useMemo(() => mergeHits(ruleResult.hits, modelHits), [ruleResult, modelHits]);
+  const count = merged.length;
+
+  /**
+   * 顶栏文案必须反映"模型有没有参与"。
+   *
+   * <p>三种状态不能都写成"未检测到个人身份信息"：
+   * <ul>
+   *   <li>模型就绪且 0 命中 → 可以放心说"未检测到"</li>
+   *   <li>模型加载中 → 说"正在检查"，因为结果还没齐</li>
+   *   <li>模型不可用 → 必须说清楚"只做了规则检查"，
+   *       否则"未检测到"是一句误导</li>
+   * </ul>
+   */
+  const summary = (() => {
+    if (count > 0) return `将遮蔽 ${count} 处个人信息`;
+    if (modelState.status === 'ready') return '未检测到个人身份信息';
+    if (modelState.status === 'loading') return '正在检查（本地模型加载中）';
+    if (modelState.status === 'unavailable') return '规则检查未命中（本地模型不可用）';
+    return '未检测到个人身份信息';
+  })();
+
+  /** 只有模型确认就绪、且没命中时，绿点才成立 */
+  const confident = count === 0 && modelState.status === 'ready';
 
   if (!raw.trim()) return null;
 
@@ -171,12 +206,11 @@ export function RedactionPreview({ raw }: { raw: string }) {
       >
         <span
           className={
-            'h-1.5 w-1.5 rounded-full ' + (count > 0 ? 'bg-rose-500' : 'bg-green-500')
+            'h-1.5 w-1.5 rounded-full ' +
+            (count > 0 ? 'bg-rose-500' : confident ? 'bg-green-500' : 'bg-amber-400')
           }
         />
-        <span className="text-xs text-gray-600">
-          {count > 0 ? `将遮蔽 ${count} 处个人信息` : '未检测到个人身份信息'}
-        </span>
+        <span className="text-xs text-gray-600">{summary}</span>
         <span className="ml-auto text-xs text-gray-400">{open ? '收起' : '查看'}</span>
       </button>
 
@@ -185,7 +219,7 @@ export function RedactionPreview({ raw }: { raw: string }) {
           <div className="mb-1.5 text-xs font-medium text-gray-500">
             AI 实际收到的内容
           </div>
-          <Highlighted raw={raw} />
+          <Highlighted raw={raw} hits={merged} />
           <p className="mt-2 text-xs leading-relaxed text-gray-400">
             遮蔽在你这台设备上完成，原文从未发送。被划掉的部分没有离开过浏览器。
           </p>
