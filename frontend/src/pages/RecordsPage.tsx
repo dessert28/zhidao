@@ -36,6 +36,7 @@ import {
 } from '../lib/api';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
 import { uploadRecord } from '../lib/db/upload';
+import { IMAGE_PRIVACY_NOTICE } from '../lib/db/ocr';
 
 /** 院区配色。同一个 code 永远同一个颜色，跨页面一致 */
 const HOSPITAL_TONE: Record<string, string> = {
@@ -239,7 +240,7 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="file"
-            accept=".txt,.md,.pdf,text/plain,application/pdf"
+            accept=".txt,.md,.pdf,text/plain,application/pdf,image/png,image/jpeg,image/webp"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setMsg(null);
@@ -257,8 +258,16 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         </div>
 
         <p className="mt-2 text-xs leading-relaxed text-gray-400">
-          当前支持纯文本（.txt / .md）与文本型 PDF。扫描件（只有图片的 PDF）暂不支持，会明确提示。原文只存在你这台设备上，服务器收到的只有脱敏后的摘要。
-          图片识别在规划中。
+          当前支持纯文本（.txt / .md）、文本型 PDF 与报告图（PNG / JPG / WebP）。
+          扫描件 PDF 暂不支持，会明确提示。
+        </p>
+
+        {/*
+          图像路径的隐私提示必须显眼且常驻。
+          这是唯一一条原图会离开设备的路径 —— 藏起来说不过去。
+        */}
+        <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+          {IMAGE_PRIVACY_NOTICE}
         </p>
 
         {msg ? (

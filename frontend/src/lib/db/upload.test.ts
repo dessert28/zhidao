@@ -111,10 +111,12 @@ describe('上传：隐私边界', () => {
 });
 
 describe('上传：不支持的输入', () => {
-  it('图片等非文本非 PDF 格式明确拒绝', async () => {
+  it('未知格式（如 .docx）明确拒绝', async () => {
     const { uploadRecord } = await import('./upload');
     const r = await uploadRecord({
-      file: new File(['\x89PNG'], 'scan.png', { type: 'image/png' }),
+      file: new File(['PK'], 'record.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
       visitDate: '2026-11-01',
       hospitalCode: 'MOCK-A',
     });
@@ -125,6 +127,21 @@ describe('上传：不支持的输入', () => {
     }
     // 拒绝了就不该有任何网络请求
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('未知图片格式（如 gif）被识别模块拒绝', async () => {
+    /*
+     * 图片现在支持了（PNG/JPG/WebP），但 gif 不在支持列表。
+     * 拒绝发生在 ocr 封装层，话术是"暂不支持这种格式"。
+     */
+    const { uploadRecord } = await import('./upload');
+    const r = await uploadRecord({
+      file: new File(['GIF89a'], 'scan.gif', { type: 'image/gif' }),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.stage).toBe('unsupported');
   });
 
   it('假的 PDF（内容非法）走解析失败，而不是"格式不支持"', async () => {

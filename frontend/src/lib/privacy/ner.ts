@@ -138,9 +138,16 @@ function remoteHost(): string {
     const override = localStorage.getItem('zhidao:hf-mirror');
     if (override) return override;
   }
-  // SSR / 非浏览器环境下没有 location，回退到官方源（Node 侧有代理兜底）
-  if (typeof location === 'undefined') return 'https://huggingface.co';
-  return location.origin;
+  /*
+   * 非浏览器环境下没有 location，回退到官方源（Node 侧有代理兜底）。
+   *
+   * 这里用 globalThis 取值而不是直接写 location：
+   * 这个模块会被服务端（routes/ocr.ts → redact）间接触及，
+   * 而 server 的 tsconfig 里没有 DOM lib，直接写 location 编译不过。
+   * globalThis 在两边都存在。
+   */
+  const loc = (globalThis as { location?: { origin: string } }).location;
+  return loc?.origin ?? 'https://huggingface.co';
 }
 
 /* ============================ 加载 ============================ */

@@ -238,7 +238,7 @@ mvn test                 # 28 passed
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 工具层 | ✅ 封装层已实现（`tools/mcp-hospital.ts`） | `list_slots`/`hold_slot`/`list_hospitals`，签名与 MCP tool schema 一致（`name`+`description`+`inputSchema`+`handler`）；**按 docs/10 D3 主动不做真握手** —— 评委看的是工具编排能力 |
 | RAG 混合检索 | ✅ 双路 + RRF 已实现（**默认关闭**） | 默认走内存 BM25（零依赖，评委不用装 Docker）；`PGVECTOR_ENABLED=true` 时启用 BM25 + pgvector 双路 RRF(k=60) 融合。**向量层是哈希向量化，不是神经网络嵌入** —— 换真模型只改 `embed()`，阈值需重新标定 |
-| 多模态 | ⚠️ 输入输出都有，缺图像 | 语音输入 + TTS 播报 + 端侧 ONNX 脱敏均已通（全部浏览器内完成）；病历上传支持纯文本与**文本型 PDF**，扫描件与图片识别未接 |
+| 多模态 | ⚠️ 输入输出都有，缺图像 | 语音输入 + TTS 播报 + 端侧 ONNX 脱敏均为浏览器内完成；病历上传支持纯文本、文本型 PDF 与**报告图识别**（VLM） |
 | 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
 | 多实例部署 | ❌ 单实例，会话在内存 | 省赛不引 Redis；国赛加时只改 `SessionStore` 一个接口 |
 | 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |

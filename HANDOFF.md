@@ -189,7 +189,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。**按 docs/10 D3 不做真握手** |
 | ~~向量检索~~ | ✅ **2026-11-15 已实现并实测** | `rag/embed.ts` + `rrf.ts` + `vector-store.ts`；pgvector 0.8.7 真链路验证通过。默认关闭，`PGVECTOR_ENABLED=true` 开启 |
 | ~~PDF 文本提取~~ | ✅ **2026-11-15 已实现** | `src/lib/db/pdf.ts`；只处理文本型 PDF，扫描件明确拒绝 |
-| 图像 / 照片识别 | 多模态少一个模态 | 需 VLM，D4 定为 P1，仍未接 |
+| ~~图像 / 照片识别~~ | ✅ **2026-11-15 已实现并实测** | `server/ocr/recognize.ts` + `/api/ocr/report`。**唯一一条原图离开设备的路径**，界面上常驻隐私提示 |
 
 ### ✅ 前后端已打通（2026-11-15）
 

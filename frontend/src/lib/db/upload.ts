@@ -57,14 +57,35 @@ const TEXT_EXT = /\.(txt|md|text)$/i;
 /**
  * 把文件读成文本。
  *
- * <p>两种输入走不同路径，但**输出汇合到同一条隐私链路**。
- * 这一层不区分来源，所以隐私边界不会因为多了 PDF 而退化。
+ * <p>三种输入走不同路径，但**输出汇合到同一条隐私链路**：
+ * 纯文本直接读，PDF 提取文字，图片走 VLM 识别。
+ * 这一层不区分来源，之后的存原文与脱敏逻辑完全一致。
+ *
+ * <p><b>但图片有一个本质区别必须在界面上说明</b>：
+ * 文本与 PDF 的原文从不离开设备，而图片**必须发给模型服务商**
+ * 才能被识别。文案见 `ocr.ts` 的 `IMAGE_PRIVACY_NOTICE`。
  */
 async function readAsText(
   file: File,
 ): Promise<{ ok: true; text: string } | { ok: false; stage: 'read' | 'unsupported'; message: string }> {
   const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
   const isText = TEXT_EXT.test(file.name) || file.type.startsWith('text/');
+  const isImage = /^image\//i.test(file.type);
+
+  if (isImage) {
+    // 动态 import：识别封装与后续依赖只在选图时加载
+    const { recognizeImage } = await import('./ocr');
+    const r = await recognizeImage(file);
+    if (!r.ok) {
+      return { ok: false, stage: 'unsupported', message: r.message };
+    }
+    /*
+     * 用识别出的文本走后续链路。
+     * 注意这里的 text 已经过服务端 redact 兜底（见 routes/ocr.ts），
+     * 但前端仍会再脱敏一次 —— 两道不为过。
+     */
+    return { ok: true, text: r.text };
+  }
 
   if (isPdf) {
     // 动态 import：pdfjs 有数百 KB（含 worker），不进首屏
@@ -92,7 +113,7 @@ async function readAsText(
   return {
     ok: false,
     stage: 'unsupported',
-    message: `暂不支持「${file.name}」这种格式。当前支持纯文本（.txt/.md）与文本型 PDF；图片识别在规划中。`,
+    message: `暂不支持「${file.name}」这种格式。当前支持纯文本（.txt/.md）、文本型 PDF 与报告图（PNG/JPG/WebP）。`,
   };
 }
 

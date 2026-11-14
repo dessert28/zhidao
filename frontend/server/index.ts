@@ -18,6 +18,7 @@ import { chatRoutes } from './routes/chat.js';
 import { healthRoutes } from './routes/health.js';
 import { modelRoutes } from './routes/models.js';
 import { backendRoutes } from './routes/backend-proxy.js';
+import { ocrRoutes } from './routes/ocr.js';
 
 loadEnv();
 
@@ -41,6 +42,14 @@ export function createApp(opts: AppOptions = {}) {
    * 前端写 `/api/backend/records` 就知道这是"转发到后端"。
    */
   app.route('/api/backend', backendRoutes);
+  /*
+   * 报告图识别：/api/ocr/report
+   *
+   * 这是唯一会把非文本内容交给模型服务商的路径 ——
+   * 图片像素没法在浏览器里脱敏，识别必须发生在能看到图的地方。
+   * 识别出的文本在出关口再脱敏一次（见 routes/ocr.ts 的说明）。
+   */
+  app.route('/api/ocr', ocrRoutes);
   /*
    * 模型文件代理。路径刻意与 HuggingFace 保持一致
    * （/{repo}/resolve/main/{file}），这样 transformers.js 只要把
