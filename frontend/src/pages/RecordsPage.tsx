@@ -19,7 +19,7 @@
  *    藏着不显示等于白做。
  * ------------------------------------------------------------------ */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ensureLogin,
@@ -34,6 +34,7 @@ import {
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
+import { detectDuplicateExams } from '../lib/exam/duplicate';
 
 /** 院区配色。同一个 code 永远同一个颜色，跨页面一致 */
 const HOSPITAL_TONE: Record<string, string> = {
@@ -119,6 +120,7 @@ export default function RecordsPage() {
       {!state.loading && !state.failure ? (
         <>
           {state.profile ? <ProfileStrip profile={state.profile} /> : null}
+          <DuplicateExamSection records={state.records} />
           <RemindersSection
             items={state.reminders}
             onMark={onMark}
@@ -273,6 +275,86 @@ function RemindersSection({
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/**
+ * 跨院重复检查提示。
+ *
+ * <p>这是 README §2 承诺的第三个差异化。检测逻辑在 `lib/exam/duplicate.ts`
+ * （纯函数，17 条用例覆盖误报与漏报两个方向）。
+ *
+ * <p>文案原则：**陈述事实 + 建议询问，不下结论**。
+ * 不说"你被重复检查了"（那是指控医院），
+ * 也不说"这次不用查了"（那是医学判断）。
+ * 说"就诊时可以告诉医生已经做过"——把决定权交回患者和医生。
+ *
+ * <p>没有检出时整个区块不渲染：空状态提示"没有发现重复检查"
+ * 只会让用户以为系统在邀功。
+ */
+function DuplicateExamSection({ records }: { records: MedicalRecord[] }) {
+  const findings = useMemo(
+    () =>
+      detectDuplicateExams(
+        records.map((r) => ({
+          id: r.id,
+          hospitalCode: r.hospitalCode,
+          visitDate: r.visitDate,
+          department: r.department,
+          ocrText: r.ocrText,
+          diagnosisBrief: r.diagnosisBrief,
+        })),
+      ),
+    [records],
+  );
+
+  if (findings.length === 0) return null;
+
+  return (
+    <section>
+      <SectionTitle>
+        跨院重复检查
+        <span className="ml-2 text-xs font-normal text-gray-400">
+          发现 {findings.length} 项
+        </span>
+      </SectionTitle>
+
+      <div className="space-y-2">
+        {findings.map((f) => (
+          <div
+            key={f.item}
+            className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"
+          >
+            <div className="flex items-start gap-2">
+              <span className="mt-1 shrink-0 text-sm" aria-hidden="true">
+                🔁
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-amber-900">{f.message}</div>
+
+                {/* 两次检查的具体出处：用户要能自己核对，而不是只信一句结论 */}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {f.occurrences.map((o, i) => (
+                    <span key={i} className="flex items-center gap-1.5">
+                      {i > 0 ? <span className="text-xs text-amber-400">→</span> : null}
+                      <span className="rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs text-amber-800">
+                        {hospitalName(o.hospitalCode)} · {shortDate(o.visitDate)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+
+                <p className="mt-1.5 text-xs leading-relaxed text-amber-700">{f.rationale}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-2 text-xs leading-relaxed text-gray-400">
+        我们只根据你上传的病历做提示，不知道医生的检查目的。是否真的重复，请让医生判断。
+      </p>
     </section>
   );
 }
