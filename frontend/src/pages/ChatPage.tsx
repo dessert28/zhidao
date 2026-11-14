@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useEventStream } from '../hooks/useEventStream';
+import { useSpeechInput } from '../hooks/useSpeechInput';
 import { TurnView } from '../components/EventRenderer';
 import { RedactionPreview } from '../components/RedactionPreview';
 import { redact } from '../lib/privacy/redact';
@@ -24,6 +25,23 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * 语音输入。
+   *
+   * 识别结果**追加到输入框并聚焦**，不自动发送 —— 医学词识别错率不低
+   * （"心悸"→"心急"），让人过一眼再发。这也是「AI 可控性」的具体表现：
+   * 模型和识别都在帮忙，但最后按发送的必须是人。
+   */
+  const speech = useSpeechInput({
+    onFinal: (text) => {
+      setInput((prev) => {
+        const sep = prev && !prev.endsWith(' ') && !prev.endsWith('，') ? '' : '';
+        return prev ? `${prev}${sep}${text}` : text;
+      });
+      taRef.current?.focus();
+    },
+  });
 
   // 新内容出现时滚到底部
   useEffect(() => {
@@ -96,7 +114,56 @@ export default function ChatPage() {
       {/* 输入区：固定在底部，移动端不遮挡 */}
       <div className="sticky bottom-0 -mx-4 mt-4 border-t border-gray-100 bg-gray-50/95 px-4 py-3 backdrop-blur">
         {input.trim() ? <div className="mb-2"><RedactionPreview raw={input} /></div> : null}
+
+        {/* 语音状态：正在听 / 出错。两种都要给可见反馈，否则用户以为按钮坏了 */}
+        {speech.listening ? (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2">
+            <span className="flex gap-0.5" aria-hidden="true">
+              <span className="h-3 w-0.5 animate-pulse bg-brand-600" />
+              <span className="h-3 w-0.5 animate-pulse bg-brand-600 [animation-delay:150ms]" />
+              <span className="h-3 w-0.5 animate-pulse bg-brand-600 [animation-delay:300ms]" />
+            </span>
+            <span className="text-xs text-brand-800">
+              {speech.interim ? `正在听：${speech.interim}` : '正在听，请说话…'}
+            </span>
+          </div>
+        ) : null}
+
+        {speech.error ? (
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <span className="text-xs leading-relaxed text-amber-900">{speech.error}</span>
+            <button
+              type="button"
+              onClick={speech.clearError}
+              className="ml-auto shrink-0 text-xs text-amber-700 underline"
+            >
+              知道了
+            </button>
+          </div>
+        ) : null}
+
         <div className="flex items-end gap-2">
+          {/*
+            语音按钮放在发送左侧、拇指热区（docs/04 §7.4）。
+            不支持时**不禁用**：禁用只会让人以为是 bug，
+            点一下给出"为什么不能用"才是可用的降级。
+          */}
+          <button
+            type="button"
+            onClick={speech.toggle}
+            aria-label={speech.listening ? '停止语音输入' : '语音输入'}
+            aria-pressed={speech.listening}
+            title={speech.listening ? '停止' : '按住说话（Chrome / Edge）'}
+            className={
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ' +
+              (speech.listening
+                ? 'border-brand-600 bg-brand-600 text-white'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-brand-300 hover:text-brand-700')
+            }
+          >
+            <MicIcon />
+          </button>
+
           <textarea
             ref={taRef}
             value={input}
@@ -145,5 +212,31 @@ export default function ChatPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 麦克风图标。
+ *
+ * <p>手写 SVG 而不是引 lucide-react：整个项目只用到这一个图标，
+ * 为它拉一个图标库会让首屏多一个 chunk。docs/04 §7.5 也写了"不定图标库"。
+ */
+function MicIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
   );
 }
