@@ -82,9 +82,10 @@
 | M5 | 生成式 UI 组件字典（6 类卡片）+ 前端页面 | ✅ 完成 |
 | M6 | Spring Boot 业务层（含 5 组接口 + 提醒引擎） | ✅ **完成（2026-11-14）** |
 | M7 | RAG 检索 + 引用展示（BM25 + 自纠循环） | ✅ 完成 |
-| M8 | 真实 LLM 调用（`planViaLlm` / `triage.analyze` / `reviewer.judge`） | ⬜ **下一步，最高优先** |
+| M8 | 真实 LLM 调用（`planViaLlm` / `triage.analyze` / `reviewer.judge`） | ✅ 代码完成（`eb88258`），**待真实 Key 验证** |
+| M9 | 语音输入（Web Speech API） | ✅ 完成（`63c409e`） |
 
-> 测试总量：**前端 195 + 后端 28 = 223 用例全绿**。
+> 测试总量：**前端 222 + 后端 28 = 250 用例全绿**。
 > `pnpm exec tsc -b --noEmit` 与 `pnpm exec vite build` 均通过，`mvn test` 通过。
 
 ---
@@ -93,7 +94,7 @@
 
 1. **接入真实 LLM**：`planViaLlm` / `triage.analyze` / `reviewer.judge` 三处 deps 接口都已留好，
    当前都没人传实现。这是「大模型集成质量 8%」唯一的缺口
-2. 端侧多模态：语音输入（Web Speech）优先，ONNX 脱敏次之
+2. 多模态补输出侧：TTS（`speechSynthesis`）优先，端侧 ONNX 脱敏次之
 3. 文档收尾：`02` 补 OpenMed 说明与端侧小模型对比表；`.archify/zhidao-v2.html` 重跑 finalize
 4. 省赛提交前打磨：视觉细节 + 演示视频脚本
 

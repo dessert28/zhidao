@@ -104,7 +104,7 @@ backend/
 ```
 
 **测试**：
-- 前端 `cd frontend; pnpm exec vitest run` → **195 用例**
+- 前端 `cd frontend; pnpm exec vitest run` → **222 用例**
 - 后端 `cd backend; mvn test` → **28 用例**（17 接口集成 + 11 提醒引擎）
 
 ### 实测通过的链路
@@ -151,41 +151,45 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 > **2026-11-14 状态更新**：原 P0 两项（后端接口层、提醒引擎）已经做完并推送。
 > 下面换成现在真正剩下的活。
 
-### ✅ 已完成（本轮）
+### ✅ 已完成（本轮，2026-11-14）
 
 | 节点 | 内容 | 提交 |
 | --- | --- | --- |
 | 后端接口层 | 五组接口 + JWT + 适配器注册表 + 17 条集成测试 | `0a7ba72` |
 | 提醒引擎 | 三条可解释规则 + dedupe 幂等 + 11 条测试 | `72e6d35` |
 | 集成修复 | BFF 挂载 404、卡片样式全丢、输入区压页脚、shadcn 配置 | `7c42bef` |
+| 文档校订 | 按代码现状改写 README/HANDOFF/docs 04·12，清掉"已规划"冒充"已完成" | `b591f36` |
+| 真实 LLM | `server/llm/client.ts` + 三个 Agent 注入点 + 12 条降级测试 | `eb88258` |
+| 语音输入 | Web Speech + 15 条降级测试，输入三模态第一模态落地 | `63c409e` |
 
-### P0 · 把 LLM 真正接上（这是最大的分数缺口）
+### P0 · 用真实 Key 跑通一次（唯一没验证的事）
 
-`frontend/server/routes/chat.ts` 里的 `planViaLlm` **不管有没有 API Key 都走规则路由**，
-注释还写着「M2 接」。而 M2 早就标完成了 —— 这是文档与代码之间最要命的一处脱节。
+代码路径已经通了，但**没有用真实 API Key 端到端验证过** —— 开发机在沙箱里，
+没有外网 Key。所以现在只能保证"降级路径正确"，不能保证"模型输出被正确解析"。
 
-README 里「大模型集成质量 8%」这一档，目前**没有任何真实模型调用**支撑。
-要做的最小闭环：
+要做：
 
-1. `.env` 填 `LLM_API_KEY`（`.env.example` 已有占位）
-2. `planViaLlm` 换成真调用（`ai` SDK 的 `generateObject` + zod schema）
-3. `makeTriage({ analyze })` 与 `makeReviewer({ judge })` 也传进去 —— 两个 Agent 的
-   deps 接口**早就留好了**，只是没人传
-4. 补一个「无 Key 时自动降级」的测试，保证评委本地跑不白屏这条性质不被破坏
+1. `cd frontend && cp .env.example .env`，填 `LLM_API_KEY`
+2. `pnpm dev`，打开 `http://localhost:5173/api/health` 确认 `"mode":"llm"`
+3. 发一句「肚子疼三天了，是胀痛」，看 `plan.reason` 是不是模型写的
+   （规则路由的文案是固定的「识别到症状描述，交由分诊采集槽位」）
+4. **重点看 triage 的科室名**：模型可能返回"消化内科"以外的写法，
+   现有 `summarizeTriage` 只是拼接，不做校验。如果出现奇怪科室名，
+   在 `llm-impl.ts` 的 TriageSchema 里收紧约束，而不是改 UI
 
-**验收标准**：填了 Key 之后，同一句话走的是模型（`plan.reason` 是模型写的而不是
-「识别到症状描述，交由分诊采集槽位」这句固定文案），且断网/无 Key 仍能跑通四条链路。
+**已知风险**：`generateObject` 依赖模型支持 JSON schema。
+DeepSeek / Qwen / Moonshot 的 OpenAI 兼容层都支持，但**小参数模型可能返回不合 schema 的 JSON**，
+届时会走 `askObject` 的 catch → 返回 null → 规则兜底（这是正确行为，不会崩）。
 
-### P1 · 端侧多模态（README 承诺过，代码里是空壳）
+### P1 · 端侧 ONNX 脱敏（唯一剩下的"空壳"）
 
 | 位置 | 现状 | 要做 |
 | --- | --- | --- |
-| `redact.ts` 的 `detectWithModel()` | 直接 `return null` | 接 Transformers.js + WebGPU |
-| 语音输入 | 没有 | Web Speech API |
-| `speech` 事件的播放 | 只显示「已生成语音播报」 | 真 TTS |
+| `redact.ts` 的 `detectWithModel()` | 直接 `return null` | 接 Transformers.js + WebGPU，补自由叙述里的姓名与罕见地名 |
+| `speech` 事件的播放 | 只显示「已生成语音播报」 | 真 TTS（`speechSynthesis` 即可，成本很低） |
 
-**取舍建议**：这三项里如果只做一件，做**语音输入**。它是唯一能在演示视频里
-一眼看出来的；ONNX 脱敏模型要下载数 MB 权重，现场网络不可控。
+**取舍建议**：如果只剩半天，做 **TTS**。`window.speechSynthesis` 是浏览器内置，
+二十行代码就能让"AI 念给你听"这件事成真，演示效果好过几 MB 的 ONNX 权重。
 
 ### P2 · 文档收尾
 
@@ -272,7 +276,7 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
-pnpm exec vitest run                                       # 195 用例
+pnpm exec vitest run                                       # 222 用例
 pnpm exec vite build                                       # 生产构建
 
 cd ../backend
@@ -295,7 +299,7 @@ git push origin master
 ```
 
 提交信息要**如实**：做了一半就说做了一半，占了位就说明是占位。
-历史里现在有 13 个提交，每个都能对应到一件具体的事，保持这个粒度。
+历史里现在有 19 个提交，每个都能对应到一件具体的事，保持这个粒度。
 
 **远程仓库**：`git@github.com:dessert28/zhidao.git`（SSH），分支 `master`。
 新机器要先把 SSH key 配好，或者改成 HTTPS + token。
@@ -314,7 +318,7 @@ git push origin master
 | 2026-12-10 ~ 12-21 | 国赛报名 |
 | 2026-12-27 | 国赛提交 |
 
-省赛这 4 天的取舍：**接上真 LLM > 语音输入 > 文档收尾**。
+省赛这 4 天的取舍：**用真 Key 验证一遍 > TTS > 端侧 ONNX > 文档收尾**。
 第一项决定「大模型集成质量 8%」这一档拿不拿得到，
 第二项决定演示视频有没有一个让人记住的镜头，第三项只影响印象分。
 

@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-195%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
+[![tests](https://img.shields.io/badge/frontend%20tests-222%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
 
 ---
 
@@ -118,10 +118,10 @@
 
 | 官方考察点 | 分值 | 代码位置 | 怎么验证 |
 | --- | --- | --- | --- |
-| 大模型集成质量 | 8% | `frontend/server/agents/contract.ts` | 统一信封 + 四态 status，模型输出非法即降级。**⚠️ 真调用尚未接入**（`planViaLlm` 仍走规则路由），见 §7 已知不足 |
+| 大模型集成质量 | 8% | `frontend/server/llm/client.ts` + `agents/llm-impl.ts` | 统一信封 + 四态 status；三个 Agent 真调模型，坏输出/超时/无 Key 三级降级 |
 | Agent/工作流设计 | 8% | `frontend/server/agents/supervisor.ts` | 3 条降级阶梯：坏 JSON 重试→规则路由；超时→规则路由；冲突→固定串行 |
 | RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram（pgvector 待国赛） |
-| 多模态能力 | 5% | `frontend/src/lib/privacy/`（脱敏）/ 语音（**未接**） | 输入侧目前只有文本；语音与图像仍是规划 |
+| 多模态能力 | 5% | `src/hooks/useSpeechInput.ts` + `lib/privacy/` | 文本 + 语音输入已通（Web Speech，端侧转文字）；TTS 与图像仍缺 |
 | **AI 安全与可控性** | 4% | `frontend/server/agents/rules/red-flag.ts` | **5 类红线确定性规则表，命中即短路，全程不经 LLM** |
 | MCP/工具集成 | 4% | `frontend/server/agents/tools/`（规划） | 工具签名对齐 MCP schema（`name`+`inputSchema`+`handler`） |
 | 交互模式创新 | 7% | `frontend/server/render/registry.tsx` | 生成式 UI：服务端渲染 React 组件字典 → 序列化下发（6 类卡片已上线） |
@@ -134,7 +134,7 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 195 passed
+pnpm test          # 222 passed
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
@@ -152,7 +152,7 @@ mvn test                 # 28 passed
 | `肚子疼三天了，是胀痛` | `plan` → `department_card` → `token` → `review_trace` → `caveat` → `done` | 直接给科室 + 四维自检通过 |
 | `我头疼，建议吃点布洛芬吗` | `plan` → `clarify` → `done` | 越界提问被安全规则改写 |
 
-> 注：以上四条都走**规则路由**，因为尚未接入真实 LLM（见 §7）。规则路由本身就是设计的降级路径，
+> 注：以上四条是在**无 API Key 状态**下抓的报文，走规则路由。填了 `LLM_API_KEY` 之后三个 Agent 会真调模型，失败再降级回规则 —— 两种模式的事件流结构一致，这是刻意设计的。
 > 所以这四条链路在断网、无 API Key 的评委机器上表现完全一致。
 
 后端接口（同样是实测）：
@@ -230,15 +230,15 @@ mvn test                 # 28 passed
 
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
-| **真实 LLM 调用** | ❌ **未接入** | `planViaLlm` 目前有无密钥都走规则路由。这是**当前最大的分数缺口**（大模型集成质量 8%），已列为省赛前第一优先级 |
+| 真实 LLM 调用 | ⚠️ 代码已接入，**未用真实 Key 验证** | 三个注入点（Supervisor/Triage/Reviewer）已接 `llm-impl.ts`；无 Key 自动走规则路由。本次开发环境无外网 Key，端到端只验证了"降级"路径 |
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 真握手 | ⚠️ 工具签名对齐，不起独立 server 进程 | 5 天排期取舍；评委看 MCP 4% 看的是工具编排能力，不是握手协议 |
 | RAG 自纠循环 | ⚠️ 做了「检索+引用+改写重试」，无 pgvector | 省赛用 BM25 + bigram 单路召回（零依赖、可单测）；混合检索 RRF 见 `docs/09` §5 |
-| 多模态 | ⚠️ 只有文本输入 | 语音输入、TTS 播报、端侧 ONNX 脱敏均为空壳（`detectWithModel()` 直接 `return null`） |
+| 多模态 | ⚠️ 文本 + 语音输入，缺输出侧 | 语音输入已通（Chrome/Edge，需 HTTPS 或 localhost）；TTS 只显示文字；端侧 ONNX 脱敏仍是空壳（`detectWithModel()` 直接 `return null`） |
 | 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
 | 多实例部署 | ❌ 单实例，会话在内存 | 省赛不引 Redis；国赛加时只改 `SessionStore` 一个接口 |
 | 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 195 + 后端 28 用例，重点覆盖红线规则、四维自审降级、提醒引擎幂等、接口状态码 |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 222 + 后端 28 用例，重点覆盖红线规则、四维自审降级、LLM 降级、语音降级、提醒引擎幂等、接口状态码 |
 
 ### 7.1 5 天排期的现实约束
 
@@ -299,7 +299,7 @@ cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则�
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 195 passed
+pnpm test                   # 222 passed
 pnpm typecheck              # tsc -b --noEmit，strict
 
 # 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）
