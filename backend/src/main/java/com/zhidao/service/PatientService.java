@@ -2,6 +2,7 @@ package com.zhidao.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhidao.common.BizException;
+import com.zhidao.dto.NewRecordRequest;
 import com.zhidao.dto.ProfileUpdateRequest;
 import com.zhidao.entity.MedicalRecord;
 import com.zhidao.entity.PatientProfile;
@@ -125,6 +126,36 @@ public class PatientService {
     }
 
     /* ============================ 就诊记录 ============================ */
+
+    /**
+     * 新增一条就诊记录。
+     *
+     * <p><b>这个方法接收的 {@code ocrText} 必须是脱敏后的。</b>
+     * 调用方（前端 lib/db/upload.ts）在本地 redact() 之后才发过来，
+     * 原文只存在浏览器的 IndexedDB 里。
+     *
+     * <p>为什么在这里再挡一道：如果哪天真有人把原文传上来，
+     * 我们无法从内容上分辨（脱敏前后都是中文）。能做的只有
+     * 在文档与命名上反复强调，并让字段名本身带警示 ——
+     * {@code ocrText} 而不是 {@code rawText} 就是这个用意。
+     */
+    @Transactional
+    public MedicalRecord addRecord(long userId, NewRecordRequest req) {
+        MedicalRecord r = new MedicalRecord();
+        r.setUserId(userId);
+        r.setHospitalCode(req.hospitalCode());
+        r.setVisitDate(req.visitDate());
+        r.setDepartment(req.department());
+        r.setDiagnosisBrief(req.diagnosisBrief());
+        r.setOcrText(req.ocrText());
+        r.setFileName(req.fileName());
+        r.setFileSize(req.fileSize());
+        // 上传的都是"患者自己传的"，与后端录入区分开
+        r.setSource("UPLOAD");
+        recordMapper.insert(r);
+        log.info("新增就诊记录 userId={} hospital={} date={}", userId, req.hospitalCode(), req.visitDate());
+        return r;
+    }
 
     /** 跨院时间轴：按就诊日期倒序。不做分页 —— 个人病历量级远达不到需要分页 */
     public List<MedicalRecord> listRecords(long userId) {

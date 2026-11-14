@@ -243,6 +243,31 @@ export function getRecords() {
   return request<{ total: number; records: MedicalRecord[] }>('/api/patient/records');
 }
 
+/**
+ * 提交一份就诊记录的**脱敏摘要**。
+ *
+ * <p>注意 `ocrText` 这个字段名来自后端 schema，但它装的是
+ * `redact()` 之后的文本 —— 原文只在浏览器 IndexedDB 里。
+ * 调用方（lib/db/upload.ts）负责保证这个顺序。
+ *
+ * <p>当前后端还没有这个写接口（PatientController 只提供了 GET），
+ * 所以这里先按契约写好，等后端补 POST 即可生效。
+ */
+export function createRecord(input: {
+  hospitalCode: string;
+  visitDate: string;
+  department: string | null;
+  diagnosisBrief: string;
+  ocrText: string;
+  fileName: string;
+  fileSize: number;
+}) {
+  return request<MedicalRecord>('/api/patient/records', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export function getProfile() {
   return request<PatientProfile>('/api/patient/profile');
 }

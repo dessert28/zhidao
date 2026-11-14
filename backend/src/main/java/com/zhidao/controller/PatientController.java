@@ -3,6 +3,7 @@ package com.zhidao.controller;
 import com.zhidao.common.ApiResult;
 import com.zhidao.entity.MedicalRecord;
 import com.zhidao.entity.PatientProfile;
+import com.zhidao.dto.NewRecordRequest;
 import com.zhidao.dto.ProfileUpdateRequest;
 import com.zhidao.security.CurrentUser;
 import com.zhidao.service.PatientService;
@@ -72,5 +73,17 @@ public class PatientController {
         data.put("records", list);
         data.put("byHospital", patientService.groupByHospital(userId));
         return ApiResult.ok(data);
+    }
+
+    /**
+     * 新增就诊记录。
+     *
+     * <p>请求体里的 {@code ocrText} 是**脱敏后**的正文 ——
+     * 前端在浏览器里 redact() 之后才发，原文留在 IndexedDB。
+     * 这个接口因此不需要也不应该接收任何未脱敏内容。
+     */
+    @PostMapping("/records")
+    public ApiResult<MedicalRecord> addRecord(@Valid @RequestBody NewRecordRequest req) {
+        return ApiResult.ok(patientService.addRecord(CurrentUser.id(), req));
     }
 }

@@ -35,6 +35,7 @@ import {
   type ReminderTask,
 } from '../lib/api';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
+import { uploadRecord } from '../lib/db/upload';
 
 /** 院区配色。同一个 code 永远同一个颜色，跨页面一致 */
 const HOSPITAL_TONE: Record<string, string> = {
@@ -120,6 +121,7 @@ export default function RecordsPage() {
       {!state.loading && !state.failure ? (
         <>
           {state.profile ? <ProfileStrip profile={state.profile} /> : null}
+          <UploadSection onUploaded={load} />
           <DuplicateExamSection records={state.records} />
           <RemindersSection
             items={state.reminders}
@@ -151,6 +153,130 @@ function Skeleton() {
         <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-100" />
       ))}
     </div>
+  );
+}
+
+/**
+ * 上传病历。
+ *
+ * <p>这是整个项目最核心的隐私契约的**执行现场**：
+ * 原文存 IndexedDB → 本地脱敏 → 只发脱敏结果。
+ * 顺序写在 `lib/db/upload.ts` 里，这里只负责收集参数与展示状态。
+ *
+ * <p>为什么把"原文留本地"写在按钮旁边而不是藏在说明里：
+ * 用户在上传的那一刻最关心"这个文件会被传到哪"，
+ * 那一刻给出的答案才有人读。
+ */
+function UploadSection({ onUploaded }: { onUploaded: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [visitDate, setVisitDate] = useState(() => new Date().toLocaleDateString('sv-SE'));
+  const [hospitalCode, setHospitalCode] = useState('MOCK-A');
+  const [department, setDepartment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+
+  const submit = async () => {
+    if (!file) return;
+    setBusy(true);
+    setMsg(null);
+
+    const r = await uploadRecord({ file, visitDate, hospitalCode, department: department.trim() });
+
+    setBusy(false);
+    if (r.ok) {
+      setMsg({
+        tone: 'ok',
+        text: `已保存。原文留在本机，提交给服务器的是脱敏后的 ${r.redactedLength} 字（遮蔽 ${r.maskedCount} 处）。`,
+      });
+      setFile(null);
+      onUploaded();
+    } else {
+      setMsg({ tone: r.stage === 'backend' ? 'warn' : 'err', text: r.message });
+    }
+  };
+
+  return (
+    <section>
+      <SectionTitle>上传病历</SectionTitle>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="text-xs text-gray-500">
+            就诊日期
+            <input
+              type="date"
+              value={visitDate}
+              max={new Date().toLocaleDateString('sv-SE')}
+              onChange={(e) => setVisitDate(e.target.value)}
+              className="mt-1 block h-9 w-full rounded-lg border border-gray-200 px-2 text-sm text-gray-800"
+            />
+          </label>
+
+          <label className="text-xs text-gray-500">
+            院区
+            <select
+              value={hospitalCode}
+              onChange={(e) => setHospitalCode(e.target.value)}
+              className="mt-1 block h-9 w-full rounded-lg border border-gray-200 px-2 text-sm text-gray-800"
+            >
+              <option value="MOCK-A">演示市第一人民医院</option>
+              <option value="MOCK-B">演示市中心医院</option>
+            </select>
+          </label>
+
+          <label className="text-xs text-gray-500 sm:col-span-2">
+            科室（可选）
+            <input
+              type="text"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              placeholder="如 内分泌科"
+              className="mt-1 block h-9 w-full rounded-lg border border-gray-200 px-2 text-sm text-gray-800"
+            />
+          </label>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept=".txt,.md,text/plain"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              setMsg(null);
+            }}
+            className="text-xs text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:text-gray-700"
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!file || busy}
+            className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {busy ? '处理中…' : '上传'}
+          </button>
+        </div>
+
+        <p className="mt-2 text-xs leading-relaxed text-gray-400">
+          当前支持纯文本（.txt / .md）。原文只存在你这台设备上，服务器收到的只有脱敏后的摘要。
+          PDF 与图片识别在规划中。
+        </p>
+
+        {msg ? (
+          <p
+            className={
+              'mt-2 rounded-lg px-3 py-2 text-xs leading-relaxed ' +
+              (msg.tone === 'ok'
+                ? 'bg-green-50 text-green-700'
+                : msg.tone === 'warn'
+                  ? 'bg-amber-50 text-amber-800'
+                  : 'bg-red-50 text-red-700')
+            }
+          >
+            {msg.text}
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
