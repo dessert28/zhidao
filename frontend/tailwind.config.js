@@ -1,6 +1,19 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // ⚠️ server/ 必须在这里出现，否则生成式 UI 的卡片全部裸奔。
+  //
+  // 原因：卡片是服务端 renderToString 出来的 HTML 字符串，
+  // 客户端只把它塞进 innerHTML，那些 class 名<b>从不出现在 src/ 的源码里</b>。
+  // 而 Tailwind 是静态扫描源码找类名的 —— 扫不到就不生成 CSS，
+  // 结果是卡片结构是对的、样式全无（曾经自检结果卡的四个维度竖着堆成一片）。
+  //
+  // 这个坑很隐蔽：pages 里自己写的组件样式都正常，只有"服务端渲染后下发"的
+  // 那几张卡偏偏没样式，很容易被误判成"React 渲染没生效"。
+  content: [
+    './index.html',
+    './src/**/*.{ts,tsx}',
+    './server/**/*.{ts,tsx}',
+  ],
   theme: {
     extend: {
       colors: {

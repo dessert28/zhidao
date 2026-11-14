@@ -42,7 +42,15 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
+    /*
+      高度用 dvh - header(56) - main 的上下 padding(48)，把输入区稳定压在底部。
+      之前算的是 8rem（=128px），比实际可用高度少了一截，
+      结果输入区下面还留着一条空白，而屏幕底部又什么都没接住，
+      在 800px 高的窗口里看起来像"内容漂在半空"。
+      dvh 而不是 vh：移动端浏览器的地址栏收起/展开会改变可视高度，
+      用 vh 会让输入框被地址栏遮住半截。
+    */
+    <div className="flex min-h-[calc(100dvh-7rem)] flex-col">
       {turns.length === 0 ? (
         <div className="flex flex-1 flex-col justify-center py-8">
           <h1 className="text-xl font-semibold tracking-tight text-gray-900">
@@ -67,7 +75,7 @@ export default function ChatPage() {
           </div>
 
           <p className="mt-6 text-xs leading-relaxed text-gray-400">
-            示例可直接点击。所有内容仅作就诊参考，不构成诊断。
+            示例可直接点击。所有内容仅作就诊参考，不构成诊断。如有急症请立即拨打 120。
           </p>
         </div>
       ) : (

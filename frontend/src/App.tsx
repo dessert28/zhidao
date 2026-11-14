@@ -50,7 +50,12 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+      {/*
+        main 用 flex-col，是为了让页面内部的 min-h-[calc(100dvh-…)] 有一个
+        明确的参照：外层不给 flex 上下文，内层的 flex-1 就撑不满，
+        输入区会浮在半空而不是贴在内容底部。
+      */}
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6">
         <Suspense
           fallback={
             <div className="py-20 text-center text-sm text-gray-400">载入中…</div>
@@ -60,11 +65,19 @@ export default function App() {
         </Suspense>
       </main>
 
-      <footer className="border-t border-gray-100 px-4 py-4 text-center text-xs leading-relaxed text-gray-400">
-        本系统只做信息整理、风险提示与就诊准备，不提供诊断、用药或停药建议。
-        <br />
-        如有急症请立即拨打 120。
-      </footer>
+      {/*
+        页脚只在「内容页」常驻（病历页那种长页面）。
+        对话页在手机上应该是满屏的：页脚常驻会顶掉一屏里最宝贵的那几十像素，
+        而且它和输入区叠在一起（曾经在 1280×800 下两者互相压住半个字高）。
+        判断依据是路由：问诊页隐藏页脚，隐私声明改由对话页底部那行小字承担。
+      */}
+      {pathname !== '/' ? (
+        <footer className="border-t border-gray-100 px-4 py-4 text-center text-xs leading-relaxed text-gray-400">
+          本系统只做信息整理、风险提示与就诊准备，不提供诊断、用药或停药建议。
+          <br />
+          如有急症请立即拨打 120。
+        </footer>
+      ) : null}
     </div>
   );
 }
