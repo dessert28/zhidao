@@ -16,6 +16,8 @@ import { makeTriage, type TriageInputPayload } from '../agents/triage.js';
 import { makeReviewer, sanitizeAnswer, type ReviewInputPayload } from '../agents/reviewer.js';
 import { makeRetrieval } from '../agents/retrieval.js';
 import { checkRedFlag } from '../agents/rules/red-flag.js';
+import { isLlmConfigured } from '../llm/client.js';
+import { analyzeViaLlm, judgeViaLlm, planViaLlm as planWithModel } from '../agents/llm-impl.js';
 
 export const chatRoutes = new Hono();
 
@@ -38,6 +40,28 @@ const EMPTY_FACTS: SessionFacts = {
   currentMedications: [],
   bookingState: null,
 };
+
+/**
+ * 三个 Agent 的 LLM 依赖注入点。
+ *
+ * <p><b>为什么集中在这里判断，而不是各 Agent 里各判一次</b>：
+ * 「没配 Key 就整条走规则」是一个**全局性质**，不是三个独立开关。
+ * 分散判断的话，只要有一处忘了判空，评审本地就会因为 401 而白屏 ——
+ * 而 README 明确承诺过"无 Key 也能完整演示"。
+ *
+ * <p>返回 null 时各 Agent 走各自的规则兜底，且会在 {@code degraded} 里标注，
+ * 前端 review_trace 卡能看到。
+ */
+function llmDeps() {
+  if (!isLlmConfigured()) {
+    return { triage: {}, reviewer: {}, plan: planViaLlm };
+  }
+  return {
+    triage: { analyze: analyzeViaLlm },
+    reviewer: { judge: judgeViaLlm },
+    plan: planViaLlm,
+  };
+}
 
 chatRoutes.post('/', async (c) => {
   let body: ChatBody;
@@ -74,7 +98,8 @@ chatRoutes.post('/', async (c) => {
       });
 
       /* ---------- 第 1 步：Supervisor 决策 ---------- */
-      const supervisor = makeSupervisor({ plan: planViaLlm });
+      const deps = llmDeps();
+      const supervisor = makeSupervisor({ plan: deps.plan });
       const plan = await supervisor(baseInput({ text: body.text }));
       emitEvents(emit, plan.events);
 
@@ -92,7 +117,7 @@ chatRoutes.post('/', async (c) => {
       /* ---------- 第 2 步：按决策分发 ---------- */
       switch (decision) {
         case 'triage': {
-          const triage = makeTriage();
+          const triage = makeTriage(deps.triage);
           const triageInput: TriageInputPayload = {
             text: body.text,
             knownSlots: body.knownSlots ?? {},
@@ -109,7 +134,7 @@ chatRoutes.post('/', async (c) => {
           const answer = summarizeTriage(triageOut.payload.departments);
           emit({ type: 'token', text: answer });
 
-          const reviewer = makeReviewer();
+          const reviewer = makeReviewer(deps.reviewer);
           const reviewInput: ReviewInputPayload = {
             candidateAnswer: answer,
             evidenceCount: triageOut.evidence.length,
@@ -146,7 +171,7 @@ chatRoutes.post('/', async (c) => {
           emit({ type: 'token', text: p.answer });
 
           // 检索到的答案同样要过 Reviewer —— 有引用不代表内容一定安全
-          const reviewer = makeReviewer();
+          const reviewer = makeReviewer(deps.reviewer);
           const reviewed = await reviewer(
             baseInput<ReviewInputPayload>({
               candidateAnswer: p.answer,
@@ -206,13 +231,27 @@ function summarizeTriage(
 }
 
 /**
- * LLM 规划。未配置密钥时直接走规则路由 —— 这是刻意设计：
- * 无密钥也能跑通主链路，评审本地起项目不会白屏。
+ * Supervisor 的规划来源。
+ *
+ * <p><b>这里曾经是个占位</b>：不管有没有 Key 都 {@code return routeByRules(...)}，
+ * 注释还写着"真实调用在 M2 接"。而 M2 早就标完成了 —— 于是 README 里
+ * 「大模型集成质量 8%」这一档，实际上没有任何模型调用支撑。
+ *
+ * <p>现在的行为：
+ * <ul>
+ *   <li>没配 Key → 规则路由（保证评委本地可跑）</li>
+ *   <li>配了 Key → 真调模型；模型返回 null（超时/坏输出）时，
+ *       {@code makeSupervisor} 的降级阶梯会接手，先用规则路由，
+ *       并在 {@code degraded} 里标出来</li>
+ * </ul>
+ *
+ * <p>注意这里**不做重试**：supervisor.ts 自己有一次"坏 JSON 重试"，
+ * 因为那是它契约的一部分。这一层再加一次只会让 8 秒超时变成 16 秒。
  */
 async function planViaLlm(input: AgentInput<{ text: string }>): Promise<unknown> {
-  if (!process.env.LLM_API_KEY) {
+  if (!isLlmConfigured()) {
     return routeByRules(input.payload.text);
   }
-  // 真实调用在 M2 接（ai SDK streamObject）；M1 先复用规则路由保证可演示
-  return routeByRules(input.payload.text);
+  // 返回 null 时 supervisor 会走规则兜底，不会抛出
+  return planWithModel(input.payload.text);
 }
