@@ -17,6 +17,7 @@ import { loadEnv } from './env.js';
 import { chatRoutes } from './routes/chat.js';
 import { healthRoutes } from './routes/health.js';
 import { modelRoutes } from './routes/models.js';
+import { backendRoutes } from './routes/backend-proxy.js';
 
 loadEnv();
 
@@ -33,6 +34,13 @@ export function createApp(opts: AppOptions = {}) {
 
   app.route('/api/health', healthRoutes);
   app.route('/api/chat', chatRoutes);
+  /*
+   * 后端代理：/api/backend/* → Spring Boot 的 /*
+   *
+   * 放在 /api 下而不是根路径，因为它本质是业务 API 而不是静态资源；
+   * 前端写 `/api/backend/records` 就知道这是"转发到后端"。
+   */
+  app.route('/api/backend', backendRoutes);
   /*
    * 模型文件代理。路径刻意与 HuggingFace 保持一致
    * （/{repo}/resolve/main/{file}），这样 transformers.js 只要把

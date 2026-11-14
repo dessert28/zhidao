@@ -1,0 +1,252 @@
+/* ------------------------------------------------------------------
+ * 后端 API 客户端
+ *
+ * 所有请求走 `/api/backend/*`，由 BFF 转发到 Spring Boot。
+ * 前端代码里**不出现 8080** —— 换环境不用改代码（见 backend-proxy.ts 的说明）。
+ *
+ * 设计要点：
+ *
+ * 1. **Token 存 sessionStorage 而不是 localStorage**。
+ *    关掉标签页就失效，共享电脑上更安全；代价是重开页面要重新登录，
+ *    对演示反而是好事（每次从干净状态开始）。
+ *
+ * 2. **失败一律返回结构化结果，不抛异常**。
+ *    界面上「后端没启动」和「没有数据」必须区分开 ——
+ *    前者要提示去起后端，后者是正常的空状态。混在一起会让用户
+ *    以为系统坏了。
+ *
+ * 3. **后端不可用不影响 AI 对话**。这是刻意的降级：
+ *    病历/提醒读不到，但问诊照样能做。整个页面的核心功能
+ *    不该被一个附属接口拖垮。
+ * ------------------------------------------------------------------ */
+
+const BASE = '/api/backend';
+
+/* ============================ 类型 ============================ */
+
+/** 后端统一响应体（ApiResult<T>） */
+interface ApiResult<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+/** 后端不可用的原因，供 UI 显示可执行的提示 */
+export type BackendFailure =
+  | { kind: 'unreachable'; message: string }
+  | { kind: 'unauthorized' }
+  | { kind: 'disabled'; message: string }
+  | { kind: 'error'; message: string };
+
+export type BackendResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; failure: BackendFailure };
+
+export interface MedicalRecord {
+  id: number;
+  hospitalCode: string;
+  visitDate: string;
+  department: string | null;
+  diagnosisBrief: string | null;
+  ocrText: string | null;
+  fileName: string | null;
+  source: string;
+}
+
+export interface ReminderTask {
+  id: number;
+  refType: string;
+  refId: number | null;
+  title: string;
+  detail: string | null;
+  reason: string | null;
+  dueAt: string;
+  status: string;
+}
+
+export interface PatientProfile {
+  userId: number;
+  birthYear: number | null;
+  age: number | null;
+  gender: string | null;
+  allergies: string[];
+  chronics: string[];
+}
+
+export interface BookingOrder {
+  id: number;
+  hospitalCode: string;
+  department: string;
+  visitTime: string;
+  status: string;
+  externalOrderNo: string | null;
+  remark: string | null;
+}
+
+/* ============================ Token ============================ */
+
+const TOKEN_KEY = 'zhidao:token';
+
+export function getToken(): string | null {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    // 隐私模式下 sessionStorage 可能不可用，降级为"未登录"
+    return null;
+  }
+}
+
+function setToken(t: string): void {
+  try {
+    sessionStorage.setItem(TOKEN_KEY, t);
+  } catch {
+    /* 存不了就存不了，这次会话内仍能用内存值 */
+    memoryToken = t;
+  }
+}
+
+/** sessionStorage 不可用时的兜底 */
+let memoryToken: string | null = null;
+
+export function currentToken(): string | null {
+  return getToken() ?? memoryToken;
+}
+
+export function clearToken(): void {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+  memoryToken = null;
+}
+
+/* ============================ 底层请求 ============================ */
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<BackendResult<T>> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  const token = currentToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (init.body) headers['Content-Type'] = 'application/json';
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...init, headers });
+  } catch {
+    // 连 BFF 都失败，说明 dev server 自己挂了
+    return { ok: false, failure: { kind: 'unreachable', message: '前端服务未响应。' } };
+  }
+
+  // 503 是 BFF 明确告知"后端不可达"或"后端未启用"
+  if (res.status === 503) {
+    const body = await safeJson<{ error?: string; message?: string }>(res);
+    return {
+      ok: false,
+      failure: {
+        kind: body?.error === 'backend_disabled' ? 'disabled' : 'unreachable',
+        message: body?.message ?? '后端不可用。',
+      },
+    };
+  }
+
+  if (res.status === 401) {
+    clearToken();
+    return { ok: false, failure: { kind: 'unauthorized' } };
+  }
+
+  if (!res.ok) {
+    const body = await safeJson<{ message?: string }>(res);
+    return {
+      ok: false,
+      failure: { kind: 'error', message: body?.message ?? `请求失败（${res.status}）` },
+    };
+  }
+
+  const body = await safeJson<ApiResult<T>>(res);
+  if (!body) {
+    return { ok: false, failure: { kind: 'error', message: '返回内容不是合法 JSON。' } };
+  }
+  if (body.code !== 0) {
+    return { ok: false, failure: { kind: 'error', message: body.message || '业务处理失败。' } };
+  }
+  return { ok: true, data: body.data };
+}
+
+async function safeJson<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/* ============================ 业务接口 ============================ */
+
+/**
+ * 登录并保存 token。
+ *
+ * <p>演示账号 demo / demo1234 是种子数据，不是密钥 —— 它就写在
+ * README 与 data.sql 注释里，目的是让评委不用注册就能看功能。
+ */
+export async function login(
+  username = 'demo',
+  password = 'demo1234',
+): Promise<BackendResult<{ token: string; username: string }>> {
+  const r = await request<{ token: string; username: string }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  if (r.ok) setToken(r.data.token);
+  return r;
+}
+
+/** 确保已登录：没有 token 就自动用演示账号登一次 */
+export async function ensureLogin(): Promise<BackendResult<true>> {
+  if (currentToken()) return { ok: true, data: true };
+  const r = await login();
+  return r.ok ? { ok: true, data: true } : { ok: false, failure: r.failure };
+}
+
+export function getRecords() {
+  return request<{ total: number; records: MedicalRecord[] }>('/api/patient/records');
+}
+
+export function getProfile() {
+  return request<PatientProfile>('/api/patient/profile');
+}
+
+export function getReminders() {
+  return request<ReminderTask[]>('/api/reminders');
+}
+
+export function markReminder(id: number, action: 'done' | 'skip') {
+  return request<ReminderTask>(`/api/reminders/${id}/${action}`, { method: 'POST' });
+}
+
+export function getBookings() {
+  return request<BookingOrder[]>('/api/bookings');
+}
+
+/* ============================ 展示辅助 ============================ */
+
+/** 院区编码 → 展示名。后端只存 code，名字在海报里没意义但界面上要有 */
+export function hospitalName(code: string): string {
+  const map: Record<string, string> = {
+    'MOCK-A': '演示市第一人民医院',
+    'MOCK-B': '演示市中心医院',
+  };
+  return map[code] ?? code;
+}
+
+/** ISO 时间 → 「11月2日」这种短格式 */
+export function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
