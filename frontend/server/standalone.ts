@@ -8,15 +8,43 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+/*
+ * 生产模式同样要读 .env。
+ *
+ * createApp() 内部确实会调 loadEnv()，但那是「模块被 import 时」——
+ * 而 standalone.ts 在它<b>之前</b>就读取了 process.env.PORT。
+ * 更关键的是，如果只在 index.ts 里加载，任何在 createApp 之前
+ * 读取环境变量的代码都会拿到未初始化的值。
+ *
+ * 这里显式先加载一次，保证顺序确定。loadEnv 是幂等的，重复调用无害。
+ */
+import { loadEnv } from './env.js';
 import { createApp } from './index.js';
+
+loadEnv();
 
 const PORT = Number(process.env.PORT ?? 5173);
 const DIST = resolve(import.meta.dirname, '../dist');
 
+/**
+ * 生产模式下静态文件根目录。
+ *
+ * <p>serveStatic 的 root 是相对 <b>进程工作目录</b> 解析的，
+ * 而我们算好的 DIST 是绝对路径。直接把绝对路径传给它，
+ * 在 Windows 上会被拼成 "C:\\...\\D:\\project\\...\\dist" 这种非法路径。
+ * 所以这里转成相对 cwd 的路径；转不了就退化用 dist。
+ */
+import { relative, isAbsolute } from 'node:path';
+
+const staticRoot = (() => {
+  const rel = relative(process.cwd(), DIST);
+  return rel.startsWith('..') || isAbsolute(rel) ? DIST : rel;
+})();
+
 const app = createApp({ allowOrigin: undefined });
 
 // SPA 回退：非 /api 的请求一律交给 index.html（React Router 自己接管路由）
-app.use('/*', serveStatic({ root: DIST }));
+app.use('/*', serveStatic({ root: staticRoot }));
 app.get('*', (c) => {
   try {
     const html = readFileSync(resolve(DIST, 'index.html'), 'utf-8');
