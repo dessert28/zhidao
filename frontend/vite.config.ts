@@ -4,7 +4,8 @@ import { fileURLToPath, URL } from 'node:url';
 import type { ViteDevServer } from 'vite';
 
 /**
- * React 18 + Vite 5 —— 决策见 docs/10-技术决策-补充.md D7
+ * React 18 + Vite 6 —— 决策见 docs/10-技术决策-补充.md D7
+ * （设计文档写的是 Vite 5，pnpm install 实际解析到 6.4.6；API 兼容，无迁移成本）
  *
  * 三个关键点：
  *   1. bff 插件：dev 期把 Node BFF 挂到同一端口，彻底绕开跨域
@@ -12,6 +13,7 @@ import type { ViteDevServer } from 'vite';
  *   3. 端侧模型不在此处理 —— Transformers.js 走动态 import，
  *      否则 ONNX runtime 会被打进首屏
  */
+
 /**
  * 把 Node BFF 挂到 Vite dev server 上。
  *

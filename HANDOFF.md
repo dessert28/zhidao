@@ -1,8 +1,8 @@
 # 交接文档 · 换机器继续开发
 
-> 更新：2026-11-13 21:55 ｜ 适用：任何一台干净的电脑
+> 更新：2026-11-14 11:50 ｜ 适用：任何一台干净的电脑
 >
-> **省赛提交截止 2026-11-18**，现在离截止约 5 天。
+> **省赛提交截止 2026-11-18**，现在离截止约 4 天。
 > 这份文档的目标是：在新机器上 **30 分钟内**跑起来，并且知道下一步做什么。
 
 ---
@@ -65,8 +65,8 @@ D:\tools\maven\bin\mvn.cmd spring-boot:run
 启动后 <http://localhost:8080> 有 H2 控制台（`/h2-console`，JDBC URL 见 `application.yml`）。
 **不需要装 MySQL**——省赛用 H2 内存库，建表和种子数据在启动时自动执行。
 
-> 注意：后端目前只有骨架（实体 + Mapper + 异常处理 + 适配器），
-> **接口层还没写**，所以现在访问任何 `/api/**` 都是 404。这不影响前端演示。
+> 注意：后端接口层已于 2026-11-14 补齐，`/api/**` 不再是 404。
+> 演示账号 **demo / demo1234**，完整接口见 §三。
 
 ---
 
@@ -89,76 +89,109 @@ frontend/
       search.ts          BM25 + bigram 中文切分
     render/registry.tsx  6 类卡片的服务端渲染
     routes/chat.ts       SSE 主入口，串起整条链路
+    routes/health.ts     健康检查（含 llmConfigured 标志）
   src/
     lib/privacy/redact.ts   端侧脱敏（7 类 PII）
+    lib/utils.ts            cn()：shadcn 组件依赖，2026-11-14 补齐
     hooks/useEventStream.ts 手写 SSE 消费
 backend/
   entity/ 6 个实体  mapper/ 6 个 Mapper
-  adapter/ HospitalAdapter 接口 + Mock 实现
-  common/ 统一响应体 + 全局异常处理
+  adapter/ HospitalAdapter 接口 + Mock 实现 + Registry（按 hospitalCode 分发）
+  service/  Auth / Patient / Booking / Reminder / ReminderEngine / Hospital
+  controller/ Auth / Patient / Booking / Reminder / Health 五组接口
+  security/ JWT 签发校验 + 过滤器 + CurrentUser
+  common/ 统一响应体 + 全局异常处理（按 code 段位映射 HTTP 状态）
 ```
 
-**测试：195 用例全绿**（`cd frontend; pnpm exec vitest run`）。
+**测试**：
+- 前端 `cd frontend; pnpm exec vitest run` → **195 用例**
+- 后端 `cd backend; mvn test` → **28 用例**（17 接口集成 + 11 提醒引擎）
 
 ### 实测通过的链路
 
-```text
-「空腹血糖偏高要注意什么」
-  → plan → tool_result(3 篇资料) → token(答案) → review_trace → caveat → done
-  引用卡 2092 字节，答案不含无关科室内容
-```
+**前端**（`POST /api/chat`，SSE，四条都已经在浏览器里点过）：
 
 ```text
-「我叫张三，手机13812345678，最近老是头晕」
-  → 浏览器内遮蔽为 「我叫［患者姓名］，手机138****5678，最近老是头晕」
-  → 服务端只收到遮蔽后的文本 → clarify(追问时长)
+「我爸突然胸口疼得厉害，还出冷汗」
+  → emergency（红卡）→ speech → done      ← 关键：没有 plan 事件
+
+「最近老是头晕」
+  → plan → clarify（追问时长）→ done
+
+「肚子疼三天了，是胀痛」
+  → plan → department_card(消化内科) → token → review_trace(通过) → caveat → done
+
+「我头疼，建议吃点布洛芬吗」
+  → plan → clarify → done
+```
+
+**后端**（`curl` 实测，演示账号 demo/demo1234）：
+
+```text
+POST /api/auth/login            → 200 + token
+GET  /api/patient/records       → 200，3 条跨院记录，byHospital 分 MOCK-A / MOCK-B
+GET  /api/bookings/slots?hospitalCode=MOCK-B&department=内分泌科&date=...
+                                → 200，4 个号源（MOCK-A 只有 2 个 —— 换院区有号）
+POST /api/bookings              → 200，院方成功才落库
+POST /api/bookings/1/complete   → 409（CREATED 不能直接变 COMPLETED）
+POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}（幂等）
+```
+
+**提醒引擎**（`@Scheduled` 每 5 分钟，实测日志）：
+
+```text
+[提醒引擎] userId=1 生成提醒「明天在演示市第一人民医院（示例）空腹抽血，今晚 22 点后禁食」，
+           原因：距「内分泌科」就诊还有 20 小时，且该科室的检查需要空腹
 ```
 
 ---
 
 ## 三、下一步做什么（按优先级，不是按顺序）
 
-### P0 · 后端接口层（课设必须，比赛加分）
+> **2026-11-14 状态更新**：原 P0 两项（后端接口层、提醒引擎）已经做完并推送。
+> 下面换成现在真正剩下的活。
 
-现在 `backend` 有骨架没接口，等于课设交不了。要补：
+### ✅ 已完成（本轮）
 
-1. `service/` 三个 Service：`PatientService`、`BookingService`、`ReminderService`
-2. `controller/` 对应三个 Controller，返回 `ApiResult<T>`
-3. `config/SecurityConfig` + `JwtUtil`：演示账号 `demo / demo1234` 能登录
-4. 至少一个 `HospitalAdapter` 的注册表（`Map<String, HospitalAdapter>` 按 `hospitalCode` 分发）
+| 节点 | 内容 | 提交 |
+| --- | --- | --- |
+| 后端接口层 | 五组接口 + JWT + 适配器注册表 + 17 条集成测试 | `0a7ba72` |
+| 提醒引擎 | 三条可解释规则 + dedupe 幂等 + 11 条测试 | `72e6d35` |
+| 集成修复 | BFF 挂载 404、卡片样式全丢、输入区压页脚、shadcn 配置 | `7c42bef` |
 
-**验收标准**：`curl localhost:8080/api/records` 能返回种子数据里的 3 条跨院记录。
+### P0 · 把 LLM 真正接上（这是最大的分数缺口）
 
-### P0 · 提醒引擎（比赛差异化，README 里已经承诺）
+`frontend/server/routes/chat.ts` 里的 `planViaLlm` **不管有没有 API Key 都走规则路由**，
+注释还写着「M2 接」。而 M2 早就标完成了 —— 这是文档与代码之间最要命的一处脱节。
 
-`adapter/` 已经写好，但**没有任何地方调用它**。要补 `ReminderEngine`：
+README 里「大模型集成质量 8%」这一档，目前**没有任何真实模型调用**支撑。
+要做的最小闭环：
 
-```java
-@Scheduled(cron = "${zhidao.reminder.scan-cron}")
-public void scan() { ... }
-```
+1. `.env` 填 `LLM_API_KEY`（`.env.example` 已有占位）
+2. `planViaLlm` 换成真调用（`ai` SDK 的 `generateObject` + zod schema）
+3. `makeTriage({ analyze })` 与 `makeReviewer({ judge })` 也传进去 —— 两个 Agent 的
+   deps 接口**早就留好了**，只是没人传
+4. 补一个「无 Key 时自动降级」的测试，保证评委本地跑不白屏这条性质不被破坏
 
-规则要可解释 —— `reminder_task.reason` 字段已经在 schema 里留好了：
+**验收标准**：填了 Key 之后，同一句话走的是模型（`plan.reason` 是模型写的而不是
+「识别到症状描述，交由分诊采集槽位」这句固定文案），且断网/无 Key 仍能跑通四条链路。
 
-- 距就诊 24 小时 + 科室有空腹项目 → 「今晚 22 点后禁食」
-- 距上次检查满 N 个月 → 「该复查了」
-- 预约单 `CREATED` 且距就诊不足 7 天 → 「还没确认」
+### P1 · 端侧多模态（README 承诺过，代码里是空壳）
 
-**验收标准**：启动后日志里出现至少一条带 `reason` 的提醒。
+| 位置 | 现状 | 要做 |
+| --- | --- | --- |
+| `redact.ts` 的 `detectWithModel()` | 直接 `return null` | 接 Transformers.js + WebGPU |
+| 语音输入 | 没有 | Web Speech API |
+| `speech` 事件的播放 | 只显示「已生成语音播报」 | 真 TTS |
 
-### P1 · 视觉打磨（UI/UX 占 10%，且省赛在即）
-
-`docs/12` §3.5 指出这块没有任何设计输入。要做：
-
-- 定主色和中文正文字体栈，写进 `docs/04` 新增的「视觉基调」一节
-- 问诊页、病历页、引用卡三个关键页面画一张布局草稿
-- 现在 `components.json` 还缺（shadcn/ui 手动配置没做）
+**取舍建议**：这三项里如果只做一件，做**语音输入**。它是唯一能在演示视频里
+一眼看出来的；ONNX 脱敏模型要下载数 MB 权重，现场网络不可控。
 
 ### P2 · 文档收尾
 
-- `docs/07` §5 还写着旧的 `src/lib/agents` 路径，实际已搬到 `server/`
-- `docs/02` 缺 OpenMed 说明和小模型对比表
-- `.archify/zhidao-v2.html` 仍是旧版（还画着 Next.js），要重跑 finalize
+- `docs/02` 缺 OpenMed 说明和小模型对比表 ⬜
+- `.archify/zhidao-v2.html` 仍是旧版（还画着 Next.js），要重跑 finalize ⬜
+- ~~`docs/12` §3.5「视觉基调未定」过时~~ ✅ 2026-11-14 已在 §3.5 标注已解决
 
 ### 明确不做（不要临时加回来）
 
@@ -166,6 +199,7 @@ public void scan() { ... }
 - 报表导出 / Excel 打印
 - Redis、消息队列（docs/10 D6 已决定省赛不用）
 - 真实医院对接（只有 Mock，答辩时如实说）
+- 视频模态（`docs/08` 已写明理由）
 
 ---
 
@@ -213,6 +247,26 @@ Start-Process -FilePath "D:\tools\maven\bin\mvn.cmd" -ArgumentList "-B","spring-
   -WorkingDirectory $PWD -RedirectStandardOutput boot.log -RedirectStandardError boot.err -NoNewWindow
 ```
 
+**中文 Windows 的编码地狱（2026-11-14 新踩，代价两小时）**
+
+`Charset.defaultCharset()` 在中文 Windows 上是 **GBK**。这会咬三处：
+
+| 环节 | 症状 | 修法 |
+| --- | --- | --- |
+| `maven-resources-plugin` 拷 `data.sql` | 中文全变乱码，**编译不报错** | `pom.xml` 设 `<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>` |
+| `maven-compiler-plugin` 编译源码 | 中文字面量变 `?`，**同样不报错** | 同上，同一条属性 |
+| fork 出的 JVM（test / spring-boot:run） | 读 UTF-8 文件二次损坏 | surefire `<argLine>-Dfile.encoding=UTF-8</argLine>` + spring-boot 插件 `<jvmArguments>-Dfile.encoding=UTF-8</jvmArguments>` |
+
+**四处都要设，缺一处就有一处中文是坏的**，而且没有任何报错。
+诊断方法：写一段小 Java 程序打印 `Charset.defaultCharset()` 和读出来的字符串内容。
+
+**Vite 插件里给 BFF 注册中间件必须同步**
+
+`configureServer` 里用 `void import(...).then(m => server.middlewares.use(...))` 会
+把中间件排到 Vite 自己的 SPA fallback 之后，**所有 `/api/*` 都返回 index.html**，
+HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
+用 `async configureServer` + `await import(...)` 然后在同一函数体内同步 `use()`。
+
 **验证命令**
 
 ```powershell
@@ -224,6 +278,7 @@ pnpm exec vite build                                       # 生产构建
 cd ../backend
 $env:JAVA_HOME = "D:\tools\jdk17"
 D:\tools\maven\bin\mvn.cmd -q -B compile -DskipTests       # 编译
+D:\tools\maven\bin\mvn.cmd -B test                          # 28 用例
 ```
 
 ---
@@ -240,7 +295,7 @@ git push origin master
 ```
 
 提交信息要**如实**：做了一半就说做了一半，占了位就说明是占位。
-历史里现在有 10 个提交，每个都能对应到一件具体的事，保持这个粒度。
+历史里现在有 13 个提交，每个都能对应到一件具体的事，保持这个粒度。
 
 **远程仓库**：`git@github.com:dessert28/zhidao.git`（SSH），分支 `master`。
 新机器要先把 SSH key 配好，或者改成 HTTPS + token。
@@ -254,13 +309,14 @@ git push origin master
 
 | 日期 | 事项 |
 | --- | --- |
-| **2026-11-18** | 省赛提交截止（还剩 5 天） |
+| **2026-11-18** | 省赛提交截止（还剩 4 天） |
 | 2027-01 上旬 | 评审反馈 |
 | 2026-12-10 ~ 12-21 | 国赛报名 |
 | 2026-12-27 | 国赛提交 |
 
-省赛这 5 天的取舍：**后端接口能跑通 > 提醒引擎有输出 > 视觉打磨 > 文档收尾**。
-前两项不做课设交不了，后两项影响的是评委印象分。
+省赛这 4 天的取舍：**接上真 LLM > 语音输入 > 文档收尾**。
+第一项决定「大模型集成质量 8%」这一档拿不拿得到，
+第二项决定演示视频有没有一个让人记住的镜头，第三项只影响印象分。
 
 ---
 

@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/tests-44%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
+[![tests](https://img.shields.io/badge/frontend%20tests-195%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
 
 ---
 
@@ -83,7 +83,7 @@
 
 ```
 ┌─ 浏览器（数据不出设备）────────────────────────────┐
-│  React 18 + Vite 5 SPA                             │
+│  React 18 + Vite 6 SPA                             │
 │  ├ 端侧脱敏  Transformers.js + WebGPU (OpenMed)    │
 │  ├ 语音问诊  Web Speech API                        │
 │  └ 病历原文  IndexedDB                             │
@@ -118,32 +118,52 @@
 
 | 官方考察点 | 分值 | 代码位置 | 怎么验证 |
 | --- | --- | --- | --- |
-| 大模型集成质量 | 8% | `frontend/server/agents/contract.ts` | 统一信封 + 四态 status，模型输出非法即降级 |
+| 大模型集成质量 | 8% | `frontend/server/agents/contract.ts` | 统一信封 + 四态 status，模型输出非法即降级。**⚠️ 真调用尚未接入**（`planViaLlm` 仍走规则路由），见 §7 已知不足 |
 | Agent/工作流设计 | 8% | `frontend/server/agents/supervisor.ts` | 3 条降级阶梯：坏 JSON 重试→规则路由；超时→规则路由；冲突→固定串行 |
-| RAG 技术应用 | 6% | 规划中（`docs/09` §5 已有 RRF SQL） | 混合检索 + rerank + 证据充分性反思，最多 2 轮自纠 |
-| 多模态能力 | 5% | `frontend/src/lib/privacy/`（规划） | 输入三模态（文本/语音/图像）+ 输出语音（TTS） |
+| RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram（pgvector 待国赛） |
+| 多模态能力 | 5% | `frontend/src/lib/privacy/`（脱敏）/ 语音（**未接**） | 输入侧目前只有文本；语音与图像仍是规划 |
 | **AI 安全与可控性** | 4% | `frontend/server/agents/rules/red-flag.ts` | **5 类红线确定性规则表，命中即短路，全程不经 LLM** |
 | MCP/工具集成 | 4% | `frontend/server/agents/tools/`（规划） | 工具签名对齐 MCP schema（`name`+`inputSchema`+`handler`） |
-| 交互模式创新 | 7% | `frontend/server/render/`（规划） | 生成式 UI：服务端渲染 React 组件字典 → 序列化下发 |
-| 前端性能优化 | 3% | `frontend/vite.config.ts` | 路由级 lazy + manualChunks + 端侧模型动态 import |
-| 端侧智能前瞻性 | — | `docs/04` §3.1 | 三个用途：PII 脱敏 / 症状槽位分类 / 离线兜底 |
+| 交互模式创新 | 7% | `frontend/server/render/registry.tsx` | 生成式 UI：服务端渲染 React 组件字典 → 序列化下发（6 类卡片已上线） |
+| 前端性能优化 | 3% | `frontend/vite.config.ts` + `src/router.tsx` | 路由级 lazy + manualChunks + 端侧模型动态 import |
+| 端侧智能前瞻性 | — | `docs/04` §7 | 三个用途：PII 脱敏 / 症状槽位分类 / 离线兜底（**后两项未接**） |
 
 ### 4.1 已经能跑的部分
 
 ```bash
+# 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 44 passed
+pnpm test          # 195 passed
 pnpm dev           # http://localhost:5173
+
+# 后端（Spring Boot + H2 内存库，免装 MySQL）
+cd backend
+mvn spring-boot:run      # http://localhost:8080，演示账号 demo / demo1234
+mvn test                 # 28 passed
 ```
 
-实测三条链路（`POST /api/chat`，SSE）：
+实测四条链路（`POST /api/chat`，SSE，报文为真实抓取）：
 
 | 输入 | 事件序列 | 说明 |
 | --- | --- | --- |
-| `我爸突然胸口疼得厉害` | `emergency` → `speech` → `done` | **没有 plan 事件** —— 证明在 LLM 之前短路 |
-| `最近老是头晕` | `plan` → `token` → `clarify` → `done` | 分诊采集槽位 |
-| `我想挂个内分泌科的号` | `plan` → `token` → `done` | decision=`schedule` |
+| `我爸突然胸口疼得厉害，还出冷汗` | `emergency` → `speech` → `done` | **没有 plan 事件** —— 证明在 LLM 之前短路 |
+| `最近老是头晕` | `plan` → `clarify` → `done` | 分诊采集槽位，追问时长 |
+| `肚子疼三天了，是胀痛` | `plan` → `department_card` → `token` → `review_trace` → `caveat` → `done` | 直接给科室 + 四维自检通过 |
+| `我头疼，建议吃点布洛芬吗` | `plan` → `clarify` → `done` | 越界提问被安全规则改写 |
+
+> 注：以上四条都走**规则路由**，因为尚未接入真实 LLM（见 §7）。规则路由本身就是设计的降级路径，
+> 所以这四条链路在断网、无 API Key 的评委机器上表现完全一致。
+
+后端接口（同样是实测）：
+
+| 接口 | 结果 |
+| --- | --- |
+| `POST /api/auth/login` | 200 + JWT（`demo` / `demo1234`） |
+| `GET /api/patient/records` | 200，3 条跨院记录，按 `MOCK-A` / `MOCK-B` 分组 |
+| `GET /api/bookings/slots` | 同一科室在两家院区号源数不同（换院区才有意义） |
+| `POST /api/bookings` | 院方成功才落库；同号重复下单 409 |
+| `POST /api/reminders/scan` | 手工触发提醒引擎，连续两次 `created` 为 `1` → `0`（幂等） |
 
 ---
 
@@ -192,7 +212,7 @@ pnpm dev           # http://localhost:5173
 
 | 位置 | 选型 | 说明 |
 | --- | --- | --- |
-| 前端 | React 18 + Vite 5 + TypeScript strict + pnpm | 赛道官方推荐清单内 |
+| 前端 | React 18 + Vite 6 + TypeScript strict + pnpm | 赛道官方推荐清单内 |
 | 路由/样式/组件 | React Router 6 + Tailwind + shadcn/ui | |
 | 状态 | Zustand（UI 态）+ TanStack Query（服务端态）+ 手写 SSE hook | SSE 不包进 Query，否则拿不到非 token 事件 |
 | AI 接入 | Vercel AI SDK（`useChat`）+ 自研状态机 | `streamUI` 依赖 RSC，已换成自研组件字典 |
@@ -210,23 +230,28 @@ pnpm dev           # http://localhost:5173
 
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
+| **真实 LLM 调用** | ❌ **未接入** | `planViaLlm` 目前有无密钥都走规则路由。这是**当前最大的分数缺口**（大模型集成质量 8%），已列为省赛前第一优先级 |
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 真握手 | ⚠️ 工具签名对齐，不起独立 server 进程 | 5 天排期取舍；评委看 MCP 4% 看的是工具编排能力，不是握手协议 |
-| RAG 自纠循环 | ⚠️ 省赛做「检索+引用」，自纠降级 | 审计结论：这是最难的部分，砍掉保主链；国赛补 |
+| RAG 自纠循环 | ⚠️ 做了「检索+引用+改写重试」，无 pgvector | 省赛用 BM25 + bigram 单路召回（零依赖、可单测）；混合检索 RRF 见 `docs/09` §5 |
+| 多模态 | ⚠️ 只有文本输入 | 语音输入、TTS 播报、端侧 ONNX 脱敏均为空壳（`detectWithModel()` 直接 `return null`） |
 | 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
 | 多实例部署 | ❌ 单实例，会话在内存 | 省赛不引 Redis；国赛加时只改 `SessionStore` 一个接口 |
 | 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 但红线规则与 Supervisor 降级有完整测试（44 用例） |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 195 + 后端 28 用例，重点覆盖红线规则、四维自审降级、提醒引擎幂等、接口状态码 |
 
 ### 7.1 5 天排期的现实约束
 
-省赛截止 **2026-11-18**。设计文档列了 11 个 P0，5 天装不下。**已按审计建议砍到 5 项**：
+省赛截止 **2026-11-18**。设计文档列了 11 个 P0，5 天装不下。**按审计建议砍到 5 项**，当前完成度：
 
-1. Agent 状态机 + Supervisor + Triage
-2. 端侧脱敏（OpenMed 现成方案）
-3. 红线规则引擎（纯规则表，已完成）
-4. 生成式 UI 组件字典 + 4-5 种事件
-5. RAG 只做"检索 + 引用展示"
+| # | 项 | 状态 |
+| --- | --- | --- |
+| 1 | Agent 状态机 + Supervisor + Triage | ✅ 完成（含 Reviewer / Retrieval 两个额外 Agent） |
+| 2 | 端侧脱敏 | ✅ 规则引擎完成（7 类 PII）；❌ ONNX 模型未接 |
+| 3 | 红线规则引擎（纯规则表） | ✅ 完成，25 条用例保护 |
+| 4 | 生成式 UI 组件字典 + 4-5 种事件 | ✅ 6 类卡片；14 种事件类型契约中实装 6 类 |
+| 5 | RAG「检索 + 引用展示」 | ✅ 完成（BM25 + 接地检查 + 引用卡） |
+| — | 后端接口层 + 提醒引擎 | ✅ **额外完成**（原计划国赛，提前落地） |
 
 砍掉的记入「后续演进」，国赛再补。**这个取舍是主动做的，不是没做完。**
 
@@ -239,20 +264,27 @@ zhidao/
 ├── frontend/
 │   ├── src/                  # 浏览器侧，不含任何密钥
 │   │   ├── types/            # Agent 契约（前后端共享唯一真源）
-│   │   ├── pages/ components/ lib/{privacy,audio,db}
-│   │   └── router.tsx
+│   │   ├── pages/ components/ lib/{privacy,utils}
+│   │   └── router.tsx        # 路由级 lazy（端侧模型不拖累首屏）
 │   ├── server/               # Node BFF：密钥、SSE、编排
 │   │   ├── agents/
-│   │   │   ├── contract.ts safe-run.ts supervisor.ts triage.ts ...
+│   │   │   ├── contract.ts safe-run.ts supervisor.ts triage.ts retrieval.ts reviewer.ts
 │   │   │   ├── rules/red-flag.ts    # 不经 LLM 的红线规则
-│   │   │   └── tools/               # 本地 / 院方 MCP / WebMCP
-│   │   ├── render/           # 生成式 UI 组件字典
+│   │   │   └── tools/               # 规划中
+│   │   ├── rag/              # kb.ts 知识库 + search.ts BM25
+│   │   ├── render/           # 生成式 UI 组件字典（6 类卡片）
 │   │   ├── routes/           # /api/chat /api/health
 │   │   └── sse.ts
 │   └── vite.config.ts        # BFF 中间件挂载 + 分包策略
-├── backend/                  # Spring Boot 3（课设复用）
+├── backend/                  # Spring Boot 3
+│   └── src/main/java/com/zhidao/
+│       ├── entity/ mapper/   # 6 张表
+│       ├── adapter/          # HospitalAdapter + Mock + Registry
+│       ├── service/          # 含 ReminderEngine（@Scheduled）
+│       ├── controller/       # 五组接口
+│       └── security/         # JWT
 ├── docs/                     # 13 份设计文档，见 docs/README.md
-└── docker-compose.yml        # MySQL + PostgreSQL(pgvector)
+└── docker-compose.yml        # MySQL + PostgreSQL(pgvector)（国赛用）
 ```
 
 ---
@@ -260,18 +292,25 @@ zhidao/
 ## 9. 快速开始
 
 ```bash
-# 前端（含 BFF）
+# 前端（含 BFF，同一端口起 Vite + Hono，无跨域）
 cd frontend
 pnpm install
-cp .env.example .env        # 填入 LLM_API_KEY，不填也能跑（走规则路由）
+cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则路由）
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 44 passed
-pnpm typecheck              # tsc --noEmit，strict
+pnpm test                   # 195 passed
+pnpm typecheck              # tsc -b --noEmit，strict
+
+# 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）
+cd ../backend
+mvn spring-boot:run         # http://localhost:8080
+mvn test                    # 28 passed
 ```
 
+> **所需环境**：Node ≥18 + pnpm 9；JDK 17 + Maven 3.9（只前端可跳过）。
 > **无 API Key 也能完整演示主链路** —— 未配置时 Supervisor 自动切规则路由。这是刻意的：评审本地起项目不会白屏。
+> **中文 Windows 注意**：`pom.xml` 已固化 UTF-8，四项设置缺一处就会有中文乱码且不报错，详见 `HANDOFF.md` §五。
 
 ---
 
