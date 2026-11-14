@@ -10,6 +10,7 @@
  * ------------------------------------------------------------------ */
 
 import type { StreamEvent } from '../hooks/useEventStream';
+import { useTts } from '../hooks/useTts';
 
 /** 服务端渲染的卡片：直接注入 HTML */
 function ServerCard({ html }: { html: string }) {
@@ -34,6 +35,78 @@ function MetaLine({ label }: { label: string }) {
   );
 }
 
+/**
+ * 语音播报行 —— 「念给你听」的落点。
+ *
+ * <p>为什么不做成自动播放：浏览器的自动播放策略要求**有用户手势**，
+ * 没有手势调用 `speechSynthesis.speak()` 会静默失败（控制台也不会报错）。
+ * 硬要自动播的结果是"演示时有时能响有时不响"，比不做还糟。
+ * 所以这里给一个明确的按钮，点一下才念。
+ *
+ * <p>紧急指引（红线事件的 speech）是最需要被听见的场景 ——
+ * 用户这时候可能没在看屏幕。它落在 EmergencyCard 下方，
+ * 形状与普通播报一致，不给特殊样式（红色已经用在警示卡上，
+ * 再红一遍会稀释）。
+ */
+function SpeechRow({ text }: { text: string }) {
+  const tts = useTts();
+  if (!tts.supported || !text) return null;
+
+  const speaking = tts.status === 'speaking';
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-gray-400">
+      <span className="h-px w-4 bg-gray-200" />
+      <button
+        type="button"
+        onClick={() => tts.toggle(text)}
+        aria-label={speaking ? '停止朗读' : '朗读这段内容'}
+        className={
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors ' +
+          (speaking ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-100 hover:text-gray-600')
+        }
+      >
+        <SpeakerIcon speaking={speaking} />
+        {speaking ? '停止朗读' : '朗读'}
+      </button>
+      {!tts.hasZhVoice ? (
+        <span className="text-gray-300" title="系统里没有中文语音包，音色可能带口音">
+          （未检测到中文音色）
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function SpeakerIcon({ speaking }: { speaking: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      {speaking ? (
+        <>
+          <line x1="18" y1="9" x2="23" y2="15" />
+          <line x1="23" y1="9" x2="18" y2="15" />
+        </>
+      ) : (
+        <>
+          <path d="M15.5 9.5a5 5 0 0 1 0 5" />
+          <path d="M18.5 7a9 9 0 0 1 0 10" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function EventRenderer({ event }: { event: StreamEvent }) {
   switch (event.type) {
     /* 有服务端渲染产物的，一律直接用 */
@@ -53,9 +126,9 @@ export function EventRenderer({ event }: { event: StreamEvent }) {
         </div>
       );
 
-    /* 语音播报：显示"正在朗读"，音频播放在 lib/audio 里接 */
+    /* 语音播报：可点开听。事件本身只带 text，念什么由这里决定 */
     case 'speech':
-      return <MetaLine label="已生成语音播报" />;
+      return <SpeechRow text={event.text} />;
 
     /* 以下为过程事件，不做视觉呈现，只在开发时可见 */
     case 'plan':
