@@ -84,6 +84,24 @@ export function useEventStream() {
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  /**
+   * 分诊会话状态 —— **跨轮保持**。
+   *
+   * <p>这是修复"记不住话"的核心。之前每轮 `send({ text })` 都不带状态，
+   * 服务端每次从 `knownSlots: {} / round: 0` 开始，于是：
+   * <ul>
+   *   <li>用户答过「好几天了」，下一轮又问「多久了」</li>
+   *   <li>「最多追问 3 轮」的熔断永远触发不了，因为它以为一直是第 1 轮</li>
+   * </ul>
+   *
+   * <p>放 ref 不放 state：它只在发请求时被读取，不需要触发重渲染。
+   * 放 state 会多一次 render，而且容易读到旧值。
+   */
+  const sessionRef = useRef<{ slots: Record<string, string | undefined>; round: number }>({
+    slots: {},
+    round: 0,
+  });
+
   const send = useCallback(async (opts: SendOptions) => {
     const turnId = crypto.randomUUID();
 
@@ -110,8 +128,10 @@ export function useEventStream() {
           sessionId: 'session-1',
           text: opts.text,
           facts: opts.facts,
-          knownSlots: opts.knownSlots,
-          round: opts.round,
+          // 关键：把上一轮攒下的槽位与轮次带上，
+          // 服务端才知道"这个槽位已经问过了"
+          knownSlots: opts.knownSlots ?? sessionRef.current.slots,
+          round: opts.round ?? sessionRef.current.round,
           lowScoreStreak: opts.lowScoreStreak,
         }),
         signal: controller.signal,
@@ -142,6 +162,18 @@ export function useEventStream() {
           }
 
           if (evt.type === 'done') {
+            /*
+             * 收下服务端回传的会话状态。
+             *
+             * 这一步决定"能不能记住上一轮说了什么"：
+             * 不存，下一轮发出去的 knownSlots 还是空的，服务端就会重问。
+             */
+            if (evt.session) {
+              sessionRef.current = {
+                slots: evt.session.slots ?? {},
+                round: evt.session.round ?? 0,
+              };
+            }
             patch((t) => ({ ...t, status: 'done' }));
             continue;
           }

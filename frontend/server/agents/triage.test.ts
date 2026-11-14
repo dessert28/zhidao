@@ -95,6 +95,39 @@ describe('缺失槽位', () => {
     expect(missingSlots({ 部位: '头', 时长: '两小时' })).toEqual([]);
     expect(missingSlots({ 部位: '头', 时长: '半年' })).toEqual([]);
   });
+
+  describe('部位隐含在症状里时不再追问部位', () => {
+    it('「咳嗽」自带呼吸道，有部位也不必再问', () => {
+      // 实测缺陷：说「咳嗽两周有黄痰」，系统仍追问「具体哪个位置不舒服」
+      expect(missingSlots({ 时长: '两周' }, '咳嗽两周了，有黄痰')).toEqual([]);
+    });
+
+    it('尿频/皮疹/腹泻等同样自带部位', () => {
+      for (const [text, slot] of [
+        ['尿频两天了', { 时长: '两天' }],
+        ['身上起皮疹三天', { 时长: '三天' }],
+        ['腹泻一天', { 时长: '一天' }],
+      ] as const) {
+        expect(missingSlots(slot, text), `「${text}」不该追问部位`).not.toContain('部位');
+      }
+    });
+
+    it('但时长仍然要问 —— 这条不能一起放过', () => {
+      expect(missingSlots({}, '咳嗽')).toContain('时长');
+    });
+
+    /** 反向用例：这些是"最需要问部位"的，一条都不能误放 */
+    it('「疼」「痛」「不舒服」这类仍然必须问部位', () => {
+      for (const text of ['疼了三天', '痛了两天', '不舒服好几天', '难受']) {
+        expect(missingSlots({ 时长: '三天' }, text), `「${text}」应该追问部位`).toContain('部位');
+      }
+    });
+
+    it('不传原文时行为与旧版一致（保持向后兼容）', () => {
+      expect(missingSlots({})).toEqual(REQUIRED_SLOTS);
+      expect(missingSlots({ 部位: '头', 时长: '三天' })).toEqual([]);
+    });
+  });
 });
 
 describe('追问话术', () => {

@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:llm": "tsx scripts/verify-llm.ts",
+    "e2e:multiturn": "tsx scripts/e2e-multiturn.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"server/**/*.ts\""
   },

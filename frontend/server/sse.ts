@@ -62,10 +62,18 @@ export function sseHeaders(): Record<string, string> {
 /**
  * 消费一个事件 producer，返回 ReadableStream，直接给 Hono 的 c.body。
  * 上游抛错不会冒到连接层：转成 done 事件后正常关闭。
+ *
+ * <p>{@code meta.getSession} 让 producer 在结束前把会话状态交给 done 事件。
+ * 做成回调而不是让 producer 自己 emit done，是因为 done 只该由这里发一次 ——
+ * 否则 producer 正常返回和抛异常两条路径都要各自发一遍，早晚漏一条。
  */
 export function toSseStream(
   producer: (emit: (e: OutboundEvent) => void) => Promise<void>,
-  meta: { turnId: string },
+  meta: {
+    turnId: string;
+    /** 可选：返回本轮结束时的分诊会话状态，随 done 一起下发 */
+    getSession?: () => { slots: Record<string, string | undefined>; round: number } | undefined;
+  },
 ): ReadableStream<Uint8Array> {
   const startedAt = Date.now();
 
@@ -114,11 +122,15 @@ export function toSseStream(
       } finally {
         // 等 enrich 队列排空，否则 done 会插到卡片前面
         await new Promise((r) => setTimeout(r, 0));
+        // 会话状态取一次现成的，两条路径（正常/异常）都带上，
+        // 保证前端无论哪条路都能拿到"已采集了什么"
+        const session = meta.getSession?.();
         emit({
           type: 'done',
           turnId: meta.turnId,
           elapsedMs: Date.now() - startedAt,
           degraded: false,
+          ...(session ? { session } : {}),
         });
         await new Promise((r) => setTimeout(r, 0));
         closed = true;

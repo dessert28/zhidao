@@ -90,9 +90,28 @@ export function mergeSlots(base: SymptomSlots, next: SymptomSlots): SymptomSlots
   return out;
 }
 
+/**
+ * 症状本身就指明部位的词。
+ *
+ * <p>为什么需要这张表：`REQUIRED_SLOTS` 无条件要求「部位」，
+ * 但有些症状的**部位是自带的** —— 说「咳嗽」就是呼吸道，
+ * 说「尿频」就是泌尿系统。此时再问「具体是哪个位置不舒服？」
+ * 是纯粹的折磨，用户实测反馈过这一点。
+ *
+ * <p>判据：这些词单独出现时，部位已无追问价值。
+ * 注意「疼」「痛」「不舒服」不在表里 —— 它们恰恰是最需要问部位的。
+ */
+const SELF_LOCATED_SYMPTOMS =
+  /(咳嗽|咳痰|黄痰|白痰|气喘|哮喘|气短|呼吸困难|流涕|鼻塞|咽痛|喉咙痛|耳鸣|视力|尿频|尿急|尿痛|月经|痛经|白带|皮疹|瘙痒|腹泻|拉肚子|便秘|反酸|烧心|心慌|心悸|胸闷)/;
+
 /** 还缺哪些最小必要槽位 */
-export function missingSlots(slots: SymptomSlots): SlotKey[] {
+export function missingSlots(slots: SymptomSlots, text = ''): SlotKey[] {
+  // 部位隐含在症状里时，不再把「部位」当成必填
+  const hay = `${text} ${slots['性质'] ?? ''}`;
+  const locationImplied = SELF_LOCATED_SYMPTOMS.test(hay);
+
   return REQUIRED_SLOTS.filter((k) => {
+    if (k === '部位' && locationImplied) return false;
     const v = slots[k];
     if (!v) return true;
     // 「最近」「一直」是模糊表述，不等于采集到了时长 —— 几天还是几年，
@@ -273,17 +292,37 @@ export function makeTriage(deps: TriageDeps = {}) {
       departments = guessDepartments(slots, text);
     }
 
-    const missing = missingSlots(slots);
+    // 传原文进去：部位是否隐含在症状里（如「咳嗽」自带呼吸道）要据此判断
+    const missing = missingSlots(slots, text);
     const confidence = computeConfidence(slots, departments);
 
     /* 低置信：给 Top3 + 兜底，不硬猜 */
     if (confidence < MIN_CONFIDENCE && departments.length === 1) {
-      const extra = FALLBACK_DEPARTMENTS.map((name) => ({
-        name,
-        confidence: 0.4,
-        reason: '作为备选，建议先到导诊台确认',
-      }));
+      const extra = FALLBACK_DEPARTMENTS
+        // 兜底项不能和已有的重复。
+        // 实测缺陷：模型自己给了「全科医学科」，兜底又追加一个，
+        // 卡片上就出现两条一模一样的「全科医学科」，用户会以为系统坏了。
+        .filter((name) => !departments.some((d) => d.name === name))
+        .map((name) => ({
+          name,
+          confidence: 0.4,
+          reason: '作为备选，建议先到导诊台确认',
+        }));
       departments = [...departments, ...extra].slice(0, 3);
+    }
+
+    /*
+     * 最终去重（防御性）：模型可能自己就返回了两个同名科室
+     * （实测见过「全科医学科」重复两次）。按名字去重保留第一个 ——
+     * 前面那个通常是更具体的那个。
+     */
+    {
+      const seen = new Set<string>();
+      departments = departments.filter((d) => {
+        if (seen.has(d.name)) return false;
+        seen.add(d.name);
+        return true;
+      });
     }
 
     /* 还缺必要槽位，且未达追问上限 → 追问 */
