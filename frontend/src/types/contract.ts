@@ -168,6 +168,14 @@ export interface TimelineTask {
 
 export interface BookingPreview {
   preorderId: string;
+  /**
+   * 院区编码。下单时必须带 —— 后端按 `hospitalCode` 分发到对应的
+   * `HospitalAdapter`，只有展示名是查不到的。
+   *
+   * 加这一列是实测出来的：预览卡上有「确认挂号」按钮，
+   * 而原契约只有 `hospital`（展示名"，无法用于下单。
+   */
+  hospitalCode: string;
   hospital: string;
   department: string;
   doctor: string | null;

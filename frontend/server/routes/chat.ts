@@ -15,6 +15,7 @@ import { makeSupervisor, routeByRules } from '../agents/supervisor.js';
 import { makeTriage, type TriageInputPayload } from '../agents/triage.js';
 import { makeReviewer, sanitizeAnswer, type ReviewInputPayload } from '../agents/reviewer.js';
 import { makeRetrieval } from '../agents/retrieval.js';
+import { makeScheduler } from '../agents/scheduler.js';
 import { checkRedFlag } from '../agents/rules/red-flag.js';
 import { isLlmConfigured } from '../llm/client.js';
 import { analyzeViaLlm, judgeViaLlm, planViaLlm as planWithModel } from '../agents/llm-impl.js';
@@ -261,12 +262,38 @@ chatRoutes.post('/', async (c) => {
           return;
         }
 
-        case 'schedule':
-          emit({
-            type: 'token',
-            text: '号源查询与预约功能正在接入中。当前可以先把症状告诉我，我帮你确认该挂哪个科。',
-          });
+        case 'schedule': {
+          /*
+           * 号源查询与预约预览。
+           *
+           * 只给预览，**不直接下单** —— 挂号是有后果的操作（占号、影响别人），
+           * AI 未经用户确认就下单，出错后无法回滚到"用户没同意"。
+           * 确认动作留给前端调 POST /api/bookings。
+           */
+          const scheduler = makeScheduler();
+          const schedOut = await scheduler(
+            baseInput({
+              text: body.text,
+              // 分诊已经确定的科室可以作为兜底：用户先说"头晕"、再说"帮我挂个号"
+              knownDepartment: session.slots['科室'],
+            }),
+          );
+          emitEvents(emit, schedOut.events);
+
+          if (schedOut.status === 'failed') {
+            emit({
+              type: 'token',
+              text: '号源查询暂时用不了。可以先把症状告诉我，我帮你确认该挂哪个科。',
+            });
+          } else if (schedOut.payload.action === 'preview_booking' && schedOut.payload.preview) {
+            const p = schedOut.payload.preview;
+            emit({
+              type: 'token',
+              text: `${p.hospital}${p.department}最近可预约时段：${p.slot.slice(5, 10)} ${p.slot.slice(11, 16)}（${p.doctor}）。确认挂号请点下方按钮，或直接到院自助机取号。`,
+            });
+          }
           return;
+        }
 
         case 'done':
           emit({ type: 'token', text: '好的，还有其他需要帮忙的吗？' });

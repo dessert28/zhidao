@@ -11,6 +11,9 @@
 
 import type { StreamEvent } from '../hooks/useEventStream';
 import { useTts } from '../hooks/useTts';
+import { useState } from 'react';
+import type { BookingPreview } from '@shared/types/contract';
+import { createBooking } from '../lib/api';
 
 /** 服务端渲染的卡片：直接注入 HTML */
 function ServerCard({ html }: { html: string }) {
@@ -78,6 +81,96 @@ function SpeechRow({ text }: { text: string }) {
   );
 }
 
+/**
+ * 预约预览卡 —— 三段式里「在院内」的入口。
+ *
+ * <p><b>为什么这一张必须是客户端组件</b>：它有真实副作用（下单）。
+ * 服务端 renderToString 出来的 HTML 没有事件绑定，点了没反应。
+ *
+ * <p><b>为什么默认不自动下单</b>：挂号是占号的操作，
+ * AI 替用户确认会让"我没让你挂"变成无法回滚的事故。
+ * 所以这里只展示，确认按钮必须由人点。
+ */
+function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+
+  const confirm = async () => {
+    setStatus('submitting');
+    setMessage('');
+    const r = await createBooking({
+      hospitalCode: preorder.hospitalCode,
+      department: preorder.department,
+      visitTime: preorder.slot,
+    });
+    if (r.ok) {
+      setStatus('done');
+      setMessage('已预约成功，可在「我的病历」查看。');
+    } else {
+      setStatus('error');
+      setMessage(
+        r.failure.kind === 'unreachable'
+          ? '预约服务不可用，请到医院自助机或窗口办理。'
+          : r.failure.kind === 'unauthorized'
+            ? '登录已失效，请刷新页面后重试。'
+            : r.failure.message,
+      );
+    }
+  };
+
+  return (
+    <div className="animate-fade-up rounded-xl border border-brand-200 bg-white">
+      <div className="border-b border-brand-100 bg-brand-50/60 px-4 py-2.5">
+        <span className="text-xs font-medium text-brand-700">可预约号源</span>
+      </div>
+
+      <div className="px-4 py-3">
+        <div className="text-base font-medium text-gray-900">
+          {preorder.hospital} · {preorder.department}
+        </div>
+
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+          <div className="flex gap-1.5">
+            <dt className="text-gray-400">时间</dt>
+            <dd className="text-gray-800">
+              {preorder.slot.slice(5, 10)} {preorder.slot.slice(11, 16)}
+            </dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-gray-400">医生</dt>
+            <dd className="text-gray-800">{preorder.doctor ?? '普通门诊'}</dd>
+          </div>
+        </dl>
+
+        {status === 'done' ? (
+          <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{message}</p>
+        ) : (
+          <>
+            {status === 'error' ? (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {message}
+              </p>
+            ) : null}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={confirm}
+                disabled={status === 'submitting'}
+                className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {status === 'submitting' ? '正在预约…' : '确认挂号'}
+              </button>
+              <span className="text-xs leading-relaxed text-gray-400">
+                确认后会占用该号源，请确定时间合适再点
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SpeakerIcon({ speaking }: { speaking: boolean }) {
   return (
     <svg
@@ -129,6 +222,16 @@ export function EventRenderer({ event }: { event: StreamEvent }) {
     /* 语音播报：可点开听。事件本身只带 text，念什么由这里决定 */
     case 'speech':
       return <SpeechRow text={event.text} />;
+
+    /*
+     * 预约预览卡：**客户端渲染，不走服务端 HTML**。
+     *
+     * 与其他卡片不同，这张卡有交互（确认挂号会调后端下单）。
+     * 服务端 renderToString 出来的 HTML 没有事件绑定，
+     * 所以它必须走 props 路径。
+     */
+    case 'booking_preview_card':
+      return <BookingPreviewCard preorder={event.preorder} />;
 
     /* 以下为过程事件，不做视觉呈现，只在开发时可见 */
     case 'plan':

@@ -5,6 +5,7 @@ import com.zhidao.common.ApiResult;
 import com.zhidao.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -63,6 +64,22 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(h -> h.frameOptions(f -> f.sameOrigin())) // H2 控制台是 iframe
                 .authorizeHttpRequests(auth -> auth
+                        /*
+                         * 号源查询**不需要登录**。
+                         *
+                         * 理由：
+                         *   · 号源是公开信息，不是患者隐私 ——
+                         *     医院大厅的屏上就挂着，没有保护的必要
+                         *   · AI 排程（BFF 的 Scheduler Agent）要能匿名查询，
+                         *     否则用户必须先登录才能问"有没有号"，
+                         *     而导诊的主场景恰恰是从未注册的新患者
+                         *
+                         * 注意只放行 **GET**。下单（POST /api/bookings）
+                         * 仍需登录 —— 那是写操作，要能追溯到人。
+                         * 用独立的 requestMatchers 精确区分，不整段放行。
+                         */
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/slots", "/api/bookings/hospitals")
+                        .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",

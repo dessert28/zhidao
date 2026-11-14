@@ -259,6 +259,25 @@ export function getBookings() {
   return request<BookingOrder[]>('/api/bookings');
 }
 
+/**
+ * 创建预约单。
+ *
+ * <p>这是整个前端唯一一个**有真实副作用**的写操作：
+ * 占号、影响别人、写进数据库。所以它只由用户点击「确认挂号」触发，
+ * 绝不由 AI 自动调用 —— 见 scheduler.ts 的边界说明。
+ */
+export function createBooking(input: {
+  hospitalCode: string;
+  department: string;
+  visitTime: string;
+  remark?: string;
+}) {
+  return request<BookingOrder>('/api/bookings', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 /* ============================ 展示辅助 ============================ */
 
 /** 院区编码 → 展示名。后端只存 code，名字在海报里没意义但界面上要有 */
