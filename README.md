@@ -118,7 +118,7 @@
 
 | 官方考察点 | 分值 | 代码位置 | 怎么验证 |
 | --- | --- | --- | --- |
-| 大模型集成质量 | 8% | `frontend/server/llm/client.ts` + `agents/llm-impl.ts` | 统一信封 + 四态 status；三个 Agent 真调模型，坏输出/超时/无 Key 三级降级 |
+| 大模型集成质量 | 8% | `frontend/server/llm/client.ts` + `agents/llm-impl.ts` | 统一信封 + 四态 status；**三个 Agent 已用真实模型跑通**（见 §7 实测记录），坏输出/超时/无 Key 三级降级 |
 | Agent/工作流设计 | 8% | `frontend/server/agents/supervisor.ts` | 3 条降级阶梯：坏 JSON 重试→规则路由；超时→规则路由；冲突→固定串行 |
 | RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram（pgvector 待国赛） |
 | 多模态能力 | 5% | `src/hooks/{useSpeechInput,useTts}.ts` | 语音输入 + 语音播报已通（均端侧完成，不经过第三方）；图像仍缺 |
@@ -230,7 +230,7 @@ mvn test                 # 28 passed
 
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
-| 真实 LLM 调用 | ⚠️ 代码已接入，**未用真实 Key 验证** | 三个注入点（Supervisor/Triage/Reviewer）已接 `llm-impl.ts`；无 Key 自动走规则路由。本次开发环境无外网 Key，端到端只验证了"降级"路径 |
+| 真实 LLM 调用 | ✅ **已用真实 Key 跑通**（2026-11-14） | `pnpm verify:llm` 四关全过；Supervisor/Triage/Reviewer 三个 Agent 均确认走模型（`plan.reason` 与科室理由都是模型生成的推理，非规则文案）。单轮端到端 8.5s，答辩前建议再做一次延迟优化 |
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 真握手 | ⚠️ 工具签名对齐，不起独立 server 进程 | 5 天排期取舍；评委看 MCP 4% 看的是工具编排能力，不是握手协议 |
 | RAG 自纠循环 | ⚠️ 做了「检索+引用+改写重试」，无 pgvector | 省赛用 BM25 + bigram 单路召回（零依赖、可单测）；混合检索 RRF 见 `docs/09` §5 |

@@ -165,24 +165,39 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | LLM 自检 | pnpm verify:llm 四关，区分未配置/网络/鉴权/schema | `4a70a09` |
 | TTS 输出 | speechSynthesis + 文本清理 + 16 条测试 | `cb56fba` |
 
-### P0 · 用真实 Key 跑通一次（唯一没验证的事）
+### ✅ P0 · 真实 Key 已跑通（2026-11-14 关闭）
 
-代码路径已经通了，但**没有用真实 API Key 端到端验证过** —— 开发机在沙箱里，
-没有外网 Key。所以现在只能保证"降级路径正确"，不能保证"模型输出被正确解析"。
+**实测记录**（用一个 OpenAI 兼容网关 + `deepseek-v4.1-flash` 完成；具体地址与 Key 不入库）：
 
-要做：
+```
+$ pnpm verify:llm
+✔ 第 1 关 配置：openai / deepseek-v4.1-flash
+✔ 第 2 关 连通性：2595ms，模型回「收到」
+✔ 第 3 关 结构化输出：decision=triage，agents=[triage]
+   reason（模型原话）：用户在描述症状并给出部位和时长，属于症状叙述而非知识提问，交给分诊继续问清。
+✔ 第 4 关 红线短路：命中 chest_pain（不经过模型，确定性规则）
+全部通过。当前模式：真实大模型。
+```
 
-1. `cd frontend && cp .env.example .env`，填 `LLM_API_KEY`
-2. `pnpm dev`，打开 `http://localhost:5173/api/health` 确认 `"mode":"llm"`
-3. 发一句「肚子疼三天了，是胀痛」，看 `plan.reason` 是不是模型写的
-   （规则路由的文案是固定的「识别到症状描述，交由分诊采集槽位」）
-4. **重点看 triage 的科室名**：模型可能返回"消化内科"以外的写法，
-   现有 `summarizeTriage` 只是拼接，不做校验。如果出现奇怪科室名，
-   在 `llm-impl.ts` 的 TriageSchema 里收紧约束，而不是改 UI
+三个 Agent 都确认走了模型，不是规则兜底：
 
-**已知风险**：`generateObject` 依赖模型支持 JSON schema。
-DeepSeek / Qwen / Moonshot 的 OpenAI 兼容层都支持，但**小参数模型可能返回不合 schema 的 JSON**，
-届时会走 `askObject` 的 catch → 返回 null → 规则兜底（这是正确行为，不会崩）。
+| Agent | 证据 |
+| --- | --- |
+| Supervisor | `plan.reason` 是自然语言「这是症状描述，有部位和时长，属于分诊范围…」，不是固定文案「识别到症状描述，交由分诊采集槽位」 |
+| Triage | 科室理由带推理：`神经内科 62% · 后脑勺胀痛三天，属于头痛，先查神经系统常见原因`、`骨科 40% · 低头时更明显，提示可能与颈椎姿势有关` |
+| Reviewer | 全链路 `review_trace` 正常产出四维分数 |
+
+**端到端耗时**：8545ms（分诊链路，含 Supervisor + Triage + Reviewer 三次模型调用）。
+
+**遗留的性能注意**：一次对话要串 3 次模型调用，8.5s 对答辩演示偏慢。
+如果现场网络更差，可能到 15s+。压缩办法（按性价比）：
+1. Reviewer 的 judge 在证据充分时可以跳过（当前主要就它在拖时间）
+2. Triage 与 Supervisor 合并成一次调用（Supervisor 顺带抽槽位）
+3. 用流式输出让用户先看到 `plan`，感知延迟降一半
+
+**配置注意**：这个网关是 OpenAI 兼容协议，所以要设
+`LLM_PROVIDER=openai` + `LLM_BASE_URL=<你的网关>/v1`，
+provider 填 `deepseek` 会拼成官方地址从而失败。
 
 ### P1 · 端侧 ONNX 脱敏（唯一剩下的"空壳"）
 
