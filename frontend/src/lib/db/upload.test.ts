@@ -111,10 +111,10 @@ describe('上传：隐私边界', () => {
 });
 
 describe('上传：不支持的输入', () => {
-  it('PDF 明确拒绝，不假装处理成功', async () => {
+  it('图片等非文本非 PDF 格式明确拒绝', async () => {
     const { uploadRecord } = await import('./upload');
     const r = await uploadRecord({
-      file: new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' }),
+      file: new File(['\x89PNG'], 'scan.png', { type: 'image/png' }),
       visitDate: '2026-11-01',
       hospitalCode: 'MOCK-A',
     });
@@ -124,6 +124,27 @@ describe('上传：不支持的输入', () => {
       expect(r.message).toContain('暂不支持');
     }
     // 拒绝了就不该有任何网络请求
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('假的 PDF（内容非法）走解析失败，而不是"格式不支持"', async () => {
+    /*
+     * PDF 现在已经支持了 —— 一份内容是乱码的 .pdf 应当报"解析失败"，
+     * 而不是"暂不支持这种格式"。
+     * 两者的用户指引不同：前者让用户检查文件，后者让用户换格式。
+     */
+    const { uploadRecord } = await import('./upload');
+    const r = await uploadRecord({
+      file: new File(['%PDF-1.4 not really a pdf'], 'report.pdf', { type: 'application/pdf' }),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.stage).toBe('unsupported');
+      // 话术应该是"解析失败/损坏"，不是"暂不支持这种格式"
+      expect(r.message).toMatch(/解析失败|损坏/);
+    }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

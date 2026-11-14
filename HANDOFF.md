@@ -188,7 +188,8 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | ~~跨院重复检查提示~~ | ✅ **2026-11-15 已打通** | `src/lib/exam/duplicate.ts`：7 项检查词典 + 时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。17 用例，实测种子数据触发 |
 | ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。**按 docs/10 D3 不做真握手** |
 | ~~向量检索~~ | ✅ **2026-11-15 已实现并实测** | `rag/embed.ts` + `rrf.ts` + `vector-store.ts`；pgvector 0.8.7 真链路验证通过。默认关闭，`PGVECTOR_ENABLED=true` 开启 |
-| 图像 / OCR 输入 | 多模态少一个模态 | 无入口 |
+| ~~PDF 文本提取~~ | ✅ **2026-11-15 已实现** | `src/lib/db/pdf.ts`；只处理文本型 PDF，扫描件明确拒绝 |
+| 图像 / 照片识别 | 多模态少一个模态 | 需 VLM，D4 定为 P1，仍未接 |
 
 ### ✅ 前后端已打通（2026-11-15）
 

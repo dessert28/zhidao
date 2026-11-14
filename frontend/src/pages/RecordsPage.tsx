@@ -239,7 +239,7 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="file"
-            accept=".txt,.md,text/plain"
+            accept=".txt,.md,.pdf,text/plain,application/pdf"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setMsg(null);
@@ -257,8 +257,8 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         </div>
 
         <p className="mt-2 text-xs leading-relaxed text-gray-400">
-          当前支持纯文本（.txt / .md）。原文只存在你这台设备上，服务器收到的只有脱敏后的摘要。
-          PDF 与图片识别在规划中。
+          当前支持纯文本（.txt / .md）与文本型 PDF。扫描件（只有图片的 PDF）暂不支持，会明确提示。原文只存在你这台设备上，服务器收到的只有脱敏后的摘要。
+          图片识别在规划中。
         </p>
 
         {msg ? (
