@@ -37,13 +37,11 @@ import type {
 } from '@shared/types/contract';
 import type { AgentEvent } from '@shared/types/events';
 import { emptyOutput, safeRun } from './safe-run.js';
+// 院方能力走工具层（MCP 形状，见 docs/10 D3）。
+// 不在这里直接 fetch：超时与错误分类由工具层统一做一份。
+import { listSlots, type SlotDto } from './tools/mcp-hospital.js';
 
 export const SCHEDULER_TIMEOUT_MS = 8000;
-
-/** 后端地址（与 backend-proxy 同源配置） */
-function backendBase(): string {
-  return (process.env.BACKEND_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '');
-}
 
 /* ============================ 意图抽取 ============================ */
 
@@ -188,13 +186,7 @@ export function parseDate(text: string, now = new Date()): string | null {
   return null;
 }
 
-/* ============================ 后端调用 ============================ */
-
-interface SlotDto {
-  visitTime: string;
-  doctorName: string;
-  remaining: number;
-}
+/* ============================ 后端调用（经工具层） ============================ */
 
 type SlotQueryResult =
   | { ok: true; slots: SlotDto[]; hospitalCode: string }
@@ -203,37 +195,34 @@ type SlotQueryResult =
 /**
  * 查某个院区某科室的号源。
  *
- * <p>失败分类很重要：三种情况给三种话术 ——
- * "后端没起"让用户去起服务，"这个院区没这个科"该换院区，
- * "没号"该换日期。笼统说"查询失败"等于什么都没说。
+ * <p>实现改为走工具层（`tools/mcp-hospital.ts` 的 `listSlots`），
+ * 不再在这里直接 fetch —— 工具层统一做超时、错误分类，
+ * 而且签名与 MCP tool schema 对齐（docs/10 D3），
+ * 将来换 transport 不用动这个 Agent。
+ *
+ * <p>这里只把工具的三态结果翻译成本 Agent 需要的四种情况：
+ * 三种失败给三种话术 —— "后端没起"让用户去起服务，
+ * "这个院区没这个科"该换院区，"没号"该换日期。
+ * 笼统说"查询失败"等于什么都没说。
  */
 async function querySlots(
   hospitalCode: string,
   department: string,
   date: string,
 ): Promise<SlotQueryResult> {
-  const url = `${backendBase()}/api/bookings/slots?hospitalCode=${encodeURIComponent(
+  const r = await listSlots.handler({ hospitalCode, department, date });
+
+  if (r.status === 'ok') {
+    return { ok: true, slots: r.data, hospitalCode };
+  }
+  if (r.status === 'empty') {
+    return { ok: false, reason: 'empty', hospitalCode };
+  }
+  return {
+    ok: false,
+    reason: r.reason === 'not_found' ? 'no_department' : 'unreachable',
     hospitalCode,
-  )}&department=${encodeURIComponent(department)}&date=${date}`;
-
-  let res: Response;
-  try {
-    res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  } catch {
-    return { ok: false, reason: 'unreachable', hospitalCode };
-  }
-
-  if (!res.ok) {
-    // 400 通常是"这个院区没有这个科室"（后端 HospitalAdapter 返回空）
-    return { ok: false, reason: res.status === 400 ? 'no_department' : 'unreachable', hospitalCode };
-  }
-
-  const body = (await res.json().catch(() => null)) as { data?: SlotDto[] } | null;
-  const slots = body?.data;
-  if (!Array.isArray(slots)) return { ok: false, reason: 'unreachable', hospitalCode };
-  if (slots.length === 0) return { ok: false, reason: 'empty', hospitalCode };
-
-  return { ok: true, slots, hospitalCode };
+  };
 }
 
 /** 院区编码 → 展示名 */

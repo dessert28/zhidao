@@ -174,9 +174,9 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 
 | 功能 | 代码里的实际状态 | 用户看到什么 |
 | --- | --- | --- |
-| 号源查询与预约 | `chat.ts` 的 `case 'schedule'` 只回一句「功能正在接入中」 | 一句提示语 |
-| 就诊时间轴 | `timeline_card` 事件**从未被发出** | 永远不出现 |
-| 预约预览卡 | `booking_preview_card` 事件**从未被发出** | 永远不出现 |
+| ~~号源查询与预约~~ | ✅ **2026-11-15 已实现**（`agents/scheduler.ts`） | 预览卡 + 确认按钮，下单写库 |
+| ~~就诊时间轴~~ | ✅ **2026-11-15 已实现** | 挂号后自动给四步时间线 |
+| ~~预约预览卡~~ | ✅ **2026-11-15 已实现** | 首个有真实副作用的客户端卡片 |
 | 病历上传 | 上传区是虚线框，写着「当前版本尚未开放」 | 说明文字 |
 
 ### 未实现 —— 第二类：连占位都没有
@@ -186,7 +186,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | ~~前端不调后端~~ | ✅ **2026-11-15 已打通** | `server/routes/backend-proxy.ts` + `src/lib/api.ts`；病历页真读跨院记录与提醒，标记完成写回数据库 |
 | ~~用药冲突提示~~ | ✅ **2026-11-15 已打通** | 根因不是"函数没接"，是 `currentMedications` 永远为空：`patient_profile` 没有用药字段、前端从不传 facts。补了 `medication_json` 列 + `usePatientFacts` 后实测触发 |
 | ~~跨院重复检查提示~~ | ✅ **2026-11-15 已打通** | `src/lib/exam/duplicate.ts`：7 项检查词典 + 时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。17 用例，实测种子数据触发 |
-| MCP 工具层 | 4% 分值 | `agents/tools/` 目录不存在 |
+| ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。**按 docs/10 D3 不做真握手** |
 | 向量检索 | RAG 6% 只到 BM25 | 无 pgvector，无 RRF 融合 |
 | 图像 / OCR 输入 | 多模态少一个模态 | 无入口 |
 
