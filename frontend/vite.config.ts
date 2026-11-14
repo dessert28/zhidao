@@ -59,8 +59,20 @@ export default defineConfig({
         // 所以这里在拿到 app 之后立刻同步注册，且不依赖任何后续 await。
         server.middlewares.use((req, res, next) => {
           const urlPath = req.originalUrl ?? req.url ?? '/';
-          // 只接管 /api 前缀。别的请求一律 next()，交给 Vite 处理静态与 HMR。
-          if (!urlPath.startsWith('/api/')) return next();
+          /*
+           * 只接管两类请求，其余一律 next() 交给 Vite：
+           *
+           *  1. /api/...                     —— BFF 业务接口
+           *  2. /\{repo\}/resolve/main/...   —— 端侧模型的代理路径
+           *
+           * 第二条必须显式列出来：模型路由挂在根路径（见 server/index.ts
+           * 的说明），如果只判 /api/ 前缀，它会被 Vite 的 SPA fallback
+           * 接走，返回 index.html —— 而 HTTP 状态还是 200，
+           * 前端拿到的"模型文件"其实是一坨 HTML，报错信息莫名其妙。
+           */
+          const isApi = urlPath.startsWith('/api/');
+          const isModelFile = /^\/[^/]+\/[^/]+\/resolve\/main\//.test(urlPath);
+          if (!isApi && !isModelFile) return next();
 
           const url = `http://${req.headers.host ?? 'localhost'}${urlPath}`;
           const method = req.method ?? 'GET';

@@ -190,7 +190,7 @@ DeepSeek / Qwen / Moonshot 的 OpenAI 兼容层都支持，但**小参数模型�
 
 | 位置 | 现状 | 要做 |
 | --- | --- | --- |
-| `redact.ts` 的 `detectWithModel()` | 直接 `return null` | 接 Transformers.js + WebGPU，补自由叙述里的姓名与罕见地名 |
+| ~~`redact.ts` 的 `detectWithModel()`~~ | ✅ 已接 Transformers.js（`ner.ts` + `merge.ts`，13 条合并测试）。**浏览器内推理未验证**：模型加载与状态机实测通过，但无头 Chromium 里推理无产出且无报错，疑似 WASM 静默失败 —— 需在真实浏览器验证 |
 | ~~`speech` 事件的播放~~ | ~~只显示文字~~ | ✅ `cb56fba` 已完成 |
 
 **取舍建议**：如果只剩半天，做 **TTS**。`window.speechSynthesis` 是浏览器内置，

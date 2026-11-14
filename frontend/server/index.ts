@@ -16,6 +16,7 @@ import { cors } from 'hono/cors';
 import { loadEnv } from './env.js';
 import { chatRoutes } from './routes/chat.js';
 import { healthRoutes } from './routes/health.js';
+import { modelRoutes } from './routes/models.js';
 
 loadEnv();
 
@@ -32,6 +33,17 @@ export function createApp(opts: AppOptions = {}) {
 
   app.route('/api/health', healthRoutes);
   app.route('/api/chat', chatRoutes);
+  /*
+   * 模型文件代理。路径刻意与 HuggingFace 保持一致
+   * （/{repo}/resolve/main/{file}），这样 transformers.js 只要把
+   * remoteHost 指向本站根路径就能直接用，不需要改它的加载逻辑。
+   *
+   * 挂在根路径而不是 /api 下：transformers.js 拼 URL 时是
+   * `${remoteHost}/${modelId}/resolve/main/${file}`，
+   * 如果塞进 /api 前缀，remoteHost 就得写成 "http://host/api"，
+   * 而它同时还会去取 /api/api/... 这种二次拼接，容易出错。
+   */
+  app.route('/', modelRoutes);
 
   app.onError((err, c) => {
     // 只记类型与消息，绝不记 payload —— 原文不落服务端日志（08 §2）

@@ -168,19 +168,32 @@ export function hasPii(raw: string): boolean {
 }
 
 /**
- * 可选的模型侧检测（M4 接入 OpenMed / ONNX）。
+ * 模型侧检测 —— 补规则引擎抓不到的自由叙述 PII。
  *
- * 为什么留这个口子而不是现在就上：
- *   规则引擎已经覆盖结构化 PII（证件号、手机号、地址），
- *   但**自由叙述里的姓名、罕见地名**它抓不住。
- *   那部分需要 NER 模型，在浏览器里跑要 WebGPU + 数 MB 权重。
+ * <p><b>分工要说清楚</b>：
+ * <ul>
+ *   <li>{@link redact} 管结构化 PII：身份证、手机号、银行卡、邮箱、带标签的地址。
+ *       确定性、零延迟、可单测</li>
+ *   <li>这个函数管**没有固定形状**的：「老王让我带他上次的片子」
+ *       「我住梧桐里社区那边」。这部分只能靠 NER 模型</li>
+ * </ul>
  *
- * 当前返回 null 表示"模型未加载"，调用方应只用规则结果。
+ * <p>返回 {@code null} 表示模型不可用（未下载 / 加载失败 / 推理异常），
+ * 调用方必须回退到纯规则结果。<b>不要把 null 当成"没有 PII"</b> ——
+ * 那是两件完全不同的事，混起来会导致"以为检查过一遍，其实没检查"。
+ *
+ * <p>实现放在 {@code ner.ts}，因为它要动态 import 几 MB 的运行时，
+ * 不能和这个纯函数模块绑在一起（本文件被首屏和测试大量引用）。
  */
 export async function detectWithModel(
-  _raw: string,
+  raw: string,
 ): Promise<Array<{ type: PiiType; start: number; end: number; text: string }> | null> {
-  return null;
+  // 用动态 import 保持本模块的"零依赖纯函数"性质：
+  // 静态 import 会把 transformers.js 拖进任何引入 redact 的地方
+  // （包括 ChatPage 首屏、以及 25 个单元测试）。
+  const { detectEntities } = await import('./ner');
+  const entities = await detectEntities(raw);
+  return entities ? entities.map(({ type, start, end, text }) => ({ type, start, end, text })) : null;
 }
 
 /* ============================ 展示辅助 ============================ */

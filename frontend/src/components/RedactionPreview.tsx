@@ -10,8 +10,10 @@
  *   发现漏遮时可以自己改 —— 知情权比"相信我"更重要。
  * ------------------------------------------------------------------ */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { redact, summarizeHits, type PiiType } from '../lib/privacy/redact';
+import { mergeHits, type ModelEntityLike } from '../lib/privacy/merge';
+import { useModelState } from '../hooks/useModelState';
 
 const TYPE_LABEL: Record<PiiType, string> = {
   id_card: '身份证号',
@@ -26,10 +28,43 @@ const TYPE_LABEL: Record<PiiType, string> = {
 /**
  * 把原文按遮蔽区间切成片段，用于高亮显示。
  * 遮蔽处用高亮色标出，让"被改动了哪里"一眼可见。
+ *
+ * <p>两路来源：
+ * <ul>
+ *   <li>规则命中 —— 同步、确定、立即可用</li>
+ *   <li>模型命中 —— 异步（要下 129MB 权重），到位后追加。
+ *       为 null 表示模型不可用，此时只用规则结果，并且要如实告诉用户</li>
+ * </ul>
+ *
+ * <p>为什么模型结果要"到了再补"而不是等它：等模型等于每次输入都卡几秒，
+ * 而且模型可能永远下不下来（网络受限）。规则结果必须先出来，
+ * 用户看到"至少这些已经被遮了"才安心。
  */
 function Highlighted({ raw }: { raw: string }) {
+  const [modelHits, setModelHits] = useState<ModelEntityLike[] | null>(null);
+  const modelState = useModelState();
+
+  // 规则结果：同步算出来，先渲染
+  const ruleResult = useMemo(() => redact(raw), [raw]);
+
+  // 模型结果：异步补充。raw 变化时重新跑
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const { detectEntities } = await import('../lib/privacy/ner');
+      const entities = await detectEntities(raw);
+      if (!cancelled) setModelHits(entities);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [raw]);
+
   const parts = useMemo(() => {
-    const { text, hits } = redact(raw);
+    const hits = mergeHits(ruleResult.hits, modelHits);
+
     // hits 的 start/end 基于原文，而 text 已替换过，长度不同。
     // 这里改为直接在原文上按区间切分，自己拼替换文本 —— 避免位置错位。
     const segs: Array<{ kind: 'text' | 'masked'; value: string }> = [];
@@ -44,8 +79,8 @@ function Highlighted({ raw }: { raw: string }) {
     if (cursor < raw.length) {
       segs.push({ kind: 'text', value: raw.slice(cursor) });
     }
-    return { segs, hits, safeText: text };
-  }, [raw]);
+    return { segs, hits };
+  }, [raw, ruleResult, modelHits]);
 
   return (
     <div className="space-y-2">
@@ -78,8 +113,46 @@ function Highlighted({ raw }: { raw: string }) {
           {parts.hits.length === 0 ? summarizeHits([]) : `共遮蔽 ${parts.hits.length} 处`}
         </span>
       </div>
+
+      {/*
+        模型状态必须如实显示。三种情况：
+        · 加载中 → 给出百分比，让用户知道"再等等会遮得更全"
+        · 不可用 → 明确说只有规则遮蔽在起作用，不假装检查过了
+        · 就绪   → 一行小字确认自由叙述里的姓名地名也已覆盖
+
+        为什么这段不能省：用户看到"未检测到个人信息"时，
+        如果其实模型没加载，那是一个**错误的安全感**。
+        隐私产品里，这种错误的安全感比明确说"我能力有限"更危险。
+      */}
+      <ModelStatus state={modelState} />
     </div>
   );
+}
+
+function ModelStatus({ state }: { state: ReturnType<typeof useModelState> }) {
+  if (state.status === 'ready') {
+    return (
+      <p className="text-xs leading-relaxed text-gray-400">
+        本地模型已就绪：除证件号手机号外，自由叙述里的人名与地名也已覆盖。
+      </p>
+    );
+  }
+  if (state.status === 'loading') {
+    return (
+      <p className="text-xs leading-relaxed text-gray-400">
+        {state.message}（首次使用需下载约 129MB，之后走浏览器缓存）
+      </p>
+    );
+  }
+  if (state.status === 'unavailable') {
+    return (
+      <p className="text-xs leading-relaxed text-amber-600">
+        本地模型未加载，当前只做规则遮蔽（证件号、手机号、带标签的地址等）。
+        自由叙述里的人名可能未被识别，发送前请自行检查。
+      </p>
+    );
+  }
+  return null;
 }
 
 export function RedactionPreview({ raw }: { raw: string }) {

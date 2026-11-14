@@ -42,3 +42,6 @@ temp/
 .archify/**/*.finalize-summary.json
 .archify/**/*.browser-check.json
 .archify/**/*.delivery.json
+
+# 端侧模型缓存（129MB 权重，不入库）
+frontend/.cache/
