@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-222%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
+[![tests](https://img.shields.io/badge/frontend%20tests-243%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
 
 ---
 
@@ -121,7 +121,7 @@
 | 大模型集成质量 | 8% | `frontend/server/llm/client.ts` + `agents/llm-impl.ts` | 统一信封 + 四态 status；三个 Agent 真调模型，坏输出/超时/无 Key 三级降级 |
 | Agent/工作流设计 | 8% | `frontend/server/agents/supervisor.ts` | 3 条降级阶梯：坏 JSON 重试→规则路由；超时→规则路由；冲突→固定串行 |
 | RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram（pgvector 待国赛） |
-| 多模态能力 | 5% | `src/hooks/useSpeechInput.ts` + `lib/privacy/` | 文本 + 语音输入已通（Web Speech，端侧转文字）；TTS 与图像仍缺 |
+| 多模态能力 | 5% | `src/hooks/{useSpeechInput,useTts}.ts` | 语音输入 + 语音播报已通（均端侧完成，不经过第三方）；图像仍缺 |
 | **AI 安全与可控性** | 4% | `frontend/server/agents/rules/red-flag.ts` | **5 类红线确定性规则表，命中即短路，全程不经 LLM** |
 | MCP/工具集成 | 4% | `frontend/server/agents/tools/`（规划） | 工具签名对齐 MCP schema（`name`+`inputSchema`+`handler`） |
 | 交互模式创新 | 7% | `frontend/server/render/registry.tsx` | 生成式 UI：服务端渲染 React 组件字典 → 序列化下发（6 类卡片已上线） |
@@ -134,7 +134,7 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 222 passed
+pnpm test          # 243 passed
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
@@ -234,11 +234,11 @@ mvn test                 # 28 passed
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 真握手 | ⚠️ 工具签名对齐，不起独立 server 进程 | 5 天排期取舍；评委看 MCP 4% 看的是工具编排能力，不是握手协议 |
 | RAG 自纠循环 | ⚠️ 做了「检索+引用+改写重试」，无 pgvector | 省赛用 BM25 + bigram 单路召回（零依赖、可单测）；混合检索 RRF 见 `docs/09` §5 |
-| 多模态 | ⚠️ 文本 + 语音输入，缺输出侧 | 语音输入已通（Chrome/Edge，需 HTTPS 或 localhost）；TTS 只显示文字；端侧 ONNX 脱敏仍是空壳（`detectWithModel()` 直接 `return null`） |
+| 多模态 | ⚠️ 输入输出都有，缺端侧模型 | 语音输入 + TTS 播报已通（均浏览器原生）；端侧 ONNX 脱敏仍是空壳（`detectWithModel()` 直接 `return null`） |
 | 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
 | 多实例部署 | ❌ 单实例，会话在内存 | 省赛不引 Redis；国赛加时只改 `SessionStore` 一个接口 |
 | 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 222 + 后端 28 用例，重点覆盖红线规则、四维自审降级、LLM 降级、语音降级、提醒引擎幂等、接口状态码 |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 243 + 后端 28 用例，重点覆盖红线规则、四维自审降级、LLM 降级、语音/TTS 降级、提醒引擎幂等、接口状态码 |
 
 ### 7.1 5 天排期的现实约束
 
@@ -299,7 +299,7 @@ cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则�
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 222 passed
+pnpm test                   # 243 passed
 pnpm typecheck              # tsc -b --noEmit，strict
 
 # 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）

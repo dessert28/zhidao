@@ -104,7 +104,7 @@ backend/
 ```
 
 **测试**：
-- 前端 `cd frontend; pnpm exec vitest run` → **222 用例**
+- 前端 `cd frontend; pnpm exec vitest run` → **243 用例**
 - 后端 `cd backend; mvn test` → **28 用例**（17 接口集成 + 11 提醒引擎）
 
 ### 实测通过的链路
@@ -161,6 +161,9 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | 文档校订 | 按代码现状改写 README/HANDOFF/docs 04·12，清掉"已规划"冒充"已完成" | `b591f36` |
 | 真实 LLM | `server/llm/client.ts` + 三个 Agent 注入点 + 12 条降级测试 | `eb88258` |
 | 语音输入 | Web Speech + 15 条降级测试，输入三模态第一模态落地 | `63c409e` |
+| .env 修复 | Vite 不给 Node 注入变量 → server/env.ts + health 加 envSource | `4a70a09` |
+| LLM 自检 | pnpm verify:llm 四关，区分未配置/网络/鉴权/schema | `4a70a09` |
+| TTS 输出 | speechSynthesis + 文本清理 + 16 条测试 | `cb56fba` |
 
 ### P0 · 用真实 Key 跑通一次（唯一没验证的事）
 
@@ -183,10 +186,12 @@ DeepSeek / Qwen / Moonshot 的 OpenAI 兼容层都支持，但**小参数模型�
 
 ### P1 · 端侧 ONNX 脱敏（唯一剩下的"空壳"）
 
+> TTS 已于 `cb56fba` 完成（speechSynthesis，二十行核心代码）——原建议"先做 TTS"已兑现。
+
 | 位置 | 现状 | 要做 |
 | --- | --- | --- |
 | `redact.ts` 的 `detectWithModel()` | 直接 `return null` | 接 Transformers.js + WebGPU，补自由叙述里的姓名与罕见地名 |
-| `speech` 事件的播放 | 只显示「已生成语音播报」 | 真 TTS（`speechSynthesis` 即可，成本很低） |
+| ~~`speech` 事件的播放~~ | ~~只显示文字~~ | ✅ `cb56fba` 已完成 |
 
 **取舍建议**：如果只剩半天，做 **TTS**。`window.speechSynthesis` 是浏览器内置，
 二十行代码就能让"AI 念给你听"这件事成真，演示效果好过几 MB 的 ONNX 权重。
@@ -276,7 +281,7 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
-pnpm exec vitest run                                       # 222 用例
+pnpm exec vitest run                                       # 243 用例
 pnpm exec vite build                                       # 生产构建
 
 cd ../backend

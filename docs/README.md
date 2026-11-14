@@ -84,8 +84,9 @@
 | M7 | RAG 检索 + 引用展示（BM25 + 自纠循环） | ✅ 完成 |
 | M8 | 真实 LLM 调用（`planViaLlm` / `triage.analyze` / `reviewer.judge`） | ✅ 代码完成（`eb88258`），**待真实 Key 验证** |
 | M9 | 语音输入（Web Speech API） | ✅ 完成（`63c409e`） |
+| M10 | TTS 语音播报（speechSynthesis） | ✅ 完成（`cb56fba`） |
 
-> 测试总量：**前端 222 + 后端 28 = 250 用例全绿**。
+> 测试总量：**前端 243 + 后端 28 = 271 用例全绿**。
 > `pnpm exec tsc -b --noEmit` 与 `pnpm exec vite build` 均通过，`mvn test` 通过。
 
 ---
@@ -94,7 +95,7 @@
 
 1. **接入真实 LLM**：`planViaLlm` / `triage.analyze` / `reviewer.judge` 三处 deps 接口都已留好，
    当前都没人传实现。这是「大模型集成质量 8%」唯一的缺口
-2. 多模态补输出侧：TTS（`speechSynthesis`）优先，端侧 ONNX 脱敏次之
+2. 端侧 ONNX 脱敏（最后一个空壳）：`detectWithModel()` 接 Transformers.js + WebGPU
 3. 文档收尾：`02` 补 OpenMed 说明与端侧小模型对比表；`.archify/zhidao-v2.html` 重跑 finalize
 4. 省赛提交前打磨：视觉细节 + 演示视频脚本
 
