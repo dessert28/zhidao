@@ -277,14 +277,19 @@ zhidao/
 │   │   └── sse.ts
 │   └── vite.config.ts        # BFF 中间件挂载 + 分包策略
 ├── backend/                  # Spring Boot 3
-│   └── src/main/java/com/zhidao/
-│       ├── entity/ mapper/   # 6 张表
-│       ├── adapter/          # HospitalAdapter + Mock + Registry
-│       ├── service/          # 含 ReminderEngine（@Scheduled）
-│       ├── controller/       # 五组接口
-│       └── security/         # JWT
+│   └── src/main/
+│       ├── java/com/zhidao/
+│       │   ├── entity/ mapper/   # 6 张表
+│       │   ├── adapter/          # HospitalAdapter + Mock + Registry
+│       │   ├── service/          # 含 ReminderEngine（@Scheduled）
+│       │   ├── controller/       # 五组接口
+│       │   └── security/         # JWT
+│       └── resources/
+│           ├── schema.sql        # H2（默认，省赛免装数据库）
+│           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
+│           └── application-mysql.yml  # 切 MySQL 的 profile
 ├── docs/                     # 13 份设计文档，见 docs/README.md
-└── docker-compose.yml        # MySQL + PostgreSQL(pgvector)（国赛用）
+└── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
 
 ---

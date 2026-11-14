@@ -1,0 +1,45 @@
+# ------------------------------------------------------------------
+# MySQL 配置（国赛切换用）
+#
+# 用法：
+#   docker compose up -d mysql
+#   mvn spring-boot:run -Dspring-boot.run.profiles=mysql
+#
+# 为什么单独一个 profile 而不是改 application.yml 的默认值：
+#   省赛的核心承诺是「评委 clone 下来 mvn spring-boot:run 就能跑，不用装 MySQL」
+#   （README §9）。把默认数据源换成 MySQL 会直接毁掉这条承诺。
+#   所以 H2 保持默认，MySQL 是显式选择的另一条路。
+# ------------------------------------------------------------------
+
+spring:
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:zhidao}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:zhidao}
+    password: ${MYSQL_PASSWORD:zhidao}
+    hikari:
+      # 连接池：单实例演示够用；真实部署要按并发调
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  sql:
+    init:
+      # 首次启动自动建表与灌种子数据；之后建议改成 never 并交给迁移工具
+      mode: always
+      schema-locations: classpath:schema-mysql.sql
+      data-locations: classpath:data.sql
+
+  # MySQL 下不需要 H2 控制台
+  h2:
+    console:
+      enabled: false
+
+mybatis-plus:
+  configuration:
+    # 生产别打印 SQL（H2 profile 里开着方便调试）
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    # MySQL profile 下把业务日志降到 info，避免刷屏
+    com.zhidao: info
