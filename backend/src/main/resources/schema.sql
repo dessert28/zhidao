@@ -123,6 +123,10 @@ CREATE TABLE reminder_task (
   detail          VARCHAR(1000),
   -- 为什么提醒（可解释性）：如"距就诊还有 24 小时，需空腹"
   reason          VARCHAR(500),
+  -- 幂等键：由「规则名 | 关联类型 | 关联 id | 判别串」拼成，唯一索引兜底。
+  -- 引擎每 5 分钟扫一次，同一份数据跑一万次也只能落一条，靠的就是这列。
+  -- 不为空的旧数据/手工录入的提醒可以留空（NULL 不参与唯一约束）。
+  dedupe_key      VARCHAR(200),
   due_at          TIMESTAMP    NOT NULL,
   -- 状态：PENDING -> SENT -> DONE / SKIPPED
   status          VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
@@ -133,3 +137,6 @@ CREATE TABLE reminder_task (
 );
 CREATE INDEX idx_reminder_due ON reminder_task (status, due_at);
 CREATE INDEX idx_reminder_user ON reminder_task (user_id, due_at);
+-- 唯一定的是「同一个用户 + 同一个幂等键」，不是全局唯一：
+-- 两个患者各自有一条"明天禁食"是完全正常的
+CREATE UNIQUE INDEX uk_reminder_dedupe ON reminder_task (user_id, dedupe_key);
