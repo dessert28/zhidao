@@ -10,8 +10,14 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+// ⚠️ 必须最先执行：把 .env 读进 process.env。
+// Vite 的 loadEnv 只注入前端（import.meta.env），Node 侧读不到 ——
+// 少了这一行，用户按 README 填好的 LLM_API_KEY 永远不会生效。
+import { loadEnv } from './env.js';
 import { chatRoutes } from './routes/chat.js';
 import { healthRoutes } from './routes/health.js';
+
+loadEnv();
 
 export interface AppOptions {
   /** dev 期允许的源；prod 同源可留空 */

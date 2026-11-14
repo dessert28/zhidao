@@ -86,6 +86,62 @@ function getClient(cfg: LlmConfig) {
   return client;
 }
 
+/* ============================ 诊断 ============================ */
+
+export type ProbeResult =
+  | { ok: true; text: string; latencyMs: number }
+  | { ok: false; stage: 'no-config' | 'network' | 'auth' | 'bad-output'; detail: string };
+
+/**
+ * 连通性自检 —— **唯一一个不吞异常的大模型调用**。
+ *
+ * <p>为什么需要它：{@link askObject} 的职责是"失败返回 null 让业务降级"，
+ * 所以它把异常全吃了。这在运行期是对的，但在排查时是灾难 ——
+ * 用户看到的是"AI 一直给规则答案"，却不知道到底是没配 Key、
+ * Key 过期、网络不通，还是模型不输出合法 JSON。
+ * 这四种情况的修法完全不同。
+ *
+ * <p>所以单独开一个把异常分类上报的探针，只给 `pnpm verify:llm` 用，
+ * **不进业务链路**。
+ */
+export async function probeLlm(): Promise<ProbeResult> {
+  const cfg = readConfig();
+  if (!cfg) {
+    return {
+      ok: false,
+      stage: 'no-config',
+      detail: '未配置 LLM_API_KEY（.env 里那一行是空的）',
+    };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const { text } = await withTimeout(
+      generateText({
+        model: getClient(cfg)(cfg.model),
+        prompt: '回答两个字：收到',
+        maxTokens: 16,
+        maxRetries: 0,
+      }),
+      CALL_TIMEOUT_MS,
+    );
+    return {
+      ok: true,
+      text: text.trim(),
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    // 401/403 与"连不上"必须分开：前者是 Key 的问题，后者是网络或 baseURL 的问题
+    const authLike = /\b(401|403|invalid.?api.?key|unauthorized|authentication)\b/i.test(msg);
+    return {
+      ok: false,
+      stage: authLike ? 'auth' : 'network',
+      detail: msg.slice(0, 300),
+    };
+  }
+}
+
 /* ============================ 结构化调用 ============================ */
 
 /**
