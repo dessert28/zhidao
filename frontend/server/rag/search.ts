@@ -16,6 +16,9 @@
  * ------------------------------------------------------------------ */
 
 import { KB_DOCS, type KbDoc } from './kb';
+// 只引类型：VectorHit 的实现在 vector-store.ts，
+// 但那个模块会 import pg（原生依赖），不该被静态引入。
+import type { VectorHit } from './vector-store';
 
 /** BM25 参数。k1 控制词频饱和，b 控制长度归一化 */
 const K1 = 1.5;
@@ -193,3 +196,87 @@ export function isEvidenceSufficient(hits: SearchHit[]): boolean {
 
 /** 知识库规模，用于健康检查与答辩时说明 */
 export const KB_SIZE = KB_DOCS.length;
+
+/* ============================ 混合检索（RRF） ============================ */
+
+/**
+ * 双路召回 + RRF 融合。
+ *
+ * <p><b>这是可选的增强路径</b>：pgvector 连不上时
+ * {@link hybridSearch} 自动退回纯 BM25，行为与 {@link search} 完全一致。
+ * 这样"clone 下来就能跑，不用装 Docker"那条承诺不会被破坏。
+ *
+ * <p>为什么值得做双路：
+ *   · BM25 强在**精确词匹配**（"糖化血红蛋白"必须字面对上）
+ *   · 向量强在**近义与共现**（"血糖高"能召回"空腹血糖偏高"）
+ *   单路各有盲区，RRF 让两路的意见都参与而不需要分数可比。
+ *
+ * <p>诚实说明：向量层用的是哈希向量化（见 embed.ts），
+ * 不是神经网络嵌入。它能覆盖 bigram 共现，但不懂真正的语义等价。
+ * 换真模型时只改 embed()。
+ */
+
+/**
+ * 向量路的相似度门槛。
+ *
+ * <p><b>为什么必须有这个门槛（实测出来的）：</b>
+ * 哈希向量的绝对相似度普遍偏低（正确命中约 0.16，无关条目 0.02-0.05），
+ * 而 RRF 只看排名不看分数 —— 于是"排第 3 的无关文档"也会被当成有效意见，
+ * 把"腹泻补液""皮疹分诊"这类完全不相干的内容拉进结果。
+ *
+ * <p>实测：问"血糖高了要注意什么"，没有门槛时结果里混进了
+ * "儿童发热""反复头晕""胸闷心慌"。加了 0.08 门槛后这些被挡在向量路之外，
+ * 只有真正相关的条目才参与融合。
+ *
+ * <p>阈值取 0.08 而不是更高：哈希向量本身量纲就小，
+ * 设太高会让向量路形同虚设（连正确命中都挡掉）。
+ * 换真嵌入模型后这个阈值要重新标定 —— 新模型的相似度分布完全不同。
+ */
+const VECTOR_MIN_SIMILARITY = 0.08;
+
+export async function hybridSearch(query: string, limit = 5): Promise<SearchHit[]> {
+  // 单路 BM25 始终先跑：它是基线，也是降级路径
+  const bm25 = search(query, Math.max(limit, 8));
+
+  let vectorHits: VectorHit[] = [];
+  try {
+    // 动态 import：pg 与向量层只在开启时才加载
+    const { isAvailable, searchVector } = await import('./vector-store.js');
+    if (await isAvailable()) {
+      vectorHits = (await searchVector(query, Math.max(limit, 8)))
+        // 门槛：相似度不够的条目不该参与融合（见常量注释）
+        .filter((h) => h.similarity >= VECTOR_MIN_SIMILARITY);
+    }
+  } catch {
+    // 向量路挂了不影响主链路
+    vectorHits = [];
+  }
+
+  // 没有向量结果 → 退化为纯 BM25（这就是默认路径）
+  if (vectorHits.length === 0) return bm25.slice(0, limit);
+
+  const { fuseRrf } = await import('./rrf.js');
+  const fused = fuseRrf({
+    bm25: bm25.map((h) => ({ docId: h.doc.docId, score: h.score })),
+    vector: vectorHits.map((h) => ({ docId: h.doc.docId, score: h.similarity })),
+  });
+
+  // 融合后要回到 SearchHit 结构，供上层原样使用
+  const byId = new Map<string, SearchHit>();
+  for (const h of bm25) byId.set(h.doc.docId, h);
+  for (const v of vectorHits) {
+    if (!byId.has(v.doc.docId)) {
+      byId.set(v.doc.docId, {
+        doc: v.doc,
+        // 只被向量召回的文档没有 BM25 分，用相似度作展示分
+        score: Number(Math.max(0, v.similarity).toFixed(2)),
+        matchedTerms: [],
+      });
+    }
+  }
+
+  return fused
+    .slice(0, limit)
+    .map((f) => byId.get(f.docId))
+    .filter((h): h is SearchHit => Boolean(h));
+}

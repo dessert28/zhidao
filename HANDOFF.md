@@ -187,7 +187,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | ~~用药冲突提示~~ | ✅ **2026-11-15 已打通** | 根因不是"函数没接"，是 `currentMedications` 永远为空：`patient_profile` 没有用药字段、前端从不传 facts。补了 `medication_json` 列 + `usePatientFacts` 后实测触发 |
 | ~~跨院重复检查提示~~ | ✅ **2026-11-15 已打通** | `src/lib/exam/duplicate.ts`：7 项检查词典 + 时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。17 用例，实测种子数据触发 |
 | ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。**按 docs/10 D3 不做真握手** |
-| 向量检索 | RAG 6% 只到 BM25 | 无 pgvector，无 RRF 融合 |
+| ~~向量检索~~ | ✅ **2026-11-15 已实现并实测** | `rag/embed.ts` + `rrf.ts` + `vector-store.ts`；pgvector 0.8.7 真链路验证通过。默认关闭，`PGVECTOR_ENABLED=true` 开启 |
 | 图像 / OCR 输入 | 多模态少一个模态 | 无入口 |
 
 ### ✅ 前后端已打通（2026-11-15）

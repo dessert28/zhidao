@@ -31,7 +31,7 @@ import type {
 } from '@shared/types/contract';
 import type { AgentEvent } from '@shared/types/events';
 import { emptyOutput, safeRun } from './safe-run.js';
-import { isEvidenceSufficient, search, type SearchHit } from '../rag/search.js';
+import { hybridSearch, isEvidenceSufficient, type SearchHit } from '../rag/search.js';
 
 export const RETRIEVAL_TIMEOUT_MS = 8000;
 /** docs/05 §4：expand_query 最多 2 轮 */
@@ -188,7 +188,15 @@ export function makeRetrieval(deps: RetrievalDeps = {}) {
     let query = input.payload.text;
 
     /* ---- 第 ①② 步：检索 + 充分性判定 ---- */
-    let hits = search(query, 5);
+    /*
+     * 用 hybridSearch 而不是 search：
+     *   向量路可用时走 BM25 + 向量双路 RRF 融合，
+     *   不可用时（pgvector 没起）自动退回纯 BM25 —— 行为与之前完全一致。
+     *
+     * 这个降级由 hybridSearch 内部处理，这里不需要判断环境。
+     * 这样「评委 clone 下来直接跑」那条承诺不受影响。
+     */
+    let hits = await hybridSearch(query, 5);
     let roundsUsed = 0;
 
     /* ---- 第 ③ 步：自纠循环 ---- */
@@ -217,7 +225,7 @@ export function makeRetrieval(deps: RetrievalDeps = {}) {
         round: roundsUsed,
       });
 
-      hits = search(query, 5);
+      hits = await hybridSearch(query, 5);
     }
 
     const sources: Source[] = hits.map((h) => ({
