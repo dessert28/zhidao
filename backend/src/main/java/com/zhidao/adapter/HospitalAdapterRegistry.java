@@ -55,7 +55,7 @@ public class HospitalAdapterRegistry {
          * 真实接入需要资质与商务流程（docs/08 §5）。
          * hospital_place.data_quality 会把这个事实一路传到界面上。
          */
-        register(new MockHospitalAdapter("Z2-JFL", "浙江大学医学院附属第二医院（解放路院区｜示意）", Map.of(
+        register(new MockHospitalAdapter("Z2-JFL", "浙江大学医学院附属第二医院（解放路院区）", Map.of(
                 "内分泌科", 3,
                 "心血管内科", 2,
                 "消化内科", 2,

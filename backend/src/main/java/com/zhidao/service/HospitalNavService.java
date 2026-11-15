@@ -88,16 +88,122 @@ public class HospitalNavService {
     }
 
     /** 某院区 + 某科室相关的地点：通用地点 + 该科室专属地点 */
+    /**
+     * 一个科室的常规路线要包含哪些地点。
+     *
+     * <p><b>为什么不能把"全院通用地点"全带上</b>：换成真实数据后就暴露了 ——
+     * 浙二的通用地点里既有"一站式服务中心""门诊药房"（人人必经），
+     * 也有"骨髓室""内镜预约处""X线摄影"（只有特定病人才需要）。
+     * 全带上会让内分泌科的患者看到 12 步、395 分钟的路线，
+     * 其中一大半与他无关，反而制造焦虑。
+     *
+     * <p>规则：
+     * <ul>
+     *   <li>科室专属的地点（department 匹配）→ 一定要</li>
+     *   <li>不绑定科室的地点（department 为空）→ 只保留流程骨架上的：
+     *       挂号、检验、看诊、缴费、取药。检查类只在科室专属时带上。</li>
+     * </ul>
+     *
+     * <p>这个取舍的真实代价：如果患者确实需要做 X 线，路线里不会出现。
+     * 但"没列出来"比"列了 5 个可能用不上的检查"更不误导 ——
+     * 前者医生会告诉他要做什么，后者会让他以为今天要做 5 项检查。
+     */
+    private static final java.util.Set<String> ALWAYS_INCLUDE_UNBOUND = java.util.Set.of(
+            "REGISTER", // 挂号报到
+            "LAB",      // 检验抽血（空腹项目必须在看诊前）
+            "CLINIC",   // 看诊
+            "CASHIER",  // 缴费
+            "PHARMACY", // 取药
+            "REPORT"    // 取报告
+    );
+
     public List<HospitalPlace> placesFor(String hospitalCode, String department) {
-        return placeMapper.selectList(new LambdaQueryWrapper<HospitalPlace>()
+        List<HospitalPlace> all = placeMapper.selectList(new LambdaQueryWrapper<HospitalPlace>()
                 .eq(HospitalPlace::getHospitalCode, hospitalCode)
-                // department 为空的是全院通用地点，必须带上；
-                // 只查 department = '内分泌科' 会漏掉挂号处、药房
                 .and(w -> w.isNull(HospitalPlace::getDepartment)
                         .or()
                         .eq(HospitalPlace::getDepartment, department))
                 .orderByAsc(HospitalPlace::getSortOrder)
                 .orderByAsc(HospitalPlace::getId));
+
+        return all.stream()
+                .filter(p -> {
+                    // 科室专属的一定保留
+                    if (p.getDepartment() != null && p.getDepartment().equals(department)) {
+                        return true;
+                    }
+                    // 不绑定科室的，只保留流程骨架上的类型
+                    return ALWAYS_INCLUDE_UNBOUND.contains(p.getPlaceType());
+                })
+                .toList();
+    }
+
+    /**
+     * 每个阶段只保留**一个**地点。
+     *
+     * <p>真实数据里同一阶段往往有多个候选：浙二有 3 个看诊地点
+     * （糖尿病中心 / 疼痛门诊 / 名医门诊）、2 个取药地点
+     * （门诊药房 / 急诊药房）。全都列出来，患者不知道该去哪个 ——
+     * "看诊"出现三次，比只给一个更让人迷惑。
+     *
+     * <p>取舍顺序：
+     * <ol>
+     *   <li><b>科室专属的优先</b>：内分泌科的患者该去糖尿病中心，
+     *       不是名医门诊诊间</li>
+     *   <li>同为通用时，按 sort_order 取最小的（数据里数字小的更常规）</li>
+     * </ol>
+     *
+     * <p>这是**有损**的：如果患者确实属于例外（比如被安排去疼痛门诊），
+     * 路线不会显示。但"给出一个正确的默认"比"列出三个让他选"更有用 ——
+     * 例外情况医生会单独交代。
+     */
+    /**
+     * 每个阶段只保留**一个**地点。
+     *
+     * <p>真实数据里同一阶段往往有多个候选：浙二有 3 个看诊地点
+     * （糖尿病中心 / 疼痛门诊 / 名医门诊）、2 个取药地点
+     * （门诊药房 / 急诊药房）。全都列出来，患者不知道该去哪个 ——
+     * "看诊"出现三次，比只给一个更让人迷惑。
+     *
+     * <p>取舍顺序：
+     * <ol>
+     *   <li>科室专属的优先</li>
+     *   <li>同为通用时，按 sort_order 取最小的</li>
+     * </ol>
+     *
+     * <p><b>CLINIC 阶段的特殊规则</b>：只接受科室专属的地点。
+     * 实测发现：皮肤科没有专属诊区时，会退而选中"疼痛门诊" ——
+     * 患者按这个走会跑去错误的门诊。疼痛门诊只是恰好不绑定科室，
+     * 不代表它是所有科室的诊区。
+     * 没有专属诊区时，这一步**干脆不出现**，让患者到现场问导诊台，
+     * 比指引他去一个错误的诊室好得多。
+     */
+    private List<HospitalPlace> onePerStage(List<HospitalPlace> places, String department) {
+        Map<String, HospitalPlace> best = new LinkedHashMap<>();
+        for (HospitalPlace p : places) {
+            String stage = p.getPlaceType();
+            boolean pBound = p.getDepartment() != null && p.getDepartment().equals(department);
+
+            // 看诊阶段必须是科室专属，否则跳过
+            if ("CLINIC".equals(stage) && !pBound) {
+                continue;
+            }
+
+            HospitalPlace cur = best.get(stage);
+            if (cur == null) {
+                best.put(stage, p);
+                continue;
+            }
+            boolean cBound = cur.getDepartment() != null && cur.getDepartment().equals(department);
+            if (pBound && !cBound) {
+                best.put(stage, p);
+            } else if (pBound == cBound) {
+                int po = p.getSortOrder() == null ? 100 : p.getSortOrder();
+                int co = cur.getSortOrder() == null ? 100 : cur.getSortOrder();
+                if (po < co) best.put(stage, p);
+            }
+        }
+        return new ArrayList<>(best.values());
     }
 
     /* ============================ 路线 ============================ */
@@ -146,6 +252,13 @@ public class HospitalNavService {
         if (places.isEmpty()) {
             return List.of();
         }
+
+        /*
+         * 每个阶段只留一个（见 onePerStage 的说明）。
+         * 这一步必须在排序之前：排序后取第一个会把"通用地点"排在
+         * "科室专属地点"前面（sort_order 更容易先撞上）。
+         */
+        places = onePerStage(places, department);
 
         /*
          * 排序：先按阶段，再按 sort_order。
