@@ -45,3 +45,9 @@ temp/
 
 # 端侧模型缓存（129MB 权重，不入库）
 frontend/.cache/
+
+# 测试产物（临时生成的图片/PDF/日志）
+lab.png
+test-*.pdf
+test-*.txt
+*.log
