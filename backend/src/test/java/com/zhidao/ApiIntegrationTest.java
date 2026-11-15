@@ -199,6 +199,56 @@ class ApiIntegrationTest {
     }
 
     /**
+     * 号源不能出现已经过去的时段。
+     *
+     * <p>实测缺陷（2026-11-15 下午 14:12）：排程推荐当天 08:30，
+     * 用户点「确认挂号」后收到「就诊时间必须在将来」——
+     * 系统给了一个自己会拒绝的号。这比没号更糟：它让用户以为
+     * 能约，点下去才发现不行。
+     *
+     * <p>修法在 Service 层过滤（适配器代表院方，院方号表里
+     * "今天的 08:30" 确实存在；是否该给用户看是我们的事）。
+     */
+    @Test
+    @DisplayName("当天号源只保留未来时段")
+    void slotsExcludePastTimes() throws Exception {
+        String today = java.time.LocalDate.now().toString();
+        String body = mvc.perform(get("/api/bookings/slots")
+                        .param("hospitalCode", "MOCK-A")
+                        .param("department", "内分泌科")
+                        .param("date", today)
+                        .header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        com.fasterxml.jackson.databind.JsonNode slots = json.readTree(body).path("data");
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+
+        for (com.fasterxml.jackson.databind.JsonNode s : slots) {
+            java.time.LocalDateTime visitTime =
+                    java.time.LocalDateTime.parse(s.path("visitTime").asText());
+            assertThat(visitTime)
+                    .as("号源不应包含已过去的时段：" + visitTime + " < " + now)
+                    .isAfter(now);
+        }
+    }
+
+    /**
+     * 查历史日期应返回空列表，而不是一堆过去的号。
+     */
+    @Test
+    @DisplayName("查过去日期返回空号源")
+    void pastDateReturnsNoSlots() throws Exception {
+        String body = mvc.perform(get("/api/bookings/slots")
+                        .param("hospitalCode", "MOCK-A")
+                        .param("department", "内分泌科")
+                        .param("date", "2025-01-01")
+                        .header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(json.readTree(body).path("data").size()).isZero();
+    }
+
+    /**
      * 下单后号源余量必须减少。
      *
      * <p>实测缺陷（2026-11-15）：Mock 适配器把 remaining 写死成 1，

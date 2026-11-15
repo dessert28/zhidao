@@ -88,6 +88,32 @@ public class BookingService {
         Map<LocalDateTime, Long> bookedByTime = booked.stream()
                 .collect(Collectors.groupingBy(BookingOrder::getVisitTime, Collectors.counting()));
 
+        /*
+         * 过滤掉**已经过去的时段**。
+         *
+         * <p>实测缺陷（2026-11-15 下午）：用户点「确认挂号」后收到
+         * 「visitTime 就诊时间必须在将来」—— 因为排程推荐的是当天 08:30，
+         * 而当时已是 14:12。日期回退的问题（东八区凌晨用 toISOString 会
+         * 退到前一天）之前修过，但**当天上午的时段在下午依然是过去时间**，
+         * 这一层当时没滤。
+         *
+         * <p>为什么不在适配器里滤：适配器代表院方，院方号表里
+         * "今天的 08:30" 就是存在的一条记录；是否该给用户看，
+         * 是我们业务层的事。也和"扣减余量"放同一层 —— 都是我们
+         * 对院方原始数据做加工的地方。
+         *
+         * <p>边界：查历史日期（date < today）时全部时段都过去，
+         * 直接返回空 —— 让上层得到"没号"而不是一堆过去的号。
+         */
+        LocalDateTime now = LocalDateTime.now();
+        if (dayEnd.isAfter(now)) {
+            raw = raw.stream()
+                    .filter(s -> s.visitTime().isAfter(now))
+                    .toList();
+        } else {
+            return List.of();
+        }
+
         return raw.stream()
                 .map(s -> new HospitalAdapter.Slot(
                         s.visitTime(),

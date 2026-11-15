@@ -13,7 +13,7 @@ import type { StreamEvent } from '../hooks/useEventStream';
 import { useTts } from '../hooks/useTts';
 import { useState } from 'react';
 import type { BookingPreview } from '@shared/types/contract';
-import { createBooking } from '../lib/api';
+import { createBooking, ensureLogin } from '../lib/api';
 
 /** 服务端渲染的卡片：直接注入 HTML */
 function ServerCard({ html }: { html: string }) {
@@ -98,11 +98,31 @@ function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
   const confirm = async () => {
     setStatus('submitting');
     setMessage('');
-    const r = await createBooking({
+    let r = await createBooking({
       hospitalCode: preorder.hospitalCode,
       department: preorder.department,
       visitTime: preorder.slot,
     });
+    /*
+     * 401 自动重登一次。
+     *
+     * 实测场景：后端重启后 JWT 密钥重新生成，页面里存的 token 全部作废。
+     * 之前直接显示「登录已失效，请刷新页面后重试」——
+     * 但 token 已经被 request() 清掉了，此刻 ensureLogin 就能拿到新 token，
+     * 让用户手动刷新等于把能自动解决的事推给用户。
+     *
+     * 只重试一次：如果重登后再失败，那是别的问题，别掩盖。
+     */
+    if (!r.ok && r.failure.kind === 'unauthorized') {
+      const re = await ensureLogin();
+      if (re.ok) {
+        r = await createBooking({
+          hospitalCode: preorder.hospitalCode,
+          department: preorder.department,
+          visitTime: preorder.slot,
+        });
+      }
+    }
     if (r.ok) {
       setStatus('done');
       setMessage('已预约成功，可在「我的病历」查看。');
