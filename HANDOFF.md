@@ -168,7 +168,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | 提醒引擎 | 3 条可解释规则 + dedupe 幂等 + `@Scheduled` | ✅ 完整 |
 
 **测试总量**：前端 432 + 后端 29 = **461 用例**。
-**端到端验证**：`pnpm verify:llm`（模型四关）+ `pnpm e2e:multiturn`（七场景）。
+**端到端验证**：`pnpm verify:llm`（模型四关）+ `pnpm e2e:multiturn`（七场景）+ `pnpm e2e:regressions`（浏览器实测缺陷回归，9 项）。
 
 ### 未实现 —— 第一类：有占位，用户会看到"未开放"
 

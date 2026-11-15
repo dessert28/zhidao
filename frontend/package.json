@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "verify:llm": "tsx scripts/verify-llm.ts",
     "e2e:multiturn": "tsx scripts/e2e-multiturn.ts",
+    "e2e:regressions": "tsx scripts/e2e-regressions.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"server/**/*.ts\""
   },
