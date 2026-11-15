@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,8 +49,52 @@ public class BookingService {
     private final HospitalAdapterRegistry adapters;
 
     /** 查号源：直接问院方适配器，不落库 —— 号源是别人的实时数据 */
+    /**
+     * 查询号源，并扣减**已被本地预约占用**的数量。
+     *
+     * <p>为什么要在这里扣：适配器（{@link HospitalAdapter}）代表的是**院方**，
+     * 它能说的只是"我们放出了几个号"。而我们本地已经下过的单，
+     * 院方适配器并不知道 —— Mock 实现甚至把 remaining 写死成 1。
+     *
+     * <p>实测缺陷（2026-11-15）：同一时段下单成功后，
+     * 再查号源仍然显示 remaining=1，看起来"无限可约"。
+     * 虽然重复下单会被 409 拦住，但**展示给用户的数字是错的** ——
+     * 患者会以为还有号，点进去才发现被拒。这比没有号更让人困惑。
+     *
+     * <p>扣减逻辑放在 Service 而不是适配器：
+     * 适配器是对院方协议的抽象，不该知道我们的订单表。
+     * 一旦把订单查询塞进适配器，换真实院方对接时就要重写一遍。
+     *
+     * <p>只统计**未取消**的单：CANCELLED 之后号应该回到池子里。
+     */
     public List<HospitalAdapter.Slot> querySlots(String hospitalCode, String department, LocalDate date) {
-        return adapters.of(hospitalCode).querySlots(department, date);
+        List<HospitalAdapter.Slot> raw = adapters.of(hospitalCode).querySlots(department, date);
+        if (raw.isEmpty()) return raw;
+
+        /*
+         * 一次查出这一天该科室所有未取消的订单，在内存里按时间做减。
+         * 不逐条 SQL 查：号源通常十几个，逐条查是 N+1。
+         */
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+
+        List<BookingOrder> booked = bookingMapper.selectList(new LambdaQueryWrapper<BookingOrder>()
+                .eq(BookingOrder::getHospitalCode, hospitalCode)
+                .eq(BookingOrder::getDepartment, department)
+                .ge(BookingOrder::getVisitTime, dayStart)
+                .lt(BookingOrder::getVisitTime, dayEnd)
+                .ne(BookingOrder::getStatus, "CANCELLED"));
+
+        Map<LocalDateTime, Long> bookedByTime = booked.stream()
+                .collect(Collectors.groupingBy(BookingOrder::getVisitTime, Collectors.counting()));
+
+        return raw.stream()
+                .map(s -> new HospitalAdapter.Slot(
+                        s.visitTime(),
+                        s.doctorName(),
+                        // 不出现负数：号可能被其他渠道占掉，remaining 最低显示 0
+                        Math.max(0, s.remaining() - bookedByTime.getOrDefault(s.visitTime(), 0L).intValue())))
+                .toList();
     }
 
     public List<BookingOrder> list(long userId) {

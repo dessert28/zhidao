@@ -198,6 +198,70 @@ class ApiIntegrationTest {
         return json.readTree(body).path("data").size();
     }
 
+    /**
+     * 下单后号源余量必须减少。
+     *
+     * <p>实测缺陷（2026-11-15）：Mock 适配器把 remaining 写死成 1，
+     * 下单成功后查号源仍然显示 1 —— 看起来"无限可约"。
+     * 虽然重复下单会被 409 拦住，但**展示给患者的数字是错的**，
+     * 点进去才发现被拒，比没号更让人困惑。
+     *
+     * <p>修法是在 Service 层扣减本地已预约数量（适配器代表院方，
+     * 不该知道我们的订单表）。
+     */
+    @Test
+    @DisplayName("下单后该时段余量减为 0，其他时段不受影响")
+    void remainingDecreasesAfterBooking() throws Exception {
+        String dept = "神经内科";
+        String date = "2026-11-16";
+
+        // 找一个还有号的时段
+        String before = mvc.perform(get("/api/bookings/slots")
+                        .param("hospitalCode", "MOCK-A")
+                        .param("department", dept)
+                        .param("date", date)
+                        .header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        com.fasterxml.jackson.databind.JsonNode slots = json.readTree(before).path("data");
+        assertThat(slots.size()).as("前置条件：该科室当天应有号源").isGreaterThan(0);
+
+        String visitTime = slots.get(0).path("visitTime").asText();
+        int beforeRemaining = slots.get(0).path("remaining").asInt();
+        assertThat(beforeRemaining).as("前置条件：该时段初始有余量").isGreaterThan(0);
+
+        // 下单
+        mvc.perform(post("/api/bookings")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"hospitalCode\":\"MOCK-A\",\"department\":\"" + dept
+                                + "\",\"visitTime\":\"" + visitTime + "\"}"))
+                .andExpect(status().isOk());
+
+        // 复查：该时段余量应减 1，其余时段不变
+        String after = mvc.perform(get("/api/bookings/slots")
+                        .param("hospitalCode", "MOCK-A")
+                        .param("department", dept)
+                        .param("date", date)
+                        .header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        com.fasterxml.jackson.databind.JsonNode afterSlots = json.readTree(after).path("data");
+
+        int matched = 0;
+        for (com.fasterxml.jackson.databind.JsonNode s : afterSlots) {
+            if (s.path("visitTime").asText().equals(visitTime)) {
+                assertThat(s.path("remaining").asInt())
+                        .as("下单后该时段余量应减 1")
+                        .isEqualTo(beforeRemaining - 1);
+                matched++;
+            } else {
+                assertThat(s.path("remaining").asInt())
+                        .as("其他时段不应受影响")
+                        .isEqualTo(1);
+            }
+        }
+        assertThat(matched).as("应能找回被预约的那个时段").isEqualTo(1);
+    }
+
     @Test
     @DisplayName("不存在的院区返回 400，而不是悄悄换成别家")
     void unknownHospitalRejected() throws Exception {
