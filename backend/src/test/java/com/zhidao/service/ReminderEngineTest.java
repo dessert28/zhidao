@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +43,13 @@ class ReminderEngineTest {
 
     @Autowired
     private ReminderTaskMapper reminderMapper;
+
+    /**
+     * 复查提醒的基准是「该科室最近一次病历」，所以要直接查病历表 ——
+     * 写死日期会在种子数据变动时失效（已经发生过一次）。
+     */
+    @Autowired
+    private com.zhidao.mapper.MedicalRecordMapper recordMapper;
 
     @Autowired
     private HospitalService hospitalService;
@@ -96,8 +104,24 @@ class ReminderEngineTest {
     @Test
     @DisplayName("距上次糖化血红蛋白满 3 个月 → 生成复查提醒")
     void labFollowUpGenerated() {
-        // 内分泌科最近一次 2026-10-20，+3 个月 = 2027-01-20
-        engine.scanOnce(LocalDateTime.of(2027, 1, 21, 9, 0));
+        /*
+         * 复查提醒的基准是「内分泌科**最近一次**就诊」。
+         * 原来这里写死 2026-10-20，但种子数据后来加了一条 11-10 的
+         * 内分泌科病历（带处方那条），基准就变了 —— 测试当场失败。
+         *
+         * 改成从数据里算基准，不再依赖具体某条记录：
+         * 扫一个足够晚的时间点（基准 + 4 个月），必到期。
+         */
+        LocalDate latest = recordMapper.selectList(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.zhidao.entity.MedicalRecord>()
+                                .eq(com.zhidao.entity.MedicalRecord::getDepartment, "内分泌科")
+                                .orderByDesc(com.zhidao.entity.MedicalRecord::getVisitDate)
+                                .last("LIMIT 1")).stream()
+                .findFirst()
+                .map(com.zhidao.entity.MedicalRecord::getVisitDate)
+                .orElseThrow(() -> new AssertionError("前置条件：应存在内分泌科病历"));
+
+        engine.scanOnce(latest.plusMonths(4).atTime(9, 0));
 
         assertThat(hasTitleContaining("糖化血红蛋白")).isTrue();
         ReminderTask t = all().stream()

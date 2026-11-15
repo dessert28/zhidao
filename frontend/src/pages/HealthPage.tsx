@@ -35,6 +35,14 @@ import {
   summarizeCheckups,
   type CheckupSuggestion,
 } from '../lib/health/checkups';
+import {
+  dedupeByLatest,
+  describeMedication,
+  extractMedications,
+  isInstructionComplete,
+  type MedicationInstruction,
+} from '../lib/health/medications';
+import { buildPrepList, sortPrepItems, type PrepItem } from '../lib/health/prep';
 
 interface State {
   loading: boolean;
@@ -51,13 +59,34 @@ export default function HealthPage() {
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, failure: null }));
 
-    const auth = await ensureLogin();
-    if (!auth.ok) {
-      setState({ ...EMPTY, loading: false, failure: auth.failure });
-      return;
+    /*
+     * 先登录，再拉数据；任何一步 401 都自动重登一次。
+     *
+     * 实测场景：后端重启后 JWT 密钥重新生成，页面里的 token 全部作废。
+     * 第一版只调 ensureLogin，没有处理"拉数据时才发现失效"的情况 ——
+     * 因为 ensureLogin 看到 token 非空就直接返回 ok，
+     * 而那个 token 其实已经废了。于是页面显示"读不到你的健康数据"。
+     *
+     * 修法与预约卡一致：收到 unauthorized 就清 token 重登再试一次。
+     * 只重试一次 —— 重登后再失败是别的问题，不该无限循环。
+     */
+    const fetchAll = async () => {
+      const [rec, prof] = await Promise.all([getRecords(), getProfile()]);
+      return { rec, prof };
+    };
+
+    let { rec, prof } = await fetchAll();
+
+    const unauthorized = (!rec.ok && rec.failure.kind === 'unauthorized') ||
+      (!prof.ok && prof.failure.kind === 'unauthorized');
+
+    if (unauthorized) {
+      const re = await ensureLogin();
+      if (re.ok) {
+        ({ rec, prof } = await fetchAll());
+      }
     }
 
-    const [rec, prof] = await Promise.all([getRecords(), getProfile()]);
     const failure = !rec.ok ? rec.failure : !prof.ok ? prof.failure : null;
     if (failure) {
       setState({ ...EMPTY, loading: false, failure });
@@ -81,6 +110,50 @@ export default function HealthPage() {
     () =>
       buildCheckupSuggestions(state.profile?.chronics ?? [], state.records),
     [state.profile, state.records],
+  );
+
+  /*
+   * 用药记录：从所有病历里抽，按药名去重保留最近一次。
+   *
+   * 为什么按"最近一次"而不是全列出：同一个药在不同医院可能写法与
+   * 剂量都变了，全列出会让患者不知道该按哪个吃。保留最新的更接近现状。
+   */
+  const medications = useMemo(() => {
+    const all = state.records.flatMap((r) =>
+      extractMedications(r.ocrText ?? '', r.hospitalCode, r.visitDate),
+    );
+    return dedupeByLatest(all);
+  }, [state.records]);
+
+  /** 准备清单按"最可能挂的科"生成：用病历里出现最多的科室 */
+  const prepDept = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of state.records) {
+      if (!r.department) continue;
+      counts.set(r.department, (counts.get(r.department) ?? 0) + 1);
+    }
+    let best = '全科医学科';
+    let max = 0;
+    for (const [d, c] of counts) {
+      if (c > max) {
+        max = c;
+        best = d;
+      }
+    }
+    return best;
+  }, [state.records]);
+
+  const prepItems = useMemo(
+    () =>
+      sortPrepItems(
+        buildPrepList({
+          department: prepDept,
+          hasMedications: (state.profile?.medications.length ?? 0) > 0,
+          chronics: state.profile?.chronics ?? [],
+          records: state.records,
+        }),
+      ),
+    [prepDept, state.profile, state.records],
   );
 
   if (state.loading) {
@@ -127,6 +200,10 @@ export default function HealthPage() {
       <SummaryStrip trends={trends} checkups={checkups} chronicCount={state.profile?.chronics.length ?? 0} />
 
       <CheckupSection items={checkups} hasChronic={(state.profile?.chronics.length ?? 0) > 0} />
+
+      <MedicationSection items={medications} knownNames={state.profile?.medications ?? []} />
+
+      <PrepSection items={prepItems} department={prepDept} />
 
       <TrendSection trends={trends} recordCount={state.records.length} />
 
@@ -283,6 +360,148 @@ function CheckupSection({
               </div>
 
               <p className="mt-1 text-xs text-gray-400">依据：{c.basis}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ============================ 用药指导 ============================ */
+
+/**
+ * 用药指导卡。
+ *
+ * <p>只展示病历里**已经写着**的用法，不补全、不推测。
+ * 病历里只写了药名的，如实说"没有记录用法"并指向药师 ——
+ * 见 lib/health/medications.ts 的边界说明。
+ */
+function MedicationSection({
+  items,
+  knownNames,
+}: {
+  items: MedicationInstruction[];
+  knownNames: string[];
+}) {
+  /*
+   * 档案里登记了药名、但病历里查不到用法的，也要列出来 ——
+   * 这正是患者最需要去问的情况，藏起来等于假装没有这个缺口。
+   */
+  const missing = knownNames.filter(
+    (n) => !items.some((m) => m.name.includes(n) || n.includes(m.name)),
+  );
+
+  if (items.length === 0 && missing.length === 0) {
+    return (
+      <section>
+        <SectionTitle>用药</SectionTitle>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+          没有在用药物记录。
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <SectionTitle>
+        用药
+        <span className="ml-2 text-xs font-normal text-gray-400">
+          {items.length + missing.length} 种
+        </span>
+      </SectionTitle>
+
+      <div className="space-y-2">
+        {items.map((m) => {
+          const complete = isInstructionComplete(m);
+          return (
+            <div
+              key={`${m.name}-${m.visitDate}`}
+              className={`rounded-xl border p-3 ${
+                complete ? 'border-gray-200 bg-white' : 'border-amber-200 bg-amber-50/50'
+              }`}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                {complete ? (
+                  <span className="ml-auto text-xs text-gray-400">
+                    {m.visitDate || ''}
+                  </span>
+                ) : (
+                  <span className="ml-auto rounded bg-amber-600 px-1.5 py-0.5 text-xs text-white">
+                    用法未记录
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-sm leading-relaxed text-gray-700">
+                {describeMedication(m)}
+              </p>
+              {/* 原始片段：患者可以对照药盒确认我们没有读错 */}
+              <p className="mt-1 text-xs text-gray-400">病历原文：{m.source}</p>
+            </div>
+          );
+        })}
+
+        {missing.length > 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-3">
+            <div className="text-sm font-medium text-gray-900">档案里有、病历里查不到用法</div>
+            <p className="mt-1 text-sm text-gray-700">{missing.join('、')}</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-500">
+              你的档案里登记了这些药，但上传的病历里没有对应的用法记录。
+              建议按药盒上的说明服用；有疑问请咨询开药的医生或药师。
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <p className="mt-2 rounded-lg bg-gray-100 px-3 py-2 text-xs leading-relaxed text-gray-600">
+        以上用法来自你上传的病历原文，我们没有补充或推测。
+        如果病历里没写、或与药盒不一致，
+        <strong>以医生处方和药盒说明为准</strong>，不要自行调整剂量。
+      </p>
+    </section>
+  );
+}
+
+/* ============================ 就诊准备 ============================ */
+
+const PREP_META: Record<PrepItem['level'], { label: string; dot: string; box: string }> = {
+  must: { label: '必须', dot: 'bg-red-500', box: 'border-gray-200 bg-white' },
+  ask: { label: '要问医生', dot: 'bg-amber-500', box: 'border-amber-200 bg-amber-50/50' },
+  should: { label: '建议', dot: 'bg-gray-400', box: 'border-gray-200 bg-white' },
+};
+
+function PrepSection({ items, department }: { items: PrepItem[]; department: string }) {
+  if (items.length === 0) return null;
+
+  return (
+    <section>
+      <SectionTitle>
+        下次就诊前准备
+        <span className="ml-2 text-xs font-normal text-gray-400">
+          按 {department} 生成
+        </span>
+      </SectionTitle>
+
+      <div className="space-y-2">
+        {items.map((p) => {
+          const meta = PREP_META[p.level];
+          return (
+            <div key={p.title} className={`rounded-xl border p-3 ${meta.box}`}>
+              <div className="flex items-start gap-2">
+                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-medium text-gray-900">{p.title}</span>
+                    <span className="ml-auto shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-700">{p.detail}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-gray-400">为什么：{p.why}</p>
+                </div>
+              </div>
             </div>
           );
         })}

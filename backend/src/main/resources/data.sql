@@ -45,7 +45,18 @@ INSERT INTO medical_record (user_id, hospital_code, visit_date, department, diag
    '门诊病历-20261020.pdf', 102400, 'UPLOAD'),
   (1, 'MOCK-A', '2026-11-02', '心血管内科', '原发性高血压 2 级',
    '血压 158/96 mmHg。建议低盐饮食，继续监测，两周后复查。',
-   '门诊病历-20261102.pdf', 88064, 'MANUAL');
+   '门诊病历-20261102.pdf', 88064, 'MANUAL'),
+  -- 带处方的门诊病历：用于展示「用药指导」能读出剂量与服用时间。
+  -- 处方写法刻意混用中文与医生速记（qd/bid），
+  -- 因为真实病历里两种都常见，我们要能都读懂。
+  (1, 'MOCK-A', '2026-11-10', '内分泌科', '2型糖尿病，原发性高血压',
+   '血压 152/94 mmHg，空腹血糖 7.6 mmol/L。
+处方：
+二甲双胍缓释片 0.5g 每日2次 餐后
+氨氯地平片 5mg 每日1次 晨起
+阿司匹林肠溶片 100mg qd 餐后
+建议继续监测血压血糖，三个月后复查。',
+   '门诊病历-20261110.pdf', 96256, 'MANUAL');
 
 -- 预约单：一条已确认（明天早上，触发"今晚禁食"提醒），一条待确认
 INSERT INTO booking_order (user_id, hospital_code, department, visit_time, status, external_order_no, remark) VALUES
