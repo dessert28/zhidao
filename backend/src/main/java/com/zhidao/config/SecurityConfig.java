@@ -78,7 +78,21 @@ public class SecurityConfig {
                          * 仍需登录 —— 那是写操作，要能追溯到人。
                          * 用独立的 requestMatchers 精确区分，不整段放行。
                          */
+                        /*
+                         * 院内导航**不需要登录**。
+                         *
+                         * 理由：患者站在门诊楼里找不着抽血窗口时，
+                         * 让他先登录是荒谬的 —— 这是整个系统里最急的一刻。
+                         * 导航数据本身是院方公开信息（楼层索引牌上就有），
+                         * 谈不上隐私。
+                         *
+                         * 只放行 GET：导航是只读的。
+                         * 将来如果要支持"院方维护地点数据"，那是写操作，
+                         * 走的是另一套权限（院方后台），不该挂在这个前缀下。
+                         */
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots", "/api/bookings/hospitals")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/nav/**")
                         .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",

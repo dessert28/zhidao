@@ -63,9 +63,26 @@ backendRoutes.all('/*', async (c) => {
   }
 
   const url = new URL(c.req.url);
-  // 去掉 /api/backend 前缀，剩下的是后端真实路径
-  const rest = url.pathname.replace(/^\/api\/backend/, '') || '/';
-  const target = `${backendBase()}${rest}${url.search}`;
+  /*
+   * 把 BFF 前缀映射到后端的真实路径。
+   *
+   * 规则只有一条：**去掉 `/api/backend`，其余原样转发**。
+   *
+   *   /api/backend/api/auth/login → /api/auth/login
+   *   /api/backend/api/patient/x  → /api/patient/x
+   *   /api/nav/route              → /api/nav/route   （不含 backend，原样）
+   *
+   * 踩过的两个坑都记在这，因为都不好排查：
+   *   · 第一版直接删前缀 → /api/nav/route 变 /nav/route，
+   *     少一层 /api，后端 401（被安全链挡住，看着像放行规则没生效）
+   *   · 第二版正则写成 /^\/api?\/?(backend|nav)/ → `i` 变成可选，
+   *     连 /api/auth/login 都被吃成 /auth/login，登录也 401
+   * 教训：这类转发必须实测，代码看着对不算数。
+   */
+  const rest = url.pathname.startsWith('/api/backend')
+      ? url.pathname.slice('/api/backend'.length)
+      : url.pathname;
+  const target = `${backendBase()}${rest === '' ? '/' : rest}${url.search}`;
 
   const headers: Record<string, string> = {};
   for (const h of PASS_HEADERS) {

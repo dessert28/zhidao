@@ -143,3 +143,35 @@ CREATE INDEX idx_reminder_user ON reminder_task (user_id, due_at);
 -- 唯一定的是「同一个用户 + 同一个幂等键」，不是全局唯一：
 -- 两个患者各自有一条"明天禁食"是完全正常的
 CREATE UNIQUE INDEX uk_reminder_dedupe ON reminder_task (user_id, dedupe_key);
+
+-- ============================================================
+-- 院内地点与服务点 —— 「在院内」那一段的导航数据
+--
+-- 为什么单独一张表而不是写死在代码里：
+--   院内的楼层分布是**每家医院自己的事实**，换一家医院就得重录一遍。
+--   写死在代码里意味着每接一家医院都要改代码、发版；
+--   做成数据表，医院运营人员自己就能维护。
+--
+-- 用 IF NOT EXISTS：测试会创建多个 Spring 上下文
+-- （MockMvc 与非 MockMvc 的配置不同），它们共用同一个 H2 内存库。
+-- 不加这一句，第二个上下文执行建表语句时会因表已存在而启动失败 ——
+-- 这是实测踩到的：单独跑测试类通过，一起跑就 26 个错误。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS hospital_place (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  hospital_code VARCHAR(32)  NOT NULL COMMENT '院区标识，与 hospital.hospital_code 对应',
+  place_type    VARCHAR(20)  NOT NULL COMMENT 'REGISTER/LAB/CLINIC/EXAM/PHARMACY/CASHIER/REPORT/OTHER',
+  department    VARCHAR(64)           COMMENT '为 NULL 表示与科室无关',
+  name          VARCHAR(128) NOT NULL COMMENT '展示名，如"门诊三楼检验科抽血窗口"',
+  building      VARCHAR(64)           COMMENT '楼栋，如"门诊楼"',
+  floor         VARCHAR(20)           COMMENT '楼层，如"3F"',
+  directions    VARCHAR(500)          COMMENT '口语化指引，不是坐标',
+  open_hours    VARCHAR(200)          COMMENT '如"周一至周六 7:30-17:00"',
+  est_minutes   INT                   COMMENT '处理时长（分钟）',
+  sort_order    INT          NOT NULL DEFAULT 100,
+  data_quality  VARCHAR(20)  NOT NULL DEFAULT 'SAMPLE' COMMENT 'REAL 院方提供 / SAMPLE 示意',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted       TINYINT      NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_place_lookup ON hospital_place (hospital_code, place_type, department);

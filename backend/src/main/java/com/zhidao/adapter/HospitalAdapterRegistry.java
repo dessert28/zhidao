@@ -43,6 +43,27 @@ public class HospitalAdapterRegistry {
                 "心血管内科", 1,
                 "骨科", 2
         )));
+
+        /*
+         * 浙大二院解放路院区。
+         *
+         * 用真实医院名而不是"MOCK-C"：README 的"跨院"叙事需要一家
+         * 可识别的三甲医院做样例，抽象成"演示市第 N 人民医院"
+         * 会让评审感知不到真实场景。
+         *
+         * 但号源与院内地点都是**示意数据** ——
+         * 真实接入需要资质与商务流程（docs/08 §5）。
+         * hospital_place.data_quality 会把这个事实一路传到界面上。
+         */
+        register(new MockHospitalAdapter("Z2-JFL", "浙江大学医学院附属第二医院（解放路院区｜示意）", Map.of(
+                "内分泌科", 3,
+                "心血管内科", 2,
+                "消化内科", 2,
+                "神经内科", 2,
+                "骨科", 2,
+                "皮肤科", 2,
+                "全科医学科", 3
+        )));
     }
 
     public void register(HospitalAdapter adapter) {

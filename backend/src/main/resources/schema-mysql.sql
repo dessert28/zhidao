@@ -139,3 +139,26 @@ CREATE TABLE reminder_task (
   UNIQUE KEY uk_reminder_dedupe (user_id, dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='提醒任务。reason 字段是这张表的灵魂';
+
+-- ============================================================
+-- 院内地点与服务点（与 schema.sql 的 hospital_place 一一对应）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS hospital_place (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  hospital_code VARCHAR(32)  NOT NULL COMMENT '院区标识',
+  place_type    VARCHAR(20)  NOT NULL COMMENT 'REGISTER/LAB/CLINIC/EXAM/PHARMACY/CASHIER/REPORT/OTHER',
+  department    VARCHAR(64)           COMMENT '为 NULL 表示与科室无关',
+  name          VARCHAR(128) NOT NULL,
+  building      VARCHAR(64),
+  floor         VARCHAR(20),
+  directions    VARCHAR(500)          COMMENT '口语化指引，不是坐标',
+  open_hours    VARCHAR(200),
+  est_minutes   INT                   COMMENT '处理时长（分钟）',
+  sort_order    INT          NOT NULL DEFAULT 100,
+  data_quality  VARCHAR(20)  NOT NULL DEFAULT 'SAMPLE' COMMENT 'REAL 院方提供 / SAMPLE 示意',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted       TINYINT(1)   NOT NULL DEFAULT 0,
+  KEY idx_place_lookup (hospital_code, place_type, department)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='院内地点。data_quality 区分院方真实数据与演示示意数据';

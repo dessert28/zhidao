@@ -14,6 +14,7 @@ import { useTts } from '../hooks/useTts';
 import { useState } from 'react';
 import type { BookingPreview } from '@shared/types/contract';
 import { createBooking, ensureLogin } from '../lib/api';
+import { HospitalNav } from './HospitalNav';
 
 /** 服务端渲染的卡片：直接注入 HTML */
 function ServerCard({ html }: { html: string }) {
@@ -163,7 +164,21 @@ function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
         </dl>
 
         {status === 'done' ? (
-          <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{message}</p>
+          <>
+            <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{message}</p>
+            {/*
+              预约成功后立刻给出"怎么走"。
+              患者约完号最想知道的下一件事就是"我到时候去哪"，
+              让他再去别处找一遍等于白问。
+            */}
+            <div className="mt-4 border-t border-brand-100 pt-4">
+              <HospitalNav
+                hospitalCode={preorder.hospitalCode}
+                department={preorder.department}
+                visitTime={preorder.slot}
+              />
+            </div>
+          </>
         ) : (
           <>
             {status === 'error' ? (

@@ -43,6 +43,14 @@ export function createApp(opts: AppOptions = {}) {
    */
   app.route('/api/backend', backendRoutes);
   /*
+   * 院内导航：/api/nav/* → 后端 /api/nav/*
+   *
+   * 复用同一个转发实现（它会认 backend 与 nav 两种前缀）。
+   * 单独挂一条是因为导航不需要登录 —— 患者站在楼里找路时
+   * 不该先被要求登录，而 /api/backend 那套默认带患者身份。
+   */
+  app.route('/api/nav', backendRoutes);
+  /*
    * 报告图识别：/api/ocr/report
    *
    * 这是唯一会把非文本内容交给模型服务商的路径 ——

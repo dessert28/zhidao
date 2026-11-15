@@ -294,6 +294,86 @@ export function markReminder(id: number, action: 'done' | 'skip') {
   return request<ReminderTask>(`/api/reminders/${id}/${action}`, { method: 'POST' });
 }
 
+/* ============================ 院内导航 ============================ */
+
+/** 一个院内地点（后端 hospital_place 的投影） */
+export interface NavPlace {
+  placeType: string;
+  department: string | null;
+  name: string;
+  building: string | null;
+  floor: string | null;
+  directions: string | null;
+  openHours: string | null;
+  estMinutes: number | null;
+  dataQuality: 'REAL' | 'SAMPLE';
+}
+
+/** 路线中的一步 */
+export interface NavStep {
+  order: number;
+  stage: string;
+  stageLabel: string;
+  place: NavPlace;
+  /** DONE 已完成 / CURRENT 现在去 / UPCOMING 待办 */
+  status: 'DONE' | 'CURRENT' | 'UPCOMING';
+  note: string;
+}
+
+export interface NavRoute {
+  hospitalCode: string;
+  department: string;
+  steps: NavStep[];
+  totalMinutes: number;
+  /**
+   * 数据可信度。SAMPLE 表示示意数据 —— 界面必须标出来，
+   * 不能让患者把编的楼层当成真实导航。
+   */
+  dataQuality: 'REAL' | 'SAMPLE';
+  visitTime: string;
+}
+
+/**
+ * 取院内路线。
+ *
+ * <p>不需要登录：患者站在楼里找不着路时，不该先被要求登录。
+ */
+export function getNavRoute(input: {
+  hospitalCode: string;
+  department: string;
+  needsFasting?: boolean;
+  visitTime: string;
+}) {
+  const q = new URLSearchParams({
+    hospitalCode: input.hospitalCode,
+    department: input.department,
+    needsFasting: String(input.needsFasting ?? false),
+    visitTime: input.visitTime,
+  });
+  return request<NavRoute>(`/api/nav/route?${q.toString()}`);
+}
+
+/** 现在该去哪一步 */
+export function getCurrentStep(input: {
+  hospitalCode: string;
+  department: string;
+  needsFasting?: boolean;
+  visitTime: string;
+}) {
+  const q = new URLSearchParams({
+    hospitalCode: input.hospitalCode,
+    department: input.department,
+    needsFasting: String(input.needsFasting ?? false),
+    visitTime: input.visitTime,
+  });
+  return request<{
+    hasStep: boolean;
+    step?: NavStep;
+    message?: string;
+    maybeClosed?: boolean;
+  }>(`/api/nav/current?${q.toString()}`);
+}
+
 export function getBookings() {
   return request<BookingOrder[]>('/api/bookings');
 }

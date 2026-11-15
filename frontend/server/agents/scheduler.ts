@@ -118,9 +118,15 @@ export function parseBookingIntent(text: string): BookingIntent | null {
   }
   if (!department) return null;
 
-  // 2. 院区：演示环境只有两个 Mock 院区
+  // 2. 院区：按名称识别；识别不到留空，由调用方决定用哪家
+  /*
+   * 顺序有讲究：**先匹配"浙二/浙大二院"，再匹配泛化的"人民医院"**。
+   * 「浙江大学医学院附属第二医院」里含"第二医院"，
+   * 如果先写了 /第二/ 这类宽泛规则会误命中别家。
+   */
   let hospitalCode: string | null = null;
-  if (/第一人民|人民医院|MOCK-A/i.test(t)) hospitalCode = 'MOCK-A';
+  if (/浙(大|江大学.*第)?二院|浙二|第二医院|解放路/i.test(t)) hospitalCode = 'Z2-JFL';
+  else if (/第一人民|人民医院|MOCK-A/i.test(t)) hospitalCode = 'MOCK-A';
   else if (/中心医院|MOCK-B/i.test(t)) hospitalCode = 'MOCK-B';
 
   // 3. 日期：支持"明天""后天""下周X""X月X日"，抽不到留空
@@ -229,6 +235,8 @@ async function querySlots(
 const HOSPITAL_NAMES: Record<string, string> = {
   'MOCK-A': '演示市第一人民医院',
   'MOCK-B': '演示市中心医院',
+  // 用户口语里叫「浙二」，官方名太长 —— 展示时用简称，卡片里再给全称
+  'Z2-JFL': '浙大二院（解放路院区）',
 };
 
 function hospitalName(code: string): string {
@@ -338,10 +346,16 @@ export function makeScheduler() {
     }
 
     const department = intent?.department ?? input.payload.knownDepartment!;
-    // 没提院区时两家都试：这正是"换院区才有号"的价值
+    /*
+     * 没提院区时按顺序试：这正是"换院区才有号"的价值。
+     *
+     * 顺序把浙二放前面：它是样例里唯一有真实名称的三甲，
+     * 用户说"帮我挂个号"时给一家可识别的医院比给"演示市第一人民医院"
+     * 更像真事。MOCK 两家仍然在后备里，保证都能被搜到。
+     */
     const candidates = intent?.hospitalCode
       ? [intent.hospitalCode]
-      : ['MOCK-A', 'MOCK-B'];
+      : ['Z2-JFL', 'MOCK-A', 'MOCK-B'];
 
     const startDate = intent?.date ?? todayLocal();
     const dates = intent?.date ? [intent.date] : nextDays(startDate, 14);
@@ -415,7 +429,14 @@ export function makeScheduler() {
     events.push({ type: 'booking_preview_card', preorder: preview });
 
     // 同一科室另一家院区也查一次，用来提示"换院区有/没号"
-    const otherCode = found.hospitalCode === 'MOCK-A' ? 'MOCK-B' : 'MOCK-A';
+    /*
+     * 顺便查另一家有号的院区，用来演示"换院区也能约"。
+     *
+     * 原来写死成 MOCK-A ↔ MOCK-B 的二选一，加了第三家后那种写法
+     * 会把浙二永远排除在对比之外。改成"在候选列表里取第一个不等于
+     * 当前院区的"，加院区时不用再改这里。
+     */
+    const otherCode = ['Z2-JFL', 'MOCK-A', 'MOCK-B'].find((c) => c !== found.hospitalCode)!;
     const other = await querySlots(otherCode, department, found.date);
     if (other.ok) {
       events.push({
