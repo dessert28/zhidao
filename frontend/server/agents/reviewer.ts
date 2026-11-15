@@ -475,7 +475,19 @@ export function makeReviewer(deps: JudgeDeps = {}) {
     /* ---- 第 7 步：必定追加免责声明 ---- */
     // 三种情况都加：低分 / judge 失败 / 无证据。其余情况也加 —— 医疗场景一律加。
     const caveatParts: string[] = [];
-    if (degraded) caveatParts.push('本轮质量评估未能完成，已按最保守标准处理。');
+    /*
+     * degraded 的确切含义：**模型 judge 调用失败，已降级为规则评分**。
+     *
+     * 文案要区分这一点。原来写的是「本轮质量评估未能完成，已按最保守标准处理」，
+     * 实测与界面矛盾：自检结果标签显示绿色的「通过」，四项分数也都有值
+     * （因为规则评分确实算出来了），紧接着一句话说"评估未能完成"，
+     * 用户不知道到底评没评。
+     *
+     * 现在的说法把事实讲全：评估做了（规则做的），只是没走模型那一层。
+     */
+    if (degraded) {
+      caveatParts.push('本轮由规则完成质量检查（模型评分暂不可用），结论已按较保守的方式给出。');
+    }
     if (evidenceCount === 0) caveatParts.push('本回答没有引用具体资料，仅作一般性说明。');
     caveatParts.push(GENERIC_CAVEAT);
 
