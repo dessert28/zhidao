@@ -19,6 +19,7 @@
     "verify:llm": "tsx scripts/verify-llm.ts",
     "e2e:multiturn": "tsx scripts/e2e-multiturn.ts",
     "e2e:regressions": "tsx scripts/e2e-regressions.ts",
+    "e2e:prod": "tsx scripts/e2e-prod.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"server/**/*.ts\""
   },
