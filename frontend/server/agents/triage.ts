@@ -104,14 +104,52 @@ export function mergeSlots(base: SymptomSlots, next: SymptomSlots): SymptomSlots
 const SELF_LOCATED_SYMPTOMS =
   /(咳嗽|咳痰|黄痰|白痰|气喘|哮喘|气短|呼吸困难|流涕|鼻塞|咽痛|喉咙痛|耳鸣|视力|尿频|尿急|尿痛|月经|痛经|白带|皮疹|瘙痒|腹泻|拉肚子|便秘|反酸|烧心|心慌|心悸|胸闷)/;
 
+/**
+ * 检验指标类提问 —— **既不需要部位，也不需要时长**。
+ *
+ * <p>与上面那张表的区别：症状是"身体某处不舒服"，指标是"化验单上某个数值"。
+ * 前者问部位合理，问时长也合理；后者两者都无从谈起 ——
+ * 血糖、血脂、转氨酶没有"位置"，时长就是化验单上的日期，用户来问
+ * 通常是想知道"这个数值要不要紧、该挂哪个科"。
+ *
+ * <p>实测缺陷（2026-11-15）：问「血糖高要去哪个科」时，系统回
+ * 「具体是哪个位置不舒服？比如额头、胸口、肚子左边？」——
+ * 用户没法回答，因为在问一个不存在的东西。这比"多问一句"更糟：
+ * 它暴露了系统没理解问题。
+ *
+ * <p>判据要**保守**：只有明确指向检验指标时才短路。
+ * 「血糖高还头晕」这类混合表述不在此列 —— 那种情况仍然需要问部位。
+ */
+const LAB_INDICATOR_QUERY =
+  /(血糖|血脂|胆固醇|甘油三酯|低密度脂蛋白|转氨酶|肌酐|尿酸|糖化血红蛋白|甲功|甲状腺功能|白细胞|血红蛋白|血常规|尿常规|指标|化验|体检报告|检查结果|报告单)/;
+
+/**
+ * 混合表述的排除词：出现这些说明用户在描述身体不适，
+ * 即使同时提到指标，也应当按症状处理（要问部位）。
+ */
+const BODY_COMPLAINT =
+  /(疼|痛|闷|不舒服|难受|乏力|头晕|恶心|呕吐|发热|发烧|咳|喘|麻|肿|痒)/;
+
 /** 还缺哪些最小必要槽位 */
 export function missingSlots(slots: SymptomSlots, text = ''): SlotKey[] {
   // 部位隐含在症状里时，不再把「部位」当成必填
   const hay = `${text} ${slots['性质'] ?? ''}`;
   const locationImplied = SELF_LOCATED_SYMPTOMS.test(hay);
 
+  /*
+   * 纯指标查询：不问部位，也不问时长。
+   *
+   * 要求同时满足两条才短路：
+   *   ① 命中指标词
+   *   ② 没有任何身体不适描述
+   * 这样「血糖高还头晕」仍会正常追问部位，不会因为提到指标就跳过采集。
+   */
+  const isLabQuery = LAB_INDICATOR_QUERY.test(hay) && !BODY_COMPLAINT.test(hay);
+
   return REQUIRED_SLOTS.filter((k) => {
     if (k === '部位' && locationImplied) return false;
+    if (k === '部位' && isLabQuery) return false;
+    if (k === '时长' && isLabQuery) return false;
     const v = slots[k];
     if (!v) return true;
     // 「最近」「一直」是模糊表述，不等于采集到了时长 —— 几天还是几年，
