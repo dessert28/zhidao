@@ -278,6 +278,18 @@ class ApiIntegrationTest {
         String visitTime = slots.get(0).path("visitTime").asText();
         int beforeRemaining = slots.get(0).path("remaining").asInt();
         assertThat(beforeRemaining).as("前置条件：该时段初始有余量").isGreaterThan(0);
+        /*
+         * 同时记下"其他时段"的下单前余量。
+         * 原来这里写死断言"其他时段 = 1"，那是把时段容量当成 1 的时代留下的。
+         * 容量改成 3 之后那条断言会误报 —— 断言应该比较**前后不变**，
+         * 而不是比较某个具体数字。
+         */
+        java.util.Map<String, Integer> otherBefore = new java.util.HashMap<>();
+        for (com.fasterxml.jackson.databind.JsonNode s : slots) {
+            if (!s.path("visitTime").asText().equals(visitTime)) {
+                otherBefore.put(s.path("visitTime").asText(), s.path("remaining").asInt());
+            }
+        }
 
         // 下单
         mvc.perform(post("/api/bookings")
@@ -305,8 +317,8 @@ class ApiIntegrationTest {
                 matched++;
             } else {
                 assertThat(s.path("remaining").asInt())
-                        .as("其他时段不应受影响")
-                        .isEqualTo(1);
+                        .as("其他时段余量应与下单前一致")
+                        .isEqualTo(otherBefore.get(s.path("visitTime").asText()));
             }
         }
         assertThat(matched).as("应能找回被预约的那个时段").isEqualTo(1);

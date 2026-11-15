@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ensureLogin,
+  getBookings,
   getProfile,
   getRecords,
   getReminders,
@@ -30,10 +31,12 @@ import {
   hospitalName,
   shortDate,
   type BackendFailure,
+  type BookingOrder,
   type MedicalRecord,
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
+import { QueueEstimateCard } from '../components/QueueEstimateCard';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
 import { uploadRecord } from '../lib/db/upload';
 import { IMAGE_PRIVACY_NOTICE } from '../lib/db/ocr';
@@ -128,6 +131,7 @@ export default function RecordsPage() {
             items={state.reminders}
             onMark={onMark}
           />
+          <AppointmentsSection />
           <TimelineSection records={state.records} />
         </>
       ) : null}
@@ -345,6 +349,93 @@ function ProfileStrip({ profile }: { profile: PatientProfile }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * 我的预约与排队。
+ *
+ * <p>只列**还没结束**的预约（CREATED / CONFIRMED）。
+ * 已取消、已完成的不占队列，列出来只会让患者以为还要去。
+ *
+ * <p>每张单下面挂一个排队估算卡。为什么不在列表里直接显示：
+ * 估算要按单查（每单的时段不同），而且失败时不该拖垮整个列表。
+ */
+function AppointmentsSection() {
+  const [orders, setOrders] = useState<BookingOrder[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const r = await getBookings();
+      if (r.ok) {
+        setOrders(
+          r.data.filter((o) => o.status === 'CREATED' || o.status === 'CONFIRMED'),
+        );
+      } else {
+        setError(
+          r.failure.kind === 'unreachable'
+            ? '后端未启动'
+            : r.failure.kind === 'unauthorized'
+              ? '登录已失效'
+              : r.failure.message,
+        );
+        setOrders([]);
+      }
+    })();
+  }, []);
+
+  if (orders === null) {
+    return (
+      <section>
+        <SectionTitle>我的预约</SectionTitle>
+        <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
+      </section>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <section>
+        <SectionTitle>我的预约</SectionTitle>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+          {error ? `暂时读不到预约（${error}）` : '还没有进行中的预约。'}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <SectionTitle>
+        我的预约
+        <span className="ml-2 text-xs font-normal text-gray-400">{orders.length} 条</span>
+      </SectionTitle>
+
+      <div className="space-y-3">
+        {orders.map((o) => (
+          <div key={o.id} className="rounded-xl border border-gray-200 bg-white p-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-medium text-gray-900">
+                {hospitalName(o.hospitalCode)}
+              </span>
+              <span className="text-sm text-gray-600">{o.department}</span>
+              <span className="ml-auto text-xs tabular-nums text-gray-500">
+                {o.visitTime.slice(5, 10)} {o.visitTime.slice(11, 16)}
+              </span>
+            </div>
+            {o.status === 'CREATED' ? (
+              <p className="mt-0.5 text-xs text-amber-700">待确认（到院后请在自助机取号）</p>
+            ) : null}
+
+            {/* 排队估算挂在这里：每单的时段不同，要分别算 */}
+            <div className="mt-2">
+              <QueueEstimateCard orderId={o.id} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

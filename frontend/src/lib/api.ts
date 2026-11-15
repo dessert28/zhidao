@@ -374,6 +374,42 @@ export function getCurrentStep(input: {
   }>(`/api/nav/current?${q.toString()}`);
 }
 
+/** 排队估算结果 */
+export interface QueueEstimate {
+  aheadCount: number;
+  waitMinutes: number;
+  reasonable: boolean;
+  /** HIGH / MEDIUM / LOW —— LOW 时说明"这次估算不可靠" */
+  confidence: string;
+  /** 为什么是这个结果 */
+  reason: string;
+  /** 现在该做什么 */
+  advice: string;
+  /** 必须一起展示：这是估算不是院方实时叫号 */
+  disclaimer: string;
+}
+
+export interface QueueInfo {
+  orderId: number;
+  hospitalCode: string;
+  department: string;
+  visitTime: string;
+  status: string;
+  estimate: QueueEstimate;
+  /** 该科室单人的平均耗时，让患者理解数字怎么来的 */
+  minutesPerPatient: number;
+  now: string;
+}
+
+/**
+ * 查某张预约单的排队估算。
+ *
+ * <p>需要登录（这是"我的某一单"的信息）。
+ */
+export function getQueueEstimate(orderId: number) {
+  return request<QueueInfo>(`/api/bookings/${orderId}/queue`);
+}
+
 export function getBookings() {
   return request<BookingOrder[]>('/api/bookings');
 }
@@ -404,6 +440,9 @@ export function hospitalName(code: string): string {
   const map: Record<string, string> = {
     'MOCK-A': '演示市第一人民医院',
     'MOCK-B': '演示市中心医院',
+    // 少这一行时，病历页的预约列表会直接显示 "Z2-JFL" 这种内部编码，
+    // 患者看不懂。实测发现后补上 —— 院区展示名必须在前后端都覆盖。
+    'Z2-JFL': '浙大二院（解放路院区）',
   };
   return map[code] ?? code;
 }

@@ -60,15 +60,47 @@ public class MockHospitalAdapter implements HospitalAdapter {
             return List.of();
         }
 
+        /*
+         * 号源模型：每天 quota 个时段，每个时段可接 SLOT_CAPACITY 人。
+         *
+         * 原来是"每个时段 1 个号"，那等于一个时段只能约一个人 ——
+         * 做排队估算时立刻暴露问题：同一时段第二个人直接 409，
+         * "前面还有几个人"永远算不出来，估算功能形同虚设。
+         *
+         * 真实门诊也是这个样子：医生半天看 20-40 个号，
+         * 按 30 分钟分时段，每个时段接好几位，只是预约时
+         * 具体排在第几个由到场顺序决定。所以容量改成 3，
+         * 既让排队估算有意义，也让"同一时段有人在你前面"成为可能。
+         */
+        /*
+         * 号源覆盖全天门诊时段：上午 8:30-11:30、下午 14:00-16:30。
+         *
+         * 原来只有上午 8:30 起的几个时段，实测发现一个实际问题：
+         * 下午打开应用的患者永远看到"号源都已过去"，
+         * 排队估算也就永远是"无法估算"——功能等于没用。
+         *
+         * 真实门诊确实是上下午都有号。按 quota 在上午/下午之间分配，
+         * quota 是奇数时上午多一个（上午号通常更抢手，也符合直觉）。
+         */
         List<Slot> slots = new ArrayList<>();
-        // 半天放一半号，上午 8:30 起每 30 分钟一个
-        LocalTime start = LocalTime.of(8, 30);
-        for (int i = 0; i < quota; i++) {
-            LocalDateTime t = LocalDateTime.of(date, start.plusMinutes(30L * i));
-            slots.add(new Slot(t, "演示医生" + (char) ('A' + (i % 3)), 1));
+        int morning = (quota + 1) / 2;
+        int afternoon = quota / 2;
+
+        LocalTime morningStart = LocalTime.of(8, 30);
+        for (int i = 0; i < morning; i++) {
+            LocalDateTime t = LocalDateTime.of(date, morningStart.plusMinutes(30L * i));
+            slots.add(new Slot(t, "演示医生" + (char) ('A' + (i % 3)), SLOT_CAPACITY));
+        }
+        LocalTime afternoonStart = LocalTime.of(14, 0);
+        for (int i = 0; i < afternoon; i++) {
+            LocalDateTime t = LocalDateTime.of(date, afternoonStart.plusMinutes(30L * i));
+            slots.add(new Slot(t, "演示医生" + (char) ('A' + (i % 3)), SLOT_CAPACITY));
         }
         return slots;
     }
+
+    /** 每个时段的接诊容量。见 querySlots 的说明 */
+    private static final int SLOT_CAPACITY = 3;
 
     @Override
     public BookingResult book(String department, LocalDateTime visitTime) {
@@ -79,10 +111,19 @@ public class MockHospitalAdapter implements HospitalAdapter {
             return BookingResult.fail(displayName + " 该时段没有可预约的号源");
         }
 
-        // 同一时段只允许一个人下单（Mock 的并发控制，真实系统由对方保证）
-        boolean taken = orders.containsValue(visitTime);
-        if (taken) {
-            return BookingResult.fail("该时段已被占用，请换一个时间");
+        /*
+         * 时段容量控制。
+         *
+         * 原来这里是 `orders.containsValue(visitTime)` —— 只要有一个人约了
+         * 这个时段就拒绝其他人，等于每时段容量 1。
+         * 改成按容量计数：已有 N 人 < SLOT_CAPACITY 就还能约。
+         *
+         * 注意 Mock 的 orders 是进程内 Map，重启就清空；
+         * 跨进程/跨实例的真实容量得由院方保证（docs/08 §5 已说明）。
+         */
+        long takenAtSlot = orders.values().stream().filter(v -> v.equals(visitTime)).count();
+        if (takenAtSlot >= SLOT_CAPACITY) {
+            return BookingResult.fail("该时段号源已满，请换一个时间");
         }
 
         String externalNo = hospitalCode + "-" + seq.incrementAndGet();
