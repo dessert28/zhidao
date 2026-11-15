@@ -33,7 +33,10 @@ spring:
       # 注意不能把 data-locations 设成 "never" —— 那会被当资源路径，
       # 变成"找不到 classpath:never"而启动失败。所以关种子靠 mode。
       mode: ${APP_SEED_MODE:always}
-      schema-locations: classpath:schema.sql
+      # 拆成两个文件：主表结构 + HIS 接入相关表。
+      # 拆开是为了让"HIS 对接"这块能整块拿出/拿下，
+      # 不影响主表的可读性。顺序有意义：主表先建。
+      schema-locations: classpath:schema.sql,classpath:schema-his.sql
       data-locations: classpath:data.sql
 
   h2:

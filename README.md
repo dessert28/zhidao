@@ -325,7 +325,7 @@ zhidao/
 │           ├── schema.sql        # H2（默认，省赛免装数据库）
 │           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
 │           └── application-mysql.yml  # 切 MySQL 的 profile
-├── docs/                     # 13 份设计文档，见 docs/README.md
+├── docs/                     # 14 份（含 HIS 接入说明），见 docs/README.md
 └── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
 

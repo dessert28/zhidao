@@ -198,3 +198,19 @@ INSERT INTO hospital_place (hospital_code, place_type, department, name, buildin
    '9号楼', '待确认',
    '本院的门诊挂号与收费分散在多栋楼，9号楼设门诊挂号与收费窗口；具体楼层请以现场指示牌为准。',
    '门诊时间 7:00-17:00', 15, 11, 'SAMPLE');
+
+-- ============================================================
+-- 院方接入凭据（演示用）
+--
+-- appKey / appSecret 是可公开在文档里的**演示值**，
+-- 真实接入时由我方生成并单独交付给院方。
+--
+-- 这里用 Z2-JFL 的凭据承接"浙大二院把官方楼层数据推给我们"的场景：
+-- 推送一次之后，院内导航的 data_quality 就是真正的 REAL ——
+-- 不再是我们从公开来源整理的，而是院方系统给的。
+-- ============================================================
+MERGE INTO hospital_credential (hospital_code, app_key, app_secret, label, contact, enabled)
+KEY (app_key) VALUES
+  ('Z2-JFL', 'z2jfl-demo-key',
+   'z2jfl-demo-secret-please-rotate-in-production',
+   'DEMO', '信息科 0571-87783777', TRUE);

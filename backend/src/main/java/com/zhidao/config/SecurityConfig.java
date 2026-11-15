@@ -94,6 +94,20 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/nav/**")
                         .permitAll()
+                        /*
+                         * HIS 对接接口**不经过 JWT**。
+                         *
+                         * 它的调用方是院方服务器，不是患者，没有用户身份可言。
+                         * 它有自己的认证：appKey + HMAC 签名，在 HisIngestService
+                         * 里校验。如果这里要求 JWT，院方根本没法调。
+                         *
+                         * 注意：permitAll 只表示"JWT 过滤器不拦"，
+                         * 不代表"无认证"。真正的门禁在 HisController 里 ——
+                         * 验签失败一律 401。这一点必须说清楚，
+                         * 否则后人看到 permitAll 会误以为这个接口是裸奔的。
+                         */
+                        .requestMatchers("/api/his/**")
+                        .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",
