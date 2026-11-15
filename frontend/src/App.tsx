@@ -12,6 +12,7 @@ const NAV = [
   { to: '/', label: '问诊' },
   { to: '/health', label: '健康管家' },
   { to: '/records', label: '我的病历' },
+  { to: '/summary', label: '就诊摘要' },
 ] as const;
 
 export default function App() {

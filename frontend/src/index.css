@@ -54,3 +54,61 @@
     }
   }
 }
+
+/* ------------------------------------------------------------------
+ * 打印样式 —— 就诊摘要页专用
+ *
+ * 目标：按 Ctrl+P（或点页面上的按钮）直接得到一张干净的 A4，
+ * 不带导航栏、不带按钮、不带页面留白。
+ *
+ * 关键点：
+ *   · print-color-adjust: exact —— 否则浏览器默认去掉背景色，
+ *     过敏史的红色底色会消失，"强调"就没了
+ *   · @page 设 margin —— 不设的话浏览器默认留 1 英寸以上白边，
+ *     一页装不下内容
+ * ------------------------------------------------------------------ */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 14mm;
+  }
+
+  /* 屏幕上才需要的东西，打印一律不出现 */
+  .no-print,
+  header,
+  footer,
+  nav {
+    display: none !important;
+  }
+
+  /* 打印时页面主体铺满，去掉 max-width 限制 */
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  /* 摘要卡：去掉描边与圆角，避免打印出多余线条 */
+  .print-sheet {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* 保留背景与文字颜色（过敏红色底色等靠这个） */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 区块不要被切开 */
+  .print-sheet section,
+  li {
+    break-inside: avoid;
+  }
+}

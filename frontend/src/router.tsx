@@ -45,6 +45,18 @@ export const router = createBrowserRouter([
         },
       },
       {
+        /*
+         * 就诊摘要。单独一页而不是挂在病历页下面：
+         * 它的使用场景是「打印出来带去门诊」，需要一个干净的、
+         * 可以直接 Ctrl+P 的页面，不能被其他区块干扰。
+         */
+        path: 'summary',
+        lazy: async () => {
+          const { default: SummaryPage } = await import('./pages/SummaryPage');
+          return { Component: SummaryPage };
+        },
+      },
+      {
         path: '*',
         lazy: async () => {
           const { default: NotFoundPage } = await import('./pages/NotFoundPage');
