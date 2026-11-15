@@ -1,9 +1,13 @@
 # 交接文档 · 换机器继续开发
 
-> 更新：2026-11-14 11:50 ｜ 适用：任何一台干净的电脑
+> 更新：2026-11-15 ｜ 适用：任何一台干净的电脑
 >
-> **省赛提交截止 2026-11-18**，现在离截止约 4 天。
+> **省赛提交截止 2026-11-18**。
 > 这份文档的目标是：在新机器上 **30 分钟内**跑起来，并且知道下一步做什么。
+>
+> **当前状态一句话**：全部功能已实现并推送，四层验证齐备（461 单元测试
+> + E2E + 生产构建），`pnpm verify:all` 一条命令可确认健康。
+> §三 列出的是继续深化的方向，不是未完成的任务。
 
 ---
 
@@ -80,20 +84,36 @@ frontend/
     agents/
       supervisor.ts      路由决策（LLM + 规则双路径）
       triage.ts          分诊：槽位采集、追问上限 3 轮、置信度分级
-      reviewer.ts        四维自评 + 安全规则表 + 熔断
       retrieval.ts       RAG：检索 → 充分性判定 → 改写重试 → 接地检查
+      scheduler.ts       排程：意图抽取 → 号源查询 → 预览卡 + 就诊时间线
+      reviewer.ts        四维自评 + 安全规则表 + 熔断 + 用药/过敏交叉检查
       rules/red-flag.ts  五条红线规则（绕过 LLM，确定性短路）
+      rules/injection.ts 提示词注入检测（5 类元指令，确定性）
+      tools/mcp-hospital.ts 院方工具层（MCP 签名形状，不做真握手）
       safe-run.ts        超时/异常兜底，永不抛出
     rag/
-      kb.ts              10 条示例知识库
-      search.ts          BM25 + bigram 中文切分
+      kb.ts              20 条知识库（含内容合规测试）
+      search.ts          BM25 + bigram，可选 pgvector 双路 RRF 融合
+      embed.ts           本地向量化（哈希 bigram，非神经网络）
+      rrf.ts             RRF(k=60) 融合
+      vector-store.ts    pgvector 存储（PGVECTOR_ENABLED=true 才启用）
+    ocr/recognize.ts     VLM 读化验单（唯一让原图离开设备的路径）
     render/registry.tsx  6 类卡片的服务端渲染
     routes/chat.ts       SSE 主入口，串起整条链路
+    routes/backend-proxy.ts  浏览器 → BFF → Spring Boot 的转发
+    routes/ocr.ts       报告图识别出关口（服务端再脱敏一次）
     routes/health.ts     健康检查（含 llmConfigured 标志）
   src/
-    lib/privacy/redact.ts   端侧脱敏（7 类 PII）
-    lib/utils.ts            cn()：shadcn 组件依赖，2026-11-14 补齐
+    lib/privacy/redact.ts   端侧脱敏（7 类 PII + ONNX NER）
+    lib/db/records.ts       IndexedDB 存原文（零网络调用）
+    lib/db/upload.ts        上传链路：原文→脱敏→只发摘要
+    lib/db/pdf.ts           文本型 PDF 提取（扫描件明确拒绝）
+    lib/db/ocr.ts           图像识别客户端 + 隐私提示常量
+    lib/exam/duplicate.ts   跨院重复检查（7 项词典 + 时效窗口）
+    lib/api.ts              后端 API 客户端（结构化失败）
+    lib/utils.ts            cn()：shadcn 组件依赖
     hooks/useEventStream.ts 手写 SSE 消费
+    hooks/usePatientFacts.ts  过敏/慢病/用药 → SessionFacts
 backend/
   entity/ 6 个实体  mapper/ 6 个 Mapper
   adapter/ HospitalAdapter 接口 + Mock 实现 + Registry（按 hospitalCode 分发）
@@ -101,11 +121,18 @@ backend/
   controller/ Auth / Patient / Booking / Reminder / Health 五组接口
   security/ JWT 签发校验 + 过滤器 + CurrentUser
   common/ 统一响应体 + 全局异常处理（按 code 段位映射 HTTP 状态）
+scripts/
+  verify-llm.ts        模型四关自检
+  e2e-multiturn.ts     多轮对话 7 场景
+  e2e-regressions.ts   浏览器实测缺陷回归 9 项
+  e2e-prod.ts          生产构建验证 13 项
+  verify-all.ts        一键跑全部（约 3.5 分钟）
 ```
 
 **测试**：
-- 前端 `cd frontend; pnpm exec vitest run` → **243 用例**
-- 后端 `cd backend; mvn test` → **28 用例**（17 接口集成 + 11 提醒引擎）
+- 前端 `cd frontend; pnpm exec vitest run` → **432 用例**（+5 个 pgvector 集成在未开启时跳过）
+- 后端 `cd backend; mvn test` → **31 用例**（20 接口集成 + 11 提醒引擎）
+- 一键 `pnpm verify:all` → 六项全测（含 E2E 与生产构建）
 
 ### 实测通过的链路
 
@@ -214,35 +241,71 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 
 README §1.3 说「去之前 / 在院内 / 回家后」三段都做：
 
-| 段落 | README 承诺 | 实际状态 |
+| 段落 | README 承诺 | 实际状态（2026-11-15） |
 | --- | --- | --- |
-| 去之前 | 预问诊 + 科室推荐 + 就诊准备清单 | ✅ 有，但"准备清单"是文本不是结构化卡片 |
-| 在院内 | 号源查询、队列、检查顺序 | ✅ 号源查询与预约闭环（预览卡 + 下单 + 时间线）；队列未做 |
-| 回家后 | 复查提醒、指标解释、跨院冲突 | ⚠️ 后端提醒引擎有，**前端没接** |
+| 去之前 | 预问诊 + 科室推荐 + 就诊准备清单 | ✅ 真实模型分诊 + 科室卡（带推理）+ 追问上限；"准备清单"是文本形态 |
+| 在院内 | 号源查询、队列、检查顺序 | ✅ 号源查询与预约闭环（预览卡 + 下单 + 时间线）；**队列未做**（院方数据，Mock 无从模拟） |
+| 回家后 | 复查提醒、指标解释、跨院冲突 | ✅ 提醒引擎 + 前端接后端 + 用药冲突 + 跨院重复检查 |
 
-答辩时如果被问"三段都做了吗"，**如实说前两段做完了、第三段只做了后端**，比被追问出来强。
+答辩时如果被问"三段都做了吗"，**"队列"是唯一没做的子项** —— 主动说出来比被追问强。
 
-### 按投入产出排的补齐顺序
+### 补齐顺序（全部完成）
 
-| 优先 | 事项 | 成本 | 收益 |
-| --- | --- | --- | --- |
-| ~~1~~ | ~~前端接后端~~ | ✅ 2026-11-15 完成 | 跨院时间轴与提醒已可见 |
-| ~~2~~ | ~~用药冲突接进主链路~~ | ✅ 2026-11-15 完成 | 第二个差异化已可见 |
-| 3 | 排程最小闭环：`schedule` 分支调后端 `/api/bookings` | 半天 | 补齐"在院内"（**最后一个补齐项**） |
-| ~~4~~ | ~~跨院重复检查提示~~ | ✅ 2026-11-15 完成 | 第三个差异化已可见 |
+| 优先 | 事项 | 状态 |
+| --- | --- | --- |
+| 1 | 前端接后端 | ✅ 跨院时间轴与提醒已可见 |
+| 2 | 用药冲突接进主链路 | ✅ 第二个差异化已可见 |
+| 3 | 排程最小闭环 | ✅ 预览卡 + 下单 + 时间线，"在院内"补齐 |
+| 4 | 跨院重复检查提示 | ✅ 第三个差异化已可见 |
+| — | MCP 工具层 / 向量检索 / PDF / 图像 | ✅ 均在 2026-11-15 关闭 |
 
 ---
 
 ## 三、下一步做什么（按优先级，不是按顺序）
 
-> **2026-11-14 状态更新**：原 P0 两项（后端接口层、提醒引擎）已经做完并推送。
-> 下面换成现在真正剩下的活。
+> **2026-11-15 状态更新**：§二·五「能力边界」表里的**所有未实现项已全部关闭**。
+> 三段式（去之前 / 在院内 / 回家后）完整落地，四个补齐顺序项已全部完成
+> （前端接后端 → 用药冲突 → 跨院重复检查 → 排程闭环 → MCP 工具层 → 向量检索 → PDF → 图像）。
 >
-> **先看 §二·五「能力边界」** —— 那一节按代码逐项核对了"什么能用、什么不能用"。
-> 本节的 P1/P2 已全部关闭，**真正剩下的都在 §二·五 的补齐顺序表里**
-> （第一条是"前端接后端"，半天，收益最大）。
+> 也就是说：**当前没有"该做而未做"的功能**。下面列的是继续深化的方向，
+> 以及交付前值得再确认的事。
 
-### ✅ 已完成（本轮，2026-11-14）
+### 交付前建议再跑一遍
+
+```bash
+cd frontend
+pnpm verify:all     # 类型检查 + 单测 + E2E + 生产构建，约 3.5 分钟
+```
+
+这条命令是最后一轮建立的一键入口。它测的是「从单个函数到生产部署」
+整条链，任何一层坏了都会定位到具体项。
+
+### 还剩什么（都是主动取舍，不是遗漏）
+
+| 项 | 为什么没做 | 真要做的话 |
+| --- | --- | --- |
+| 真实医院对接 | 需要资质与商务流程 | 实现 `HospitalAdapter` 接口，注册表加一行 |
+| 向量层换真模型 | ModelScope 上三个候选仓库都缺 onnx 导出 | 只改 `rag/embed.ts` 的 `embed()`，但 `VECTOR_MIN_SIMILARITY` 要重新标定 |
+| 扫描件 PDF / 图片 OCR 之外的版式 | 需要任意版式的版面分析 | 当前 VLM 已能读常规化验单 |
+| 多实例部署 | 会话在内存 | 只改 `SessionStore` 一个接口 |
+| MCP 真握手 | docs/10 D3 明确不做 | 工具层签名已对齐，只换 transport |
+
+### 如果继续深化的方向
+
+按"投入产出"排，不是按做完的难度排：
+
+1. **答辩材料**（半天）—— 现有实现在代码里已经很完整，
+   但评审看不到。把 §二·五 的能力矩阵、四层验证、
+   真实模型实测记录整理成答辩用的图/表，收益最大。
+2. **性能梳理**（半天）—— 单轮问诊 8.5s（3 次模型调用）。
+   可以并发跑 Supervisor 之外的部分，或对简单输入短路。
+3. **数据补充**（几小时）—— 知识库 20 条，还能再补；
+   但注意每条都要过 `kb.test.ts` 的内容合规检查。
+
+### 📜 历史记录（2026-11-14 那一轮，留档备查）
+
+<details>
+<summary>展开查看当时的完成清单（已全部包含在上方文件树里）</summary>
 
 | 节点 | 内容 | 提交 |
 | --- | --- | --- |
@@ -255,6 +318,8 @@ README §1.3 说「去之前 / 在院内 / 回家后」三段都做：
 | .env 修复 | Vite 不给 Node 注入变量 → server/env.ts + health 加 envSource | `4a70a09` |
 | LLM 自检 | pnpm verify:llm 四关，区分未配置/网络/鉴权/schema | `4a70a09` |
 | TTS 输出 | speechSynthesis + 文本清理 + 16 条测试 | `cb56fba` |
+
+</details>
 
 ### ✅ P0 · 真实 Key 已跑通（2026-11-14 关闭）
 
@@ -387,13 +452,13 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
-pnpm exec vitest run                                       # 243 用例
+pnpm exec vitest run                                       # 432 用例
 pnpm exec vite build                                       # 生产构建
 
 cd ../backend
 $env:JAVA_HOME = "D:\tools\jdk17"
 D:\tools\maven\bin\mvn.cmd -q -B compile -DskipTests       # 编译
-D:\tools\maven\bin\mvn.cmd -B test                          # 28 用例
+D:\tools\maven\bin\mvn.cmd -B test                          # 31 用例
 ```
 
 ---
