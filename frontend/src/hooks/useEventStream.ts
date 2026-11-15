@@ -38,6 +38,13 @@ export interface SendOptions {
   facts?: Record<string, unknown>;
   knownSlots?: Record<string, unknown>;
   round?: number;
+  /**
+   * 附在用户问题前的上下文（如健康档案摘要）。
+   *
+   * 会在发送前拼到 text 前面，而不是作为独立字段传给 Agent ——
+   * 它本质上是"用户这句话的背景信息"，模型当成同一段输入理解即可。
+   */
+  context?: string;
   lowScoreStreak?: number;
 }
 
@@ -126,7 +133,8 @@ export function useEventStream() {
         body: JSON.stringify({
           turnId,
           sessionId: 'session-1',
-          text: opts.text,
+          // 上下文拼在问题前；为空时不加任何前缀，保持原样
+          text: opts.context ? `${opts.context}\n\n${opts.text}` : opts.text,
           facts: opts.facts,
           // 关键：把上一轮攒下的槽位与轮次带上，
           // 服务端才知道"这个槽位已经问过了"

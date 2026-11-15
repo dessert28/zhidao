@@ -10,6 +10,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const NAV = [
   { to: '/', label: '问诊' },
+  { to: '/health', label: '健康管家' },
   { to: '/records', label: '我的病历' },
 ] as const;
 

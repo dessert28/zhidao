@@ -2,7 +2,7 @@
  * 问诊主页 —— 主链路入口
  * ------------------------------------------------------------------ */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEventStream } from '../hooks/useEventStream';
 import { useSpeechInput } from '../hooks/useSpeechInput';
 import { usePatientFacts } from '../hooks/usePatientFacts';
@@ -29,6 +29,24 @@ export default function ChatPage() {
 
   /** 患者事实：过敏史 / 慢病 / 在用药 —— Reviewer 交叉检查的输入 */
   const { facts: patientFacts, loaded: factsLoaded } = usePatientFacts();
+
+  /**
+   * 把病历里的指标拼成一句话，随问题一起发出去。
+   *
+   * <p>为什么这么做：患者问「我最近能吃什么」时，
+   * 模型不知道他血糖 8.4、糖化 7.8，只能给通用建议 ——
+   * 那和搜索引擎没区别。带上指标之后，回答才会提到「你糖化偏高」。
+   *
+   * <p>为什么拼成文本而不是结构化字段：这是给模型看的上下文，
+   * 人类可读的句子模型理解得更好，也不用改 Agent 契约。
+   *
+   * <p>只取最近一次的值，不传全部历史：几次历史值对模型判断帮助不大，
+   * 反而会把 prompt 撑长、增加延迟。
+   */
+  const healthContext = useMemo(() => {
+    if (!patientFacts.healthText) return '';
+    return `【我的健康档案】${patientFacts.healthText}`;
+  }, [patientFacts.healthText]);
 
   /**
    * 语音输入。
@@ -66,7 +84,21 @@ export default function ChatPage() {
      * README 承诺的「跨院用药冲突提示」就永远不会触发。
      * 后端没起时 facts 是空数组 —— 只少两个检查，不影响对话。
      */
-    void send({ text: safe, facts: patientFacts });
+    void send({
+      text: safe,
+      facts: patientFacts,
+      /*
+       * 健康档案拼在问题前面，而不是塞进 facts。
+       *
+       * 原因：facts 是给 Reviewer 做交叉检查用的结构化字段，
+       * 而这里要的是"让模型知道我的具体情况"——那是输入上下文，
+       * 拼进 text 最直接，也不用改 Agent 契约。
+       *
+       * 加这个前缀后，问「我能吃什么」的回答会带上"你糖化偏高"这类
+       * 具体信息，而不是泛泛而谈。
+       */
+      context: healthContext,
+    });
     setInput('');
     taRef.current?.focus();
   };

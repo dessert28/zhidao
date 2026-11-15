@@ -31,6 +31,20 @@ export const router = createBrowserRouter([
         },
       },
       {
+        /*
+         * 健康管家。
+         *
+         * 单独一个页面而不是塞进病历页：病历页是"我上传过什么"，
+         * 健康管家是"这些数据说明我现在怎样、接下来该做什么"。
+         * 两件事放一起，患者会分不清该看哪块。
+         */
+        path: 'health',
+        lazy: async () => {
+          const { default: HealthPage } = await import('./pages/HealthPage');
+          return { Component: HealthPage };
+        },
+      },
+      {
         path: '*',
         lazy: async () => {
           const { default: NotFoundPage } = await import('./pages/NotFoundPage');

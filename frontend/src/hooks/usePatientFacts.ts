@@ -34,6 +34,7 @@ const EMPTY_FACTS: SessionFactsLike = {
   chronicConditions: [],
   currentMedications: [],
   bookingState: null,
+  healthText: '',
 };
 
 /** 模块级缓存：跨组件、跨渲染复用，一次会话只拉一次 */

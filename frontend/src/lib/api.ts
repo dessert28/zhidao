@@ -90,12 +90,26 @@ export function toSessionFacts(p: PatientProfile | null): {
   chronicConditions: string[];
   currentMedications: string[];
   bookingState: null;
+  /**
+   * 健康档案的一句话摘要（年龄、慢病、在用的药），供对话时带给模型。
+   *
+   * <p>为什么放在 facts 里而不是单独传：它本来就属于"患者事实"，
+   * 多开一个通道只会让调用方多记一个参数。空字符串表示没有档案。
+   */
+  healthText: string;
 } {
+  const parts: string[] = [];
+  if (p?.age != null) parts.push(`${p.age} 岁`);
+  if (p?.chronics?.length) parts.push(`慢病：${p.chronics.join('、')}`);
+  if (p?.allergies?.length) parts.push(`过敏：${p.allergies.join('、')}`);
+  if (p?.medications?.length) parts.push(`在用药：${p.medications.join('、')}`);
+
   return {
     allergies: p?.allergies ?? [],
     chronicConditions: p?.chronics ?? [],
     currentMedications: p?.medications ?? [],
     bookingState: null,
+    healthText: parts.join('；'),
   };
 }
 
