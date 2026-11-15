@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-243%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-28%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]()
+[![tests](https://img.shields.io/badge/frontend%20tests-508%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](build/智诊通-技术文档.pdf)
 
 ---
 
