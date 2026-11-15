@@ -233,10 +233,24 @@ export async function login(
 }
 
 /** 确保已登录：没有 token 就自动用演示账号登一次 */
+/**
+ * 进行中的登录请求。多个组件同时挂载时共享同一个 Promise，
+ * 而不是各发一次 —— 实测首页会同时挂 ChatPage 与 usePatientFacts，
+ * 没有这一层时 /api/auth/login 一毫秒内连发两次。
+ */
+let pendingLogin: Promise<BackendResult<true>> | null = null;
+
 export async function ensureLogin(): Promise<BackendResult<true>> {
   if (currentToken()) return { ok: true, data: true };
-  const r = await login();
-  return r.ok ? { ok: true, data: true } : { ok: false, failure: r.failure };
+  pendingLogin ??= (async () => {
+    const r = await login();
+    return r.ok ? { ok: true, data: true } : { ok: false, failure: r.failure };
+  })();
+  try {
+    return await pendingLogin;
+  } finally {
+    pendingLogin = null;
+  }
 }
 
 export function getRecords() {
