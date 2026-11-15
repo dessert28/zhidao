@@ -170,6 +170,16 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 **测试总量**：前端 432 + 后端 29 = **461 用例**。
 **端到端验证**：`pnpm verify:llm`（模型四关）+ `pnpm e2e:multiturn`（七场景）+ `pnpm e2e:regressions`（浏览器实测缺陷回归，9 项）+ `pnpm e2e:prod`（生产构建验证，13 项）。
 
+**一键全量**：`pnpm verify:all` —— 依次跑类型检查 / 前端单测 / 后端单测 / 多轮 E2E / 缺陷回归 / 生产构建，约 3.5 分钟。
+
+> 需要 JDK 与 Maven 时，脚本按 `JAVA_HOME` 和 `MVN` 环境变量探测（`java` 不一定在 PATH 里）：
+> ```bash
+> export JAVA_HOME=/path/to/jdk17
+> export MVN=/path/to/maven/bin/mvn
+> pnpm verify:all
+> ```
+> 缺环境时会**标记为"跳过"而不是"通过"** —— 跳过不等于验证过，报告里会明确说明。
+
 ### 未实现 —— 第一类：有占位，用户会看到"未开放"
 
 | 功能 | 代码里的实际状态 | 用户看到什么 |
