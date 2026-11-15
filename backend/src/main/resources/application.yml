@@ -8,15 +8,31 @@ spring:
   # ---------------- 数据源 ----------------
   # 省赛用 H2 内存库：评委 clone 下来 mvn spring-boot:run 就能跑，不用装 MySQL。
   # 国赛切 MySQL 只需改 spring.profiles.active=mysql（见 application-mysql.yml）
+  #
+  # ⚠️ 内存库的后果必须知道：**进程一停，数据就没了**，
+  #    下次启动重新执行 data.sql 灌种子数据。
+  #    演示中途重启后端，之前创建的预约/病历会消失 ——
+  #    这不是 bug，是 in-memory 的定义。
+  #
+  # 需要跨重启保留数据时，用文件库（不影响"clone 就能跑"，只是多一个开关）：
+  #   1. 先 export APP_SEED_MODE=never，否则每次启动都会再灌一遍种子
+  #   2. 再 export H2_URL=jdbc:h2:file:./data/zhidao;MODE=MySQL;DATABASE_TO_LOWER=TRUE
+  #   或者直接：mvn spring-boot:run -Dspring-boot.run.arguments="--H2_URL=..."
+  #
+  # 为什么默认仍是内存库：评委不会为了看演示去部署持久化存储，
+  # 而"启动即可用、每次都是干净数据"恰好符合验收场景。
   datasource:
-    url: jdbc:h2:mem:zhidao;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    url: ${H2_URL:jdbc:h2:mem:zhidao;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE}
     driver-class-name: org.h2.Driver
     username: sa
     password: ''
 
   sql:
     init:
-      mode: always
+      # 文件库模式下不该重复灌种子（会产生重复行），用 APP_SEED_MODE=never 关掉。
+      # 注意不能把 data-locations 设成 "never" —— 那会被当资源路径，
+      # 变成"找不到 classpath:never"而启动失败。所以关种子靠 mode。
+      mode: ${APP_SEED_MODE:always}
       schema-locations: classpath:schema.sql
       data-locations: classpath:data.sql
 

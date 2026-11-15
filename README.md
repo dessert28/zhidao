@@ -134,13 +134,13 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 243 passed
+pnpm test          # 432 passed
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
 cd backend
 mvn spring-boot:run      # http://localhost:8080，演示账号 demo / demo1234
-mvn test                 # 28 passed
+mvn test                 # 29 passed
 ```
 
 实测四条链路（`POST /api/chat`，SSE，报文为真实抓取）：
@@ -242,7 +242,7 @@ mvn test                 # 28 passed
 | 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
 | 多实例部署 | ❌ 单实例，会话在内存 | 省赛不引 Redis；国赛加时只改 `SessionStore` 一个接口 |
 | 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 289 + 后端 28 = 317 用例，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码 |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 432 + 后端 29 = 461 用例，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码 |
 
 > **逐项能力核对**（什么能用、什么不能用、按代码而非文档）见 [`HANDOFF.md` §二·五](HANDOFF.md)。
 
@@ -310,18 +310,28 @@ cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则�
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 243 passed
+pnpm test                   # 432 passed
 pnpm typecheck              # tsc -b --noEmit，strict
 
 # 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）
 cd ../backend
 mvn spring-boot:run         # http://localhost:8080
-mvn test                    # 28 passed
+mvn test                    # 29 passed
 ```
 
 > **所需环境**：Node ≥18 + pnpm 9；JDK 17 + Maven 3.9（只前端可跳过）。
 > **无 API Key 也能完整演示主链路** —— 未配置时 Supervisor 自动切规则路由。这是刻意的：评审本地起项目不会白屏。
 > **中文 Windows 注意**：`pom.xml` 已固化 UTF-8，四项设置缺一处就会有中文乱码且不报错，详见 `HANDOFF.md` §五。
+
+> ⚠️ **H2 是内存库：后端进程一停，数据就没了**，下次启动重新灌种子数据。
+> 演示中途重启后端，之前创建的预约与病历会消失 —— 这不是 bug，是 in-memory 的定义。
+> 需要跨重启保留数据时（例如连着演示两天）改用文件库，一个环境变量即可：
+>
+> ```bash
+> export H2_URL="jdbc:h2:file:./data/zhidao;MODE=MySQL;DATABASE_TO_LOWER=TRUE"
+> export APP_SEED_MODE=never    # 保已有数据，不重复灌种子
+> mvn spring-boot:run
+> ```
 
 ---
 
