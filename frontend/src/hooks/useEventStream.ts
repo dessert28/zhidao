@@ -13,6 +13,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { AgentEvent } from '@shared/types/events';
+import { composeRequestText } from '../lib/privacy/context';
 
 /** 服务端 enrich 后附加的字段，与 server/sse.ts 的 UiPayload 对应
  *
@@ -41,8 +42,9 @@ export interface SendOptions {
   /**
    * 附在用户问题前的上下文（如健康档案摘要）。
    *
-   * 会在发送前拼到 text 前面，而不是作为独立字段传给 Agent ——
-   * 它本质上是"用户这句话的背景信息"，模型当成同一段输入理解即可。
+   * <p><b>它不是原样发送的</b>：和问题一样要过一遍脱敏，再拼进 text。
+   * 原来这里是直接字符串拼接 —— 输入框那段遮过了，档案这段没有。
+   * 见 lib/privacy/context.ts。
    */
   context?: string;
   lowScoreStreak?: number;
@@ -127,14 +129,21 @@ export function useEventStream() {
     };
 
     try {
+      /*
+       * 上下文与问题分别脱敏后再拼接 —— 这是**唯一**组装请求体的地方。
+       *
+       * 放在这里而不是交给调用方：调用方只需要给"原始的档案摘要"，
+       * 不需要知道还要脱敏。少一次"记得自己脱敏"的机会，就少一次漏掉的机会。
+       */
+      const { text: outboundText } = await composeRequestText(opts.context ?? '', opts.text);
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           turnId,
           sessionId: 'session-1',
-          // 上下文拼在问题前；为空时不加任何前缀，保持原样
-          text: opts.context ? `${opts.context}\n\n${opts.text}` : opts.text,
+          text: outboundText,
           facts: opts.facts,
           // 关键：把上一轮攒下的槽位与轮次带上，
           // 服务端才知道"这个槽位已经问过了"

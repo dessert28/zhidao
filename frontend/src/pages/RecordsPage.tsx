@@ -29,23 +29,25 @@ import {
   getReminders,
   markReminder,
   hospitalName,
+  loadHospitalCatalog,
   shortDate,
   type BackendFailure,
   type BookingOrder,
+  type HospitalCatalogEntry,
   type MedicalRecord,
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
 import { QueueEstimateCard } from '../components/QueueEstimateCard';
 import { ReportSection } from '../components/ReportSection';
+import { PrivacySection } from '../components/PrivacySection';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
 import { uploadRecord } from '../lib/db/upload';
 import { IMAGE_PRIVACY_NOTICE } from '../lib/db/ocr';
 
 /** 院区配色。同一个 code 永远同一个颜色，跨页面一致 */
 const HOSPITAL_TONE: Record<string, string> = {
-  'MOCK-A': 'bg-brand-50 text-brand-700 border-brand-200',
-  'MOCK-B': 'bg-violet-50 text-violet-700 border-violet-200',
+  'Z2-JFL': 'bg-brand-50 text-brand-700 border-brand-200',
 };
 
 const TONE_FALLBACK = 'bg-gray-50 text-gray-600 border-gray-200';
@@ -135,6 +137,8 @@ export default function RecordsPage() {
             onMark={onMark}
           />
           <AppointmentsSection />
+          {/* 谁看过我的数据 —— 「就诊即授权」能成立的前提 */}
+          <PrivacySection />
           <TimelineSection records={state.records} />
         </>
       ) : null}
@@ -178,10 +182,31 @@ function Skeleton() {
 function UploadSection({ onUploaded }: { onUploaded: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [visitDate, setVisitDate] = useState(() => new Date().toLocaleDateString('sv-SE'));
-  const [hospitalCode, setHospitalCode] = useState('MOCK-A');
+  /**
+   * 院区选项来自后端目录，不在这里硬编码。
+   *
+   * <p>原来这里写死两个 option（MOCK-A / MOCK-B），而排程推荐的是浙二 ——
+   * 于是"AI 说挂浙二、上传病历时却选不到浙二"，跨院时间轴的两条路对不上。
+   * 现在两端看的是同一份院方目录。
+   */
+  const [hospitals, setHospitals] = useState<HospitalCatalogEntry[]>([]);
+  const [hospitalCode, setHospitalCode] = useState('');
   const [department, setDepartment] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadHospitalCatalog().then((r) => {
+      if (cancelled || !r.ok) return;
+      setHospitals(r.data);
+      // 只在还没选过时给默认值：不能覆盖用户已经选好的院区
+      setHospitalCode((prev) => prev || (r.data[0]?.code ?? ''));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async () => {
     if (!file) return;
@@ -227,8 +252,16 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
               onChange={(e) => setHospitalCode(e.target.value)}
               className="mt-1 block h-9 w-full rounded-lg border border-gray-200 px-2 text-sm text-gray-800"
             >
-              <option value="MOCK-A">演示市第一人民医院</option>
-              <option value="MOCK-B">演示市中心医院</option>
+              {hospitals.length === 0 ? (
+                // 目录没拉到时不要给一个假选项：那会让病历挂到一个不存在的院区
+                <option value="">（暂时读不到院区列表）</option>
+              ) : (
+                hospitals.map((h) => (
+                  <option key={h.code} value={h.code}>
+                    {h.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
 
@@ -239,8 +272,15 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
               placeholder="如 内分泌科"
+              list="upload-departments"
               className="mt-1 block h-9 w-full rounded-lg border border-gray-200 px-2 text-sm text-gray-800"
             />
+            {/* 科室来自所选院区，减少手打出错 —— 手打错了病历会挂到不存在的科室下 */}
+            <datalist id="upload-departments">
+              {(hospitals.find((h) => h.code === hospitalCode)?.departments ?? []).map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
           </label>
         </div>
 

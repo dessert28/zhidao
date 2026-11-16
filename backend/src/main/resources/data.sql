@@ -295,3 +295,20 @@ KEY (app_key) VALUES
   ('Z2-JFL', 'z2jfl-demo-key',
    'z2jfl-demo-secret-please-rotate-in-production',
    'DEMO', '信息科 0571-87783777', TRUE);
+
+-- ============================================================
+-- 院方调阅演示数据
+--
+-- 一条患者与浙大二院的绑定关系，用于演示「就诊即授权」：
+-- HIS 拿着这个匹配码调阅该患者在窗口期内的报告。
+--
+-- 真实场景下匹配码由患者在 App 里生成后告知窗口，
+-- 这里是种子数据，方便演示与测试直接使用。
+-- ============================================================
+DELETE FROM patient_binding WHERE match_code = 'DEMO2026';
+INSERT INTO patient_binding (user_id, hospital_code, match_code, enabled) VALUES
+  (1, 'Z2-JFL', 'DEMO2026', TRUE);
+
+-- 演示账号默认允许自动授权（诊疗必需，也是行业惯例）
+DELETE FROM access_preference WHERE user_id = 1;
+INSERT INTO access_preference (user_id, auto_grant) VALUES (1, TRUE);

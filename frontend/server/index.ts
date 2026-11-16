@@ -51,6 +51,18 @@ export function createApp(opts: AppOptions = {}) {
    */
   app.route('/api/nav', backendRoutes);
   /*
+   * HIS 相关：/api/his/* → 后端 /api/his/*
+   *
+   * 一条前缀下有两类调用方，后端按路径区分鉴权：
+   *   · /api/his/places、/patient-report 等 —— 院方服务器调用，
+   *     用 appKey + HMAC 签名，不带 JWT
+   *   · /api/his/my-access-log、/binding 等 —— 患者查自己的数据，必须带 JWT
+   *
+   * BFF 这一层只做转发，不解析身份 —— 鉴权全部在后端做，
+   * 避免两处各有一套判断逻辑而产生分歧。
+   */
+  app.route('/api/his', backendRoutes);
+  /*
    * 报告图识别：/api/ocr/report
    *
    * 这是唯一会把非文本内容交给模型服务商的路径 ——

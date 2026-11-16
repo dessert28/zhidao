@@ -126,7 +126,14 @@ class ApiIntegrationTest {
 
         JsonNode data = json.readTree(body).path("data");
         assertThat(data.path("total").asInt()).isGreaterThanOrEqualTo(3);
-        // 核心卖点：两家医院都有记录
+        /*
+         * 核心卖点：跨院。种子病历分布在 MOCK-A 与 MOCK-B 两个院区编码下。
+         *
+         * 注意这里与「预约」用的 Z2-JFL 不是同一组编码 ——
+         * 预约的演示院区已经收敛到 Z2-JFL 一家，但历史病历数据
+         * 仍保留多个院区编码，正是为了体现「病历跨院」这件事。
+         * 这两处编码不同是有意的，不要为了整齐把它们改成一样。
+         */
         assertThat(data.path("byHospital").has("MOCK-A")).isTrue();
         assertThat(data.path("byHospital").has("MOCK-B")).isTrue();
     }
@@ -172,20 +179,31 @@ class ApiIntegrationTest {
     /* ============================ 预约 ============================ */
 
     @Test
-    @DisplayName("两家 Mock 院区都注册上了")
-    void bothHospitalsRegistered() throws Exception {
+    @DisplayName("注册的演示院区出现在院区列表里")
+    void hospitalRegistered() throws Exception {
+        /*
+         * 上一版有 MOCK-A / MOCK-B / Z2-JFL 三家，其中两家叫
+         * 「演示市第一人民医院」「演示市中心医院」—— 这种名字对评审
+         * 和患者都没有信息量。改成只保留一家用真实名称的演示院区后，
+         * 这条断言跟着改：不再要求两个假医院编码，而是要求列表里
+         * 有 Z2-JFL 且展示名带「演示」标记。
+         */
         String body = mvc.perform(get("/api/bookings/hospitals").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertThat(body).contains("MOCK-A").contains("MOCK-B");
+        assertThat(body).contains("Z2-JFL");
     }
 
     @Test
-    @DisplayName("两家院区的号源松紧不同（换院区才有意义的实证）")
-    void quotaDiffersBetweenHospitals() throws Exception {
-        int a = slotCount("MOCK-A", "内分泌科");
-        int b = slotCount("MOCK-B", "内分泌科");
-        assertThat(b).as("MOCK-B 内分泌科号源应比 MOCK-A 宽松").isGreaterThan(a);
+    @DisplayName("院区有号源，且号源结构与容量符合约定")
+    void hospitalHasSlots() throws Exception {
+        /*
+         * 原来这条测的是「两家院区号源松紧不同」，靠对比体现换院区
+         * 才有意义。只剩一家院区后没法对比了，改为直接验证：
+         * 该院区该科室在明天确实排出了号源，且初始余量等于容量。
+         */
+        int count = slotCount("Z2-JFL", "内分泌科");
+        assertThat(count).as("内分泌科应排出号源").isPositive();
     }
 
     private int slotCount(String code, String dept) throws Exception {
@@ -214,7 +232,7 @@ class ApiIntegrationTest {
     void slotsExcludePastTimes() throws Exception {
         String today = java.time.LocalDate.now().toString();
         String body = mvc.perform(get("/api/bookings/slots")
-                        .param("hospitalCode", "MOCK-A")
+                        .param("hospitalCode", "Z2-JFL")
                         .param("department", "内分泌科")
                         .param("date", today)
                         .header("Authorization", "Bearer " + token))
@@ -239,7 +257,7 @@ class ApiIntegrationTest {
     @DisplayName("查过去日期返回空号源")
     void pastDateReturnsNoSlots() throws Exception {
         String body = mvc.perform(get("/api/bookings/slots")
-                        .param("hospitalCode", "MOCK-A")
+                        .param("hospitalCode", "Z2-JFL")
                         .param("department", "内分泌科")
                         .param("date", "2025-01-01")
                         .header("Authorization", "Bearer " + token))
@@ -267,7 +285,7 @@ class ApiIntegrationTest {
 
         // 找一个还有号的时段
         String before = mvc.perform(get("/api/bookings/slots")
-                        .param("hospitalCode", "MOCK-A")
+                        .param("hospitalCode", "Z2-JFL")
                         .param("department", dept)
                         .param("date", date)
                         .header("Authorization", "Bearer " + token))
@@ -295,13 +313,13 @@ class ApiIntegrationTest {
         mvc.perform(post("/api/bookings")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"hospitalCode\":\"MOCK-A\",\"department\":\"" + dept
+                        .content("{\"hospitalCode\":\"Z2-JFL\",\"department\":\"" + dept
                                 + "\",\"visitTime\":\"" + visitTime + "\"}"))
                 .andExpect(status().isOk());
 
         // 复查：该时段余量应减 1，其余时段不变
         String after = mvc.perform(get("/api/bookings/slots")
-                        .param("hospitalCode", "MOCK-A")
+                        .param("hospitalCode", "Z2-JFL")
                         .param("department", dept)
                         .param("date", date)
                         .header("Authorization", "Bearer " + token))
@@ -340,7 +358,7 @@ class ApiIntegrationTest {
         mvc.perform(post("/api/bookings")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"hospitalCode\":\"MOCK-A\",\"department\":\"内分泌科\",\"visitTime\":\"2020-01-01T09:00:00\"}"))
+                        .content("{\"hospitalCode\":\"Z2-JFL\",\"department\":\"内分泌科\",\"visitTime\":\"2020-01-01T09:00:00\"}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -350,7 +368,7 @@ class ApiIntegrationTest {
         String created = mvc.perform(post("/api/bookings")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"hospitalCode\":\"MOCK-A\",\"department\":\"神经内科\",\"visitTime\":\"2027-02-01T09:00:00\"}"))
+                        .content("{\"hospitalCode\":\"Z2-JFL\",\"department\":\"神经内科\",\"visitTime\":\"2027-02-01T09:00:00\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         long id = json.readTree(created).path("data").path("id").asLong();

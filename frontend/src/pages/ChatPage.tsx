@@ -4,11 +4,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEventStream } from '../hooks/useEventStream';
-import { useSpeechInput } from '../hooks/useSpeechInput';
+import { useSpeechInput, SPEECH_PRIVACY_NOTICE } from '../hooks/useSpeechInput';
 import { usePatientFacts } from '../hooks/usePatientFacts';
+import { useRedaction } from '../hooks/useRedaction';
 import { TurnView } from '../components/EventRenderer';
 import { RedactionPreview } from '../components/RedactionPreview';
-import { redact } from '../lib/privacy/redact';
+import { prepareOutbound } from '../lib/privacy/outbound';
 
 /**
  * 示例问题刻意分类，让评审一眼看到四类路径：
@@ -26,6 +27,15 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * 输入框这段文字的最终去向：遮蔽后的文本、命中列表、模型进度。
+   * 预览显示的就是它，发送发出去的也是它 —— 是同一个值，不是两份实现。
+   */
+  const view = useRedaction(input);
+
+  /** 发送现在是异步的（可能要等本地模型把这句话检查完），防连点 */
+  const sendingRef = useRef(false);
 
   /** 患者事实：过敏史 / 慢病 / 在用药 —— Reviewer 交叉检查的输入 */
   const { facts: patientFacts, loaded: factsLoaded } = usePatientFacts();
@@ -70,37 +80,63 @@ export default function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns]);
 
-  const submit = (text: string) => {
+  const submit = async (text: string) => {
     const t = text.trim();
-    if (!t || busy) return;
-    // 隐私边界：**发送前先在本机脱敏**，进入网络的是脱敏后的文本。
-    // 这一步必须在客户端做 —— 服务端才脱敏的话，原文已经出去了。
-    const safe = redact(t).text;
+    if (!t || busy || sendingRef.current) return;
+
     /*
-     * 带上患者事实（过敏史/慢病/在用药）。
+     * 隐私边界：**发送前先在本机脱敏**，进入网络的是脱敏后的文本。
+     * 这一步必须在客户端做 —— 服务端才脱敏的话，原文已经出去了。
      *
-     * 这三个字段是 Reviewer 做交叉检查的输入：
-     * 不传的话 `drugConflictCheck()` 拿到的永远是空数组，
-     * README 承诺的「跨院用药冲突提示」就永远不会触发。
-     * 后端没起时 facts 是空数组 —— 只少两个检查，不影响对话。
+     * 发出去的必须是**预览里那一份**：
+     *   · 输入框内容 → 直接用 useRedaction 已经算好的结果，用户此刻看到的就是它
+     *   · 示例按钮   → 不经过输入框，走同一个 composeOutbound 现算
+     *
+     * 之前这里是 redact(t).text（只有规则），而预览把模型命中也算进了计数，
+     * 于是"预览说要遮 5 处、实际只遮了 3 处"。隐私产品里最坏的那种 bug：
+     * 不是漏功能，是给了错误的安全感。
      */
-    void send({
-      text: safe,
-      facts: patientFacts,
+    sendingRef.current = true;
+    try {
+      const outbound =
+        t === input.trim() && view.model.phase !== 'pending'
+          ? { text: view.text.trim() }
+          : // 模型还在检查这一句时，不能拿"待定"当结论发出去 —— 重算一次。
+            // prepareOutbound 在模型未就绪时立刻返回规则结果，不会卡住发送。
+            await prepareOutbound(t);
+
       /*
-       * 健康档案拼在问题前面，而不是塞进 facts。
+       * 带上患者事实（过敏史/慢病/在用药）。
        *
-       * 原因：facts 是给 Reviewer 做交叉检查用的结构化字段，
-       * 而这里要的是"让模型知道我的具体情况"——那是输入上下文，
-       * 拼进 text 最直接，也不用改 Agent 契约。
-       *
-       * 加这个前缀后，问「我能吃什么」的回答会带上"你糖化偏高"这类
-       * 具体信息，而不是泛泛而谈。
+       * 这三个字段是 Reviewer 做交叉检查的输入：
+       * 不传的话 `drugConflictCheck()` 拿到的永远是空数组，
+       * README 承诺的「跨院用药冲突提示」就永远不会触发。
+       * 后端没起时 facts 是空数组 —— 只少两个检查，不影响对话。
        */
-      context: healthContext,
-    });
-    setInput('');
-    taRef.current?.focus();
+      void send({
+        text: outbound.text,
+        facts: patientFacts,
+        /*
+         * 健康档案作为**原始**上下文交给 send，由它在组装请求体时统一脱敏。
+         *
+         * 原因：facts 是给 Reviewer 做交叉检查用的结构化字段，
+         * 而这里要的是"让模型知道我的具体情况"——那是输入上下文，
+         * 拼进 text 最直接，也不用改 Agent 契约。
+         *
+         * 之前这里是裸拼字符串，档案那段从没经过 redact()：
+         * 输入框遮了、档案没遮，等于整条隐私链路有个旁路。
+         *
+         * 加这个前缀后，问「我能吃什么」的回答会带上"你糖化偏高"这类
+         * 具体信息，而不是泛泛而谈。
+         */
+        context: healthContext,
+      });
+
+      setInput('');
+      taRef.current?.focus();
+    } finally {
+      sendingRef.current = false;
+    }
   };
 
   return (
@@ -141,7 +177,7 @@ export default function ChatPage() {
               <button
                 key={e.label}
                 type="button"
-                onClick={() => submit(e.text)}
+                onClick={() => void submit(e.text)}
                 className="group rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40"
               >
                 <div className="text-xs font-medium text-brand-700">{e.label}</div>
@@ -171,7 +207,11 @@ export default function ChatPage() {
 
       {/* 输入区：固定在底部，移动端不遮挡 */}
       <div className="sticky bottom-0 -mx-4 mt-4 border-t border-gray-100 bg-gray-50/95 px-4 py-3 backdrop-blur">
-        {input.trim() ? <div className="mb-2"><RedactionPreview raw={input} /></div> : null}
+        {input.trim() ? (
+          <div className="mb-2">
+            <RedactionPreview raw={input} hits={view.hits} model={view.model} />
+          </div>
+        ) : null}
 
         {/* 语音状态：正在听 / 出错。两种都要给可见反馈，否则用户以为按钮坏了 */}
         {speech.listening ? (
@@ -200,6 +240,18 @@ export default function ChatPage() {
           </div>
         ) : null}
 
+        {/*
+          语音隐私说明：**常驻**，不折叠、不藏在展开项里。
+
+          原来这里没有这句话，而源码注释里写着"没有任何一家第三方
+          听到患者说话" —— 事实相反：Chrome / Edge 的识别在云端完成。
+          用户在按下麦克风之前就该知道声音会离开设备；
+          说完再补一句声明，等于事后通知。
+        */}
+        {speech.support === 'supported' ? (
+          <p className="mb-2 text-[11px] leading-relaxed text-gray-400">{SPEECH_PRIVACY_NOTICE}</p>
+        ) : null}
+
         <div className="flex items-end gap-2">
           {/*
             语音按钮放在发送左侧、拇指热区（docs/04 §7.4）。
@@ -211,7 +263,11 @@ export default function ChatPage() {
             onClick={speech.toggle}
             aria-label={speech.listening ? '停止语音输入' : '语音输入'}
             aria-pressed={speech.listening}
-            title={speech.listening ? '停止' : '按住说话（Chrome / Edge）'}
+            title={
+              speech.listening
+                ? '停止'
+                : '语音输入（Chrome / Edge）。声音会交给浏览器的识别服务，识别后的文字仍在本机脱敏'
+            }
             className={
               'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ' +
               (speech.listening
@@ -230,7 +286,7 @@ export default function ChatPage() {
               // Enter 发送，Shift+Enter 换行（中文输入法下 isComposing 必须排除）
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
-                submit(input);
+                void submit(input);
               }
             }}
             rows={1}
@@ -249,7 +305,7 @@ export default function ChatPage() {
           ) : (
             <button
               type="button"
-              onClick={() => submit(input)}
+              onClick={() => void submit(input)}
               disabled={!input.trim()}
               className="h-11 shrink-0 rounded-xl bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >

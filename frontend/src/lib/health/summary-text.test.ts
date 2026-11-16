@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { buildSummaryText, genderLabel, type SummaryInput } from './summary-text';
-import type { PatientProfile } from '../api';
+import { rememberHospitalCatalog, type PatientProfile } from '../api';
 import type { MarkerTrend } from './markers';
+
+/*
+ * 院区展示名改为从后端目录动态获取之后，纯函数测试里没有加载目录，
+ * hospitalName() 会退化成返回编码。这里显式注入一份最小的目录 ——
+ * 测试不该依赖网络请求，但要知道「展示名从哪来」。
+ */
+beforeEach(() => {
+  rememberHospitalCatalog([
+    { code: 'MOCK-A', name: '演示市第一人民医院', departments: [] },
+    { code: 'MOCK-B', name: '演示市中心医院', departments: [] },
+    { code: 'Z2-JFL', name: '浙大二院（解放路院区）', departments: [] },
+  ]);
+});
 
 const profile = (over: Partial<PatientProfile> = {}): PatientProfile => ({
   userId: 1,

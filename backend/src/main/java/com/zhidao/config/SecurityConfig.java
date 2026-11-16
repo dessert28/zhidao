@@ -92,21 +92,46 @@ public class SecurityConfig {
                          */
                         .requestMatchers(HttpMethod.GET, "/api/bookings/slots", "/api/bookings/hospitals")
                         .permitAll()
+                        /*
+                         * 院区目录与接入清单**也不需要登录**。
+                         *
+                         * 目录（编码 + 展示名 + 开设科室）和号源是同一种东西：
+                         * 院方公开信息，大厅屏上就挂着。不放行的话，
+                         * 前端上传病历时连"选哪家园区"都填不出来。
+                         *
+                         * 接入清单（字段说明）更是给医院信息科看的公开文档 ——
+                         * 让对接方先注册一个账号才能看到"要准备哪些字段"，
+                         * 是最没必要的门槛。里面没有任何患者数据或密钥。
+                         */
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/bookings/hospitals/catalog",
+                                "/api/bookings/integration-contract")
+                        .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/nav/**")
                         .permitAll()
                         /*
-                         * HIS 对接接口**不经过 JWT**。
+                         * 院方调用的接口不经过 JWT。
                          *
-                         * 它的调用方是院方服务器，不是患者，没有用户身份可言。
-                         * 它有自己的认证：appKey + HMAC 签名，在 HisIngestService
-                         * 里校验。如果这里要求 JWT，院方根本没法调。
+                         * 调用方是院方服务器，不是患者，没有用户身份可言。
+                         * 它们有自己的认证：appKey + HMAC 签名，在
+                         * HisIngestService 里校验。
+                         *
+                         * **必须逐个列举，不能用 /api/his/****：
+                         * 患者端的三个接口（访问记录 / 匹配码 / 自动授权开关）
+                         * 也是 /api/his 前缀，但它们查的是患者自己的数据，
+                         * 必须带 JWT。用通配会把它们一起放行，
+                         * 结果是任何人都能读到别人的访问记录。
                          *
                          * 注意：permitAll 只表示"JWT 过滤器不拦"，
                          * 不代表"无认证"。真正的门禁在 HisController 里 ——
-                         * 验签失败一律 401。这一点必须说清楚，
-                         * 否则后人看到 permitAll 会误以为这个接口是裸奔的。
+                         * 验签失败一律 401。
                          */
-                        .requestMatchers("/api/his/**")
+                        .requestMatchers(
+                                "/api/his/places",
+                                "/api/his/sign",
+                                "/api/his/patient-report",
+                                "/api/his/patient-report/archived")
                         .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",

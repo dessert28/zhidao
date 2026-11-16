@@ -36,7 +36,7 @@ spring:
       # 拆成两个文件：主表结构 + HIS 接入相关表。
       # 拆开是为了让"HIS 对接"这块能整块拿出/拿下，
       # 不影响主表的可读性。顺序有意义：主表先建。
-      schema-locations: classpath:schema.sql,classpath:schema-his.sql
+      schema-locations: classpath:schema.sql,classpath:schema-his.sql,classpath:schema-access.sql
       data-locations: classpath:data.sql
 
   h2:

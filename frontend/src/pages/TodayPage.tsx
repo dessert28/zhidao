@@ -404,6 +404,20 @@ function AgendaSection({
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium leading-snug text-gray-900">{it.title}</div>
                 <p className="mt-0.5 text-xs leading-relaxed text-gray-600">{it.detail}</p>
+                {/*
+                  可点的入口。
+                  原来 detail 里写着「请打开预约详情确认或取消」，
+                  但整块是死的、没有链接 —— 一句话指了个不存在的地方，
+                  比不说更让人恼火。现在这句话后面真的能点。
+                */}
+                {it.href ? (
+                  <Link
+                    to={it.href}
+                    className="mt-1 inline-block text-xs font-medium text-brand-700 underline underline-offset-2"
+                  >
+                    查看预约详情
+                  </Link>
+                ) : null}
               </div>
             </div>
           );

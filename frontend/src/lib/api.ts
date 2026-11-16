@@ -424,6 +424,50 @@ export function getQueueEstimate(orderId: number) {
   return request<QueueInfo>(`/api/bookings/${orderId}/queue`);
 }
 
+/** 患者查看自己的院方调阅记录 */
+export interface AccessLogItem {
+  id: number;
+  hospitalCode: string;
+  /** VIEW_REPORT_DETAIL / ARCHIVED / DENIED */
+  action: string;
+  visitDate: string | null;
+  itemCount: number;
+  archived: boolean;
+  createdAt: string | null;
+}
+
+/** 患者与某院区的匹配码 */
+export interface BindingItem {
+  matchCode: string;
+  hospitalCode: string;
+  createdAt: string | null;
+}
+
+export function getAccessLog() {
+  return request<AccessLogItem[]>('/api/his/my-access-log');
+}
+
+export function listBindings() {
+  return request<BindingItem[]>('/api/his/binding');
+}
+
+export function createBinding(hospitalCode: string) {
+  return request<{ matchCode: string; hospitalCode: string; hint: string }>(
+    `/api/his/binding?hospitalCode=${encodeURIComponent(hospitalCode)}`,
+    { method: 'POST' },
+  );
+}
+
+export function getAutoGrant() {
+  return request<{ autoGrant: boolean }>('/api/his/auto-grant');
+}
+
+export function setAutoGrant(enabled: boolean) {
+  return request<{ autoGrant: boolean }>(`/api/his/auto-grant?enabled=${enabled}`, {
+    method: 'POST',
+  });
+}
+
 export function getBookings() {
   return request<BookingOrder[]>('/api/bookings');
 }
@@ -449,16 +493,41 @@ export function createBooking(input: {
 
 /* ============================ 展示辅助 ============================ */
 
-/** 院区编码 → 展示名。后端只存 code，名字在海报里没意义但界面上要有 */
+/** 院区目录的一项，来自 `GET /api/bookings/hospitals/catalog` */
+export interface HospitalCatalogEntry {
+  code: string;
+  name: string;
+  departments: string[];
+}
+
+/**
+ * 院区展示名。
+ *
+ * <p><b>它曾经是一张硬编码的表</b>（MOCK-A/MOCK-B/Z2-JFL 三行），
+ * 而且已经出过一次事故：加了浙二却忘了加这一行，病历页的预约列表
+ * 直接显示 "Z2-JFL"，患者看不懂。
+ *
+ * <p>现在名字由后端院方目录给出（`HospitalAdapter.displayName()`），
+ * 前端只缓存一份。加院区只改后端注册表一行，这里自动跟上。
+ *
+ * <p>拿不到目录时回退到编码本身 —— 显示 "Z2-JFL" 很糟，但比
+ * 显示一个猜出来的医院名要好：猜错了，用户会走到错误的地方。
+ */
+const hospitalNames = new Map<string, string>();
+
+export function rememberHospitalCatalog(list: readonly HospitalCatalogEntry[]): void {
+  for (const h of list) hospitalNames.set(h.code, h.name);
+}
+
 export function hospitalName(code: string): string {
-  const map: Record<string, string> = {
-    'MOCK-A': '演示市第一人民医院',
-    'MOCK-B': '演示市中心医院',
-    // 少这一行时，病历页的预约列表会直接显示 "Z2-JFL" 这种内部编码，
-    // 患者看不懂。实测发现后补上 —— 院区展示名必须在前后端都覆盖。
-    'Z2-JFL': '浙大二院（解放路院区）',
-  };
-  return map[code] ?? code;
+  return hospitalNames.get(code) ?? code;
+}
+
+/** 拉一次院区目录并记住。调用失败不抛：展示名降级为编码，其他功能不受影响 */
+export async function loadHospitalCatalog() {
+  const r = await request<HospitalCatalogEntry[]>('/api/bookings/hospitals/catalog');
+  if (r.ok) rememberHospitalCatalog(r.data);
+  return r;
 }
 
 /** ISO 时间 → 「11月2日」这种短格式 */
