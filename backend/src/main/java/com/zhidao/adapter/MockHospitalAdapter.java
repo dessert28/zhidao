@@ -54,6 +54,23 @@ public class MockHospitalAdapter implements HospitalAdapter {
     }
 
     @Override
+    public String displayName() {
+        return displayName;
+    }
+
+    /**
+     * 号源表里配了额度的科室，就是这个院区开设的科室。
+     *
+     * <p>刻意从 {@link #dailyQuota} 推导而不是再维护一份清单：
+     * 两份清单迟早不一致，而不一致的表现是"排程推荐了一个
+     * querySlots 永远返回空的科室"—— 用户只会看到"没有号"。
+     */
+    @Override
+    public java.util.Set<String> departments() {
+        return dailyQuota.keySet();
+    }
+
+    @Override
     public List<Slot> querySlots(String department, LocalDate date) {
         int quota = dailyQuota.getOrDefault(department, 0);
         if (quota <= 0) {
@@ -89,14 +106,26 @@ public class MockHospitalAdapter implements HospitalAdapter {
         LocalTime morningStart = LocalTime.of(8, 30);
         for (int i = 0; i < morning; i++) {
             LocalDateTime t = LocalDateTime.of(date, morningStart.plusMinutes(30L * i));
-            slots.add(new Slot(t, "演示医生" + (char) ('A' + (i % 3)), SLOT_CAPACITY));
+            slots.add(new Slot(t, doctorNameFor(department, i), SLOT_CAPACITY));
         }
         LocalTime afternoonStart = LocalTime.of(14, 0);
         for (int i = 0; i < afternoon; i++) {
             LocalDateTime t = LocalDateTime.of(date, afternoonStart.plusMinutes(30L * i));
-            slots.add(new Slot(t, "演示医生" + (char) ('A' + (i % 3)), SLOT_CAPACITY));
+            slots.add(new Slot(t, doctorNameFor(department, i), SLOT_CAPACITY));
         }
         return slots;
+    }
+
+    /**
+     * 医生名。
+     *
+     * <p>显示成「消化内科 · 演示医生A」而不是光秃秃的「演示医生A」：
+     * 号源卡片上科室和医生并排出现时，两个科室的号看不出区别。
+     * 更重要的是<b>不能编造真实姓名</b> —— 一个虚构的"张主任"挂在
+     * 真实医院名下面，比名字难看危险得多。
+     */
+    private String doctorNameFor(String department, int i) {
+        return department + " · 演示医生" + (char) ('A' + (i % 3));
     }
 
     /** 每个时段的接诊容量。见 querySlots 的说明 */

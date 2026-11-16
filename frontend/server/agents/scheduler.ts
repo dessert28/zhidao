@@ -39,7 +39,12 @@ import type { AgentEvent } from '@shared/types/events';
 import { emptyOutput, safeRun } from './safe-run.js';
 // 院方能力走工具层（MCP 形状，见 docs/10 D3）。
 // 不在这里直接 fetch：超时与错误分类由工具层统一做一份。
-import { listSlots, type SlotDto } from './tools/mcp-hospital.js';
+import {
+  listSlots,
+  listHospitalCatalog,
+  type SlotDto,
+  type HospitalCatalogEntry,
+} from './tools/mcp-hospital.js';
 
 export const SCHEDULER_TIMEOUT_MS = 8000;
 
@@ -118,16 +123,15 @@ export function parseBookingIntent(text: string): BookingIntent | null {
   }
   if (!department) return null;
 
-  // 2. 院区：按名称识别；识别不到留空，由调用方决定用哪家
+  // 2. 院区：按名称识别；识别不到留空，由调用方按院方目录查
   /*
-   * 顺序有讲究：**先匹配"浙二/浙大二院"，再匹配泛化的"人民医院"**。
-   * 「浙江大学医学院附属第二医院」里含"第二医院"，
-   * 如果先写了 /第二/ 这类宽泛规则会误命中别家。
+   * 只保留浙二解放路一家演示院区。
+   *
+   * 这里写死编码是有意的：它的职责是"用户说了哪家 → 对应哪个编码"。
+   * 医院的**属性**（展示名、开设科室）一律问院方目录，见 resolveHospitals()。
    */
   let hospitalCode: string | null = null;
   if (/浙(大|江大学.*第)?二院|浙二|第二医院|解放路/i.test(t)) hospitalCode = 'Z2-JFL';
-  else if (/第一人民|人民医院|MOCK-A/i.test(t)) hospitalCode = 'MOCK-A';
-  else if (/中心医院|MOCK-B/i.test(t)) hospitalCode = 'MOCK-B';
 
   // 3. 日期：支持"明天""后天""下周X""X月X日"，抽不到留空
   const date = parseDate(t);
@@ -231,16 +235,45 @@ async function querySlots(
   };
 }
 
-/** 院区编码 → 展示名 */
-const HOSPITAL_NAMES: Record<string, string> = {
-  'MOCK-A': '演示市第一人民医院',
-  'MOCK-B': '演示市中心医院',
-  // 用户口语里叫「浙二」，官方名太长 —— 展示时用简称，卡片里再给全称
-  'Z2-JFL': '浙大二院（解放路院区）',
+/** 院区编码 → 展示名。**兜底用**，正常走 resolveHospitals() */
+const HOSPITAL_NAMES_FALLBACK: Record<string, string> = {
+  'Z2-JFL': '浙江大学医学院附属第二医院（解放路院区）（演示）',
 };
 
-function hospitalName(code: string): string {
-  return HOSPITAL_NAMES[code] ?? code;
+function hospitalNameFrom(entry: HospitalCatalogEntry | undefined, code: string): string {
+  return entry?.name ?? HOSPITAL_NAMES_FALLBACK[code] ?? code;
+}
+
+/**
+ * 本次要查的院区列表：院方目录优先，目录不可用时退回兜底。
+ *
+ * <p>返回值带 {@code departments}，用来做一件以前做不了的事：
+ * <b>在给出预览之前，先确认这家庭院真的开了这个科</b>。
+ * 分诊说"挂消化内科"，而这家院区没这个科，用户点下去才失败，
+ * 体验上等同于系统坏了。
+ */
+async function resolveHospitals(preferred: string | null): Promise<HospitalCatalogEntry[]> {
+  const r = await listHospitalCatalog.handler({});
+  const catalog: HospitalCatalogEntry[] =
+    r.status === 'ok'
+      ? r.data
+      : Object.entries(HOSPITAL_NAMES_FALLBACK).map(([code, name]) => ({
+          code,
+          name,
+          departments: [] as string[],
+        }));
+
+  if (!preferred) return catalog;
+  // 用户点名了院区，就只查它（目录里没有也照查：可能是新接入还没刷新目录）
+  const picked = catalog.find((h) => h.code === preferred);
+  return picked
+    ? [picked]
+    : [{ code: preferred, name: hospitalNameFrom(undefined, preferred), departments: [] }];
+}
+
+/** 院方没说开设哪些科室时（空集合）不做筛选 —— 宁可放过，不可误杀 */
+function offersDepartment(h: HospitalCatalogEntry, department: string): boolean {
+  return h.departments.length === 0 || h.departments.includes(department);
 }
 
 /**
@@ -347,28 +380,49 @@ export function makeScheduler() {
 
     const department = intent?.department ?? input.payload.knownDepartment!;
     /*
-     * 没提院区时按顺序试：这正是"换院区才有号"的价值。
+     * 院区列表由院方目录给出，不再在这里写死 ['Z2-JFL','MOCK-A','MOCK-B']。
      *
-     * 顺序把浙二放前面：它是样例里唯一有真实名称的三甲，
-     * 用户说"帮我挂个号"时给一家可识别的医院比给"演示市第一人民医院"
-     * 更像真事。MOCK 两家仍然在后备里，保证都能被搜到。
+     * 那张写死的数组是"加一家院区漏一次"的典型：漏了不报错，
+     * 只是那家院区永远搜不到。现在加院区只改后端注册表。
      */
-    const candidates = intent?.hospitalCode
-      ? [intent.hospitalCode]
-      : ['Z2-JFL', 'MOCK-A', 'MOCK-B'];
+    const hospitals = await resolveHospitals(intent?.hospitalCode ?? null);
+
+    // 用户没点名院区时，优先查"真的开了这个科"的那几家
+    const candidates = hospitals.filter((h) => offersDepartment(h, department));
+
+    /* ---- 一家都没这个科：直接说，别白查一轮再报没号 ---- */
+    if (candidates.length === 0) {
+      const listed = hospitals.map((h) => `${h.name}（${h.departments.join('、')}）`).join('；');
+      events.push({
+        type: 'caveat',
+        text: `已接入的院区里暂时没有「${department}」。\n当前可约科室：${listed}。\n换个科室，或直接到门诊导诊台咨询。`,
+      });
+      return {
+        status: 'ok',
+        payload: { action: 'query', preview: null, timeline: [] },
+        confidence: 0.5,
+        evidence: [],
+        events,
+      };
+    }
 
     const startDate = intent?.date ?? todayLocal();
     const dates = intent?.date ? [intent.date] : nextDays(startDate, 14);
 
     /* ---- 逐院区、逐日期找第一个有号的 ---- */
-    let found: { slots: SlotDto[]; hospitalCode: string; date: string } | null = null;
+    let found: {
+      slots: SlotDto[];
+      hospitalCode: string;
+      hospital: string;
+      date: string;
+    } | null = null;
     let sawUnreachable = false;
 
-    outer: for (const code of candidates) {
+    outer: for (const h of candidates) {
       for (const date of dates) {
-        const r = await querySlots(code, department, date);
+        const r = await querySlots(h.code, department, date);
         if (r.ok) {
-          found = { slots: r.slots, hospitalCode: code, date };
+          found = { slots: r.slots, hospitalCode: h.code, hospital: h.name, date };
           break outer;
         }
         if (r.reason === 'unreachable') {
@@ -417,9 +471,9 @@ export function makeScheduler() {
       // 真正下单由前端调后端，不需要在 BFF 侧预占号位 ——
       // 预占会让"看预览"这个动作产生副作用。
       preorderId: `${found.hospitalCode}:${department}:${slot.visitTime}`,
-      // 下单要用编码（后端按它分发适配器），展示名查不到
+      // 下单要用编码（后端按它分发适配器），展示名由院方目录给出
       hospitalCode: found.hospitalCode,
-      hospital: hospitalName(found.hospitalCode),
+      hospital: found.hospital,
       department,
       doctor: slot.doctorName,
       slot: slot.visitTime,
@@ -428,23 +482,23 @@ export function makeScheduler() {
 
     events.push({ type: 'booking_preview_card', preorder: preview });
 
-    // 同一科室另一家院区也查一次，用来提示"换院区有/没号"
     /*
-     * 顺便查另一家有号的院区，用来演示"换院区也能约"。
+     * 顺便查另一家也开了这个科的院区，用来演示"换院区也能约"。
      *
      * 原来写死成 MOCK-A ↔ MOCK-B 的二选一，加了第三家后那种写法
-     * 会把浙二永远排除在对比之外。改成"在候选列表里取第一个不等于
-     * 当前院区的"，加院区时不用再改这里。
+     * 会把浙二永远排除在对比之外。现在从院方目录里取第一家
+     * 不等于当前院区的 —— 加院区不用再改这里。
      */
-    const otherCode = ['Z2-JFL', 'MOCK-A', 'MOCK-B'].find((c) => c !== found.hospitalCode)!;
-    const other = await querySlots(otherCode, department, found.date);
-    if (other.ok) {
-      events.push({
-        type: 'caveat',
-        text: `${hospitalName(otherCode)}同一天也有号（${other.slots.length} 个时段可选），如需比较可以先看看。`,
-      });
-    } else if (other.reason === 'no_department') {
-      // 别家没这个科室是很正常的信息，不必提示
+    const other = candidates.find((h) => h.code !== found!.hospitalCode);
+    if (other) {
+      const otherSlots = await querySlots(other.code, department, found.date);
+      if (otherSlots.ok) {
+        events.push({
+          type: 'caveat',
+          text: `${other.name}同一天也有号（${otherSlots.slots.length} 个时段可选），如需比较可以先看看。`,
+        });
+      }
+      // 别家没号是正常信息，不必提示
     }
 
     const timeline = buildTimeline(department, slot.visitTime);

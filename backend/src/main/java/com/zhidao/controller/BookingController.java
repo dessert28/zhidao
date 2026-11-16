@@ -39,10 +39,35 @@ public class BookingController {
     private final HospitalNavService navService;
     private final QueueEstimateService queueService;
 
-    /** 已接入的院区列表。前端渲染下拉框用，省得硬编码 */
+    /** 已接入的院区编码。前端渲染下拉框用，省得硬编码 */
     @GetMapping("/hospitals")
     public ApiResult<List<String>> hospitals() {
         return ApiResult.ok(adapters.codes());
+    }
+
+    /**
+     * 院区目录：编码 + 展示名 + 开设科室。
+     *
+     * <p>与 {@code /hospitals} 的区别：那个只给编码，前端还得自己维护一张
+     * 「编码 → 中文名」的映射表（`lib/api.ts` 的 {@code hospitalName}）。
+     * 那张表每加一家院区就会漏一次，漏了界面上就直接显示 "Z2-JFL"。
+     * 现在名字由院方侧给出，前端不再持有第二份真相。
+     */
+    @GetMapping("/hospitals/catalog")
+    public ApiResult<List<Map<String, Object>>> hospitalCatalog() {
+        return ApiResult.ok(adapters.catalogs());
+    }
+
+    /**
+     * 院方接入清单。
+     *
+     * <p>给医院信息科看：照着这份清单准备数据，接入就是实现一个
+     * {@code HospitalAdapter} 类。刻意做成公开接口而不是写进内部文档 ——
+     * 对接方拿不到我们的仓库。
+     */
+    @GetMapping("/integration-contract")
+    public ApiResult<List<Map<String, String>>> integrationContract() {
+        return ApiResult.ok(HospitalAdapterRegistry.integrationRequirements());
     }
 
     @GetMapping("/slots")

@@ -12,6 +12,44 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildTimeline, parseBookingIntent, parseDate } from './scheduler';
 
+/* ============================ 测试替身 ============================ */
+
+function jsonResponse(data: unknown) {
+  return new Response(JSON.stringify({ code: 0, data }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/**
+ * 模拟"院方目录正常 + 号源正常"。
+ *
+ * <p>为什么按 URL 分流而不是一律返回同一份数据：
+ * 排程现在会先问目录（挂到哪个科、叫什么名），再问号源。
+ * 一份数据同时喂给两个接口，测出来的是"两个接口被同一份数据骗过"，
+ * 不是真实链路。
+ */
+function stubCatalogAndSlots() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/hospitals/catalog')) {
+        return jsonResponse([
+          {
+            code: 'Z2-JFL',
+            name: '浙江大学医学院附属第二医院（解放路院区）（演示）',
+            departments: ['内分泌科', '消化内科'],
+          },
+        ]);
+      }
+      return jsonResponse([
+        { visitTime: '2026-11-16T08:30:00', doctorName: '内分泌科 · 演示医生A', remaining: 2 },
+      ]);
+    }),
+  );
+}
+
 /* ============================ 意图抽取 ============================ */
 
 describe('科室抽取', () => {
@@ -39,12 +77,23 @@ describe('科室抽取', () => {
 });
 
 describe('院区抽取', () => {
-  it('识别两家演示医院', () => {
-    expect(parseBookingIntent('去第一人民医院挂内分泌科')?.hospitalCode).toBe('MOCK-A');
-    expect(parseBookingIntent('到中心医院看骨科')?.hospitalCode).toBe('MOCK-B');
+  /*
+   * 只保留浙二解放路一家演示院区。
+   *
+   * 原来的两个 MOCK 院区叫「演示市第一人民医院」「演示市中心医院」——
+   * 既不像真实医院，也说不清自己在演示什么。现在换成一家真实名称
+   * 加「（演示）」角标的院区，识别规则也相应精简。
+   *
+   * 这里测的是"口语 → 编码"这一层映射；医院的**属性**（展示名、开设科室）
+   * 一律来自院方目录，不在这里断言 —— 那正是我们要消除的第二份真相。
+   */
+  it('口语里的"浙二""解放路"都指向同一家', () => {
+    expect(parseBookingIntent('想约浙二内分泌科')?.hospitalCode).toBe('Z2-JFL');
+    expect(parseBookingIntent('去解放路院区挂内分泌科')?.hospitalCode).toBe('Z2-JFL');
+    expect(parseBookingIntent('浙江大学医学院附属第二医院 消化内科')?.hospitalCode).toBe('Z2-JFL');
   });
 
-  it('没提院区时返回 null（由调用方两家都试）', () => {
+  it('没提院区时返回 null（由调用方按院方目录查）', () => {
     expect(parseBookingIntent('挂内分泌科')?.hospitalCode).toBeNull();
   });
 });
@@ -191,25 +240,40 @@ describe('Agent：失败要给不同的话术', () => {
   });
 
   it('有号 → 发出 booking_preview_card 与 timeline_card', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              code: 0,
-              data: [{ visitTime: '2026-11-16T08:30:00', doctorName: '演示医生A', remaining: 1 }],
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          ),
-      ),
-    );
+    stubCatalogAndSlots();
     const { makeScheduler } = await import('./scheduler');
     const out = await makeScheduler()(mkInput('挂内分泌科'));
     expect(out.events.some((e) => e.type === 'booking_preview_card')).toBe(true);
     expect(out.events.some((e) => e.type === 'timeline_card')).toBe(true);
     // 预览必须带 hospitalCode，否则前端无法下单
-    expect(out.payload.preview?.hospitalCode).toBeTruthy();
+    expect(out.payload.preview?.hospitalCode).toBe('Z2-JFL');
+    // 展示名来自院方目录，且必须带「（演示）」—— 这是不许丢的合规角标
+    expect(out.payload.preview?.hospital).toContain('演示');
+  });
+
+  it('院区没开这个科 → 在给预览之前就说清楚，不白查一轮', async () => {
+    /*
+     * 这是加了院方目录之后才能做到的检查：
+     * 用户问一个院区没有的科室，以前会查 14 天，最后回一句
+     * "最近两周没有号源"—— 听起来像"号放完了"，
+     * 实际是"这家医院根本没这个科"。两者用户该做的事完全不同。
+     */
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        if (String(input).includes('/hospitals/catalog')) {
+          return jsonResponse([
+            { code: 'Z2-JFL', name: '某某医院（演示）', departments: ['内分泌科'] },
+          ]);
+        }
+        return jsonResponse([]);
+      }),
+    );
+    const { makeScheduler } = await import('./scheduler');
+    const out = await makeScheduler()(mkInput('挂皮肤科'));
+    expect(out.payload.preview).toBeNull();
+    const caveat = out.events.find((e) => e.type === 'caveat');
+    expect(caveat && 'text' in caveat ? caveat.text : '').toContain('暂时没有');
   });
 
   it('Agent 内部异常不抛出（safeRun 兜底）', async () => {

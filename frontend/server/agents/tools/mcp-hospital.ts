@@ -237,13 +237,46 @@ export const listHospitals: McpTool<Record<string, never>, string[]> = {
 
 /* ============================ 注册表 ============================ */
 
+/** 院区目录的一项：院方侧关于"这家医院长什么样"的全部事实 */
+export interface HospitalCatalogEntry {
+  code: string;
+  /** 展示名，演示环境带「（演示）」后缀 */
+  name: string;
+  /** 院区开设的科室 */
+  departments: string[];
+}
+
 /**
- * 工具注册表。
+ * 院区目录。对应 `GET /api/bookings/hospitals/catalog`。
  *
- * <p>形状对齐 MCP 的 `tools/list` 返回：可以用它生成
- * `{ tools: [{name, description, inputSchema}] }` 直接喂给模型。
+ * <p><b>为什么值得多一个工具而不是复用 list_hospitals</b>：
+ * 后者只给编码，排程 Agent 拿到编码后只能硬编码一张
+ * 「编码 → 医院名 + 有哪些科」的表。那张表一加院区就漏一次，
+ * 而漏掉的表现是"AI 推荐了一个这家庭院根本没开的科室"，
+ * 用户点进去才发现没号。
+ *
+ * <p>现在名字和科室都由院方侧给出，Agent 侧不再持有第二份真相。
  */
-export const HOSPITAL_TOOLS = [listSlots, holdSlot, listHospitals] as const;
+export const listHospitalCatalog: McpTool<Record<string, never>, HospitalCatalogEntry[]> = {
+  name: 'list_hospital_catalog',
+  description: '列出已接入院区的编码、展示名与开设科室。只读，无副作用。',
+  inputSchema: { type: 'object', properties: {}, required: [] },
+  async handler() {
+    const r = await callBackend<HospitalCatalogEntry[]>('/api/bookings/hospitals/catalog');
+    if (r.status !== 'ok') return r;
+    if (!Array.isArray(r.data) || r.data.length === 0) {
+      return { status: 'empty', reason: '没有已接入的院区' };
+    }
+    return r;
+  },
+};
+
+export const HOSPITAL_TOOLS = [
+  listSlots,
+  holdSlot,
+  listHospitals,
+  listHospitalCatalog,
+] as const;
 
 /** 生成 MCP `tools/list` 形状的清单（不含 handler） */
 export function toolManifest() {

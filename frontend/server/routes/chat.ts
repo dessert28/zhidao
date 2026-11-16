@@ -295,6 +295,32 @@ chatRoutes.post('/', async (c) => {
           if (safe.answer !== answer && !safe.blocked) {
             emit({ type: 'token', text: `\n\n（修订：${safe.answer}）` });
           }
+
+          /*
+           * 分诊之后**接着查号源**，而不是让用户再说一句"帮我挂号"。
+           *
+           * 这是"像安诊儿那样能约"的关键一步：原来的链路是
+           *   分诊 → 给出科室 → 结束
+           * 用户想预约还得再问一遍，而且那句话往往被判成 schedule
+           * 才走得到预约分支。真实的导诊产品是"告诉你挂哪个科"
+           * 和"给你一个号"连在一起的。
+           *
+           * 边界没变：这里只产 booking_preview_card（预览），
+           * **下单仍然必须由用户点"确认挂号"**（POST /api/bookings）。
+           * AI 替人占号是不可回滚的操作，这条线不能松。
+           *
+           * 失败静默：号源服务挂了不该影响分诊结论 —— 用户至少
+           * 还知道该挂哪个科。所以这里不看返回状态，只把事件并进去；
+           * 真没号时 scheduler 自己会给 caveat。
+           */
+          const topDept = triageOut.payload.departments[0]?.name;
+          if (topDept) {
+            const scheduler = makeScheduler();
+            const schedOut = await scheduler(
+              baseInput({ text: body.text, knownDepartment: topDept }),
+            );
+            emitEvents(emit, schedOut.events);
+          }
           return;
         }
 
