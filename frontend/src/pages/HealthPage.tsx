@@ -224,7 +224,7 @@ export default function HealthPage() {
           我的病历
         </Link>
         <Link
-          to="/"
+          to="/chat"
           className="inline-flex h-10 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
         >
           去问诊

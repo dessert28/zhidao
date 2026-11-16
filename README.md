@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-508%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](build/智诊通-技术文档.pdf)
+[![tests](https://img.shields.io/badge/frontend%20tests-546%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
 ---
 
@@ -135,16 +135,20 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 432 passed
+pnpm test          # 546 passed | 5 skipped
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
 cd backend
 mvn spring-boot:run      # http://localhost:8080，演示账号 demo / demo1234
-mvn test                 # 31 passed
+mvn test                 # 84 passed
 
 # 一键全量验证（类型 + 单测 + E2E + 生产构建，约 3.5 分钟）
 cd frontend && pnpm verify:all
+```
+
+打开 http://localhost:5173 落在「今日」页 —— 今天几点吃什么药、有哪些待办，
+一眼看完。问诊、健康管家、病历、就诊摘要在顶部导航。
 ```
 
 实测四条链路（`POST /api/chat`，SSE，报文为真实抓取）：

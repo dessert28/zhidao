@@ -17,7 +17,22 @@ export const router = createBrowserRouter([
     element: <App />,
     children: [
       {
+        /*
+         * 首页 = 今日清单。
+         *
+         * 原来的首页是问诊输入框，但那是「有症状时」才用的。
+         * 慢性病患者一年问诊几次，吃药却是每天两三次 ——
+         * 每天真正要回答的是「今天我该做什么」。
+         * 问诊页保留在 /chat，导航里仍有入口。
+         */
         index: true,
+        lazy: async () => {
+          const { default: TodayPage } = await import('./pages/TodayPage');
+          return { Component: TodayPage };
+        },
+      },
+      {
+        path: 'chat',
         lazy: async () => {
           const { default: ChatPage } = await import('./pages/ChatPage');
           return { Component: ChatPage };

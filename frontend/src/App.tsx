@@ -9,7 +9,8 @@ import { Suspense } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const NAV = [
-  { to: '/', label: '问诊' },
+  { to: '/', label: '今日' },
+  { to: '/chat', label: '问诊' },
   { to: '/health', label: '健康管家' },
   { to: '/records', label: '我的病历' },
   { to: '/summary', label: '就诊摘要' },
