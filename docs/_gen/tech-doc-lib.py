@@ -60,7 +60,7 @@ def set_run_font(run, name=CN_FONT, size=None, bold=None, color=None):
 
 
 def add_par(doc, text="", size=10.5, bold=False, color=None, align=None,
-            space_before=0, space_after=6, indent=None, line=1.55, font=CN_FONT):
+            space_before=0, space_after=6, indent=None, line=1.44, font=CN_FONT):
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.space_before = Pt(space_before)

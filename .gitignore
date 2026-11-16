@@ -54,3 +54,4 @@ test-*.txt
 
 # H2 文件库数据（可选模式产生）
 backend/data/
+__pycache__/
