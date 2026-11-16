@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-546%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](docs/智诊通-技术文档.pdf)
+[![tests](https://img.shields.io/badge/frontend%20tests-594%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
 ---
 
@@ -154,7 +154,7 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 546 passed | 5 skipped
+pnpm test          # 594 passed | 5 skipped
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
@@ -279,7 +279,7 @@ cd frontend && pnpm verify:all
 | 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
 | MCP 工具层 | ✅ 封装层已实现（`tools/mcp-hospital.ts`） | `list_slots`/`hold_slot`/`list_hospitals`，签名与 MCP tool schema 一致（`name`+`description`+`inputSchema`+`handler`）；**按 docs/10 D3 主动不做真握手** —— 评委看的是工具编排能力 |
 | RAG 混合检索 | ✅ 双路 + RRF 已实现（**默认关闭**） | 默认走内存 BM25（零依赖，评委不用装 Docker）；`PGVECTOR_ENABLED=true` 时启用 BM25 + pgvector 双路 RRF(k=60) 融合。**向量层是哈希向量化，不是神经网络嵌入** —— 换真模型只改 `embed()`，阈值需重新标定 |
-| 多模态 | ✅ **四模态齐备** | 语音输入（Web Speech）+ TTS 播报 + 端侧 ONNX 脱敏，全部在浏览器内完成；病历支持纯文本 / 文本型 PDF / **报告图 VLM 识别**。唯一限制：扫描件 PDF 需 OCR，当前明确拒绝而非假装成功 |
+| 多模态 | ✅ **四模态齐备** | 语音输入（Web Speech）+ TTS 播报 + 端侧 ONNX 脱敏，全部在浏览器内完成；病历支持纯文本 / 文本型 PDF / **拍照识别**——`/api/ocr/report` 会先判类型（化验 / X线 / CT / 磁共振 / 彩超 / 心电图 / 内镜 / 病理），再按类型抽取：化验单给「项目+数值+参考范围」，影像与心电给「所见」+「结论」+ 客观参数。唯一限制：扫描件 PDF 需先转图片，当前明确拒绝而非假装成功 |
 | 端侧 AI 的用途 | ⚠️ **只做了 PII 脱敏一项** | 设计文档写了"端侧智能三件套"（脱敏 / 槽位分类 / 离线兜底），实际只落地第 1 项。槽位分类仍走云端 LLM，无 Service Worker 离线能力。官方对这条是"鼓励探索"而非硬要求，但**答辩别说成三件套都做了** |
 | 适老模式（字号一键切） | ❌ 未实现 | 语音输入与 TTS 播报已经覆盖"老年人不用打字"的核心场景，但 18px/1.9 的字号切换控件没做。设计里写过，代码里没有 |
 | 出错态 / 并发态 UI | ⚠️ 部分 | 后端已给出 409 语义（重复下单、状态冲突），前端预约卡有对应提示；但**按钮连点防护、断网重连、版本不一致**这几类没有专门设计 |
@@ -331,7 +331,7 @@ zhidao/
 │   │   │   ├── rules/        # red-flag.ts 红线 + injection.ts 注入检测
 │   │   │   └── tools/        # mcp-hospital.ts：MCP 签名形状的院方工具
 │   │   ├── rag/              # kb(20条) + BM25 + 可选 pgvector/RRF
-│   │   ├── ocr/              # VLM 读化验单
+│   │   ├── ocr/              # VLM 读检查报告（化验 / 影像 / 心电）
 │   │   ├── render/           # 生成式 UI 组件字典（6 类卡片）
 │   │   ├── routes/           # chat / health / backend-proxy / ocr
 │   │   └── sse.ts

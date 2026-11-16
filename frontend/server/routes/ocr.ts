@@ -24,7 +24,7 @@
  * ------------------------------------------------------------------ */
 
 import { Hono } from 'hono';
-import { recognizeLabImage } from '../ocr/recognize.js';
+import { recognizeReportImage } from '../ocr/recognize.js';
 import { redact } from '../../src/lib/privacy/redact.js';
 
 export const ocrRoutes = new Hono();
@@ -54,7 +54,7 @@ ocrRoutes.post('/report', async (c) => {
     return c.json({ ok: false, message: '图片过大' }, 413);
   }
 
-  const r = await recognizeLabImage({
+  const r = await recognizeReportImage({
     base64: body.base64,
     mimeType: body.mimeType,
     byteSize: body.byteSize,
@@ -76,8 +76,14 @@ ocrRoutes.post('/report', async (c) => {
 
   return c.json({
     ok: true,
+    /** 报告类型：LAB / XRAY / CT / MRI / ULTRASOUND / ECG / ENDOSCOPY ... */
+    kind: r.kind,
+    title: r.title,
+    findings: r.findings,
+    conclusion: r.conclusion,
     items: r.items,
-    /** 脱敏后的文本，前端可直接用于入库 */
+    params: r.params,
+    /** 脱敏后的规范化全文，前端可直接用于入库 */
     text: masked.text,
     /** 遮蔽了几处，用于界面提示 */
     maskedCount: masked.hits.length,

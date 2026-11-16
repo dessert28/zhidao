@@ -37,6 +37,7 @@ import {
   type ReminderTask,
 } from '../lib/api';
 import { QueueEstimateCard } from '../components/QueueEstimateCard';
+import { ReportSection } from '../components/ReportSection';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
 import { uploadRecord } from '../lib/db/upload';
 import { IMAGE_PRIVACY_NOTICE } from '../lib/db/ocr';
@@ -127,6 +128,8 @@ export default function RecordsPage() {
           {state.profile ? <ProfileStrip profile={state.profile} /> : null}
           <UploadSection onUploaded={load} />
           <DuplicateExamSection records={state.records} />
+          {/* 影像 / 心电 / 内镜：结论型报告单独一块，与化验数值分开看 */}
+          <ReportSection records={state.records} />
           <RemindersSection
             items={state.reminders}
             onMark={onMark}
@@ -262,8 +265,9 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
         </div>
 
         <p className="mt-2 text-xs leading-relaxed text-gray-400">
-          当前支持纯文本（.txt / .md）、文本型 PDF 与报告图（PNG / JPG / WebP）。
-          扫描件 PDF 暂不支持，会明确提示。
+          支持纯文本（.txt / .md）、文本型 PDF，以及拍照上传的
+          <b className="font-medium text-gray-600">化验单、X 线、CT、磁共振、彩超、心电图、内镜报告</b>
+          （PNG / JPG / WebP）。扫描件 PDF 暂不支持，会明确提示。
         </p>
 
         {/*

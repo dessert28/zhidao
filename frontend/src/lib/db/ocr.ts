@@ -25,8 +25,32 @@ export interface RecognizedItem {
   reference?: string;
 }
 
+/** 客观参数：心电图的心率/PR/QRS、超声的测量值 */
+export interface RecognizedParam {
+  name: string;
+  value: string;
+}
+
+/**
+ * 识别结果。
+ *
+ * <p>化验单给 items（数值表），影像与心电图给 findings + conclusion。
+ * 两类内容不在同一个字段里，是因为它们的阅读方式完全不同 ——
+ * 混在一起会让界面不知道该展示「表格」还是「一段结论」。
+ */
 export type ImageOcrResult =
-  | { ok: true; items: RecognizedItem[]; text: string; maskedCount: number }
+  | {
+      ok: true;
+      /** LAB / XRAY / CT / MRI / ULTRASOUND / ECG / ENDOSCOPY / PATHOLOGY / OTHER */
+      kind: string;
+      title: string | null;
+      findings: string | null;
+      conclusion: string | null;
+      items: RecognizedItem[];
+      params: RecognizedParam[];
+      text: string;
+      maskedCount: number;
+    }
   | { ok: false; message: string; failure?: BackendFailure };
 
 /** 图片大小上限，与后端一致 */
@@ -74,7 +98,17 @@ export async function recognizeImage(file: File): Promise<ImageOcrResult> {
   }
 
   const body = (await res.json().catch(() => null)) as
-    | { ok: true; items: RecognizedItem[]; text: string; maskedCount: number }
+    | {
+        ok: true;
+        kind: string;
+        title: string | null;
+        findings: string | null;
+        conclusion: string | null;
+        items: RecognizedItem[];
+        params: RecognizedParam[];
+        text: string;
+        maskedCount: number;
+      }
     | { ok: false; message: string }
     | null;
 
@@ -84,7 +118,17 @@ export async function recognizeImage(file: File): Promise<ImageOcrResult> {
   if (!body.ok) {
     return { ok: false, message: body.message };
   }
-  return { ok: true, items: body.items, text: body.text, maskedCount: body.maskedCount };
+  return {
+    ok: true,
+    kind: body.kind ?? 'OTHER',
+    title: body.title ?? null,
+    findings: body.findings ?? null,
+    conclusion: body.conclusion ?? null,
+    items: body.items ?? [],
+    params: body.params ?? [],
+    text: body.text,
+    maskedCount: body.maskedCount ?? 0,
+  };
 }
 
 /** File → base64（不含 data: 前缀） */
