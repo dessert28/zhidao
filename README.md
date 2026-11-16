@@ -129,7 +129,26 @@
 | 前端性能优化 | 3% | `frontend/vite.config.ts` + `src/router.tsx` | 路由级 lazy + manualChunks + 端侧模型动态 import |
 | 端侧智能前瞻性 | — | `docs/04` §7 | 三个用途：PII 脱敏 / 症状槽位分类 / 离线兜底（**后两项未接**） |
 
-### 4.1 已经能跑的部分
+### 4.1 启动方式
+
+**最简单：双击脚本**（Windows 双击 `启动智诊通.bat`，macOS/Linux 执行 `./start.sh`）。
+
+脚本会自己完成环境探测与依赖安装，不需要手动配置任何路径：
+
+| 脚本会做的事 | 说明 |
+| --- | --- |
+| 找 Node.js | 检查版本是否 ≥ 18，不够会明确提示 |
+| 找 pnpm | 没有就用 Node 自带的 `corepack` 启用；再不行退回 `npx` |
+| 装依赖 | `node_modules` 不存在时自动 `pnpm install` |
+| 找 JDK | 先看 `JAVA_HOME` 与 `PATH`，再扫 `Program Files/Java`、`.jdks`、`tools` 等常见目录 |
+| 找 Maven | 同上，还支持把便携版放到 `.tools/apache-maven` |
+| 查端口 | 5173 / 8080 被占用会提示是哪个进程占的 |
+| 启动并开浏览器 | 前端就绪后自动打开 |
+
+**没有 JDK 或 Maven 时后端不启动，但前端照常可用**（问诊、健康管家、就诊摘要不需要后端）。
+需要病历与预约页时再装 JDK 17 + Maven，脚本会自动识别，不必手动配环境变量。
+
+手动方式（适合想控制每一步的人）：
 
 ```bash
 # 前端（含 Node BFF，同端口，无跨域）

@@ -1,0 +1,48 @@
+# ============================================================
+#  换行符策略 —— 决定「换一台电脑能不能启动」
+#
+#  Git 默认在 Windows 上把文本文件的 LF 转成 CRLF。
+#  这对 .bat 没问题，但对 shell 脚本是致命的：
+#  第一行 `#!/usr/bin/env bash\r` 会让 Linux 报
+#  "bad interpreter: No such file or directory"，
+#  而这个报错完全看不出是换行符的问题。
+#
+#  所以按文件类型分别指定，而不是依赖 core.autocrlf。
+# ============================================================
+
+# 默认：交给 Git 判断（文本文件统一转成 LF 存储）
+* text=auto
+
+# —— 必须是 LF 的脚本 ——
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# —— 必须是 CRLF 的脚本 ——
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+
+# —— 二进制，不参与任何转换 ——
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.docx      binary
+*.xlsx      binary
+*.pptx      binary
+*.jar       binary
+*.zip       binary
+
+# —— 文本，显式声明 ——
+*.md        text
+*.json      text
+*.yml       text
+*.yaml      text
+*.sql       text
+*.ts        text
+*.tsx       text
+*.java      text
+*.css       text
