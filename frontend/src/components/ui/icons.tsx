@@ -19,8 +19,17 @@
 
 import type { ReactNode, SVGProps } from 'react';
 
-export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children'> {
+export interface IconProps
+  extends Omit<SVGProps<SVGSVGElement>, 'children' | 'strokeWidth'> {
   size?: number;
+  /**
+   * 线宽收窄为 number。
+   *
+   * <p>必须从 SVGProps 里 Omit 掉再重定义：SVGProps 的 strokeWidth 是
+   * `string | number`，直接继承会与本组件的数值计算（按尺寸分两档）冲突，
+   * @types/react 升到 18.3.3x 后这一处会直接报 TS2322。
+   */
+  strokeWidth?: number;
 }
 
 function Icon({
