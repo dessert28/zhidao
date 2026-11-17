@@ -1,0 +1,202 @@
+# ------------------------------------------------------------------
+# 智诊通 · CI
+#
+# 两道关，缺一不可：
+#   1. frontend —— typecheck + vitest + build
+#   2. backend  —— mvn compile + mvn test
+#
+# ============ 为什么是两个并行 job，而不是一个 ============
+#
+# 前端和后端没有任何编译期依赖（BFF 通过 HTTP 调后端，没有共享的
+# 类型定义文件），所以串行只会让反馈时间翻倍。两个 job 同时跑，
+# 坏在哪边一眼能看出来 —— 一个 job 红、一个 job 绿，
+# 比"第 7 步失败"这种输出省掉一次翻日志。
+#
+# ============ 离线是硬要求 ============
+#
+# 测试里**不允许**真的连大模型、也不允许下载端侧模型权重：
+#   · 没有 LLM_API_KEY 时，整条链路自动走规则路由（server/llm/client.ts）
+#   · 端侧脱敏模型是浏览器侧懒加载的，vitest 跑在 jsdom 里不会触发
+# 所以这里刻意**不**注入任何 Key、**不**加"下载模型"的预热步骤。
+# 一旦有人在测试里写了真实网络请求，CI 应该在无密钥环境下暴露它，
+# 而不是被一份 CI 专用的假配置掩盖过去。
+#
+# ============ 版本口径 ============
+#
+# Node 20：package.json 的 engines 写的是 >=18，但 pnpm@9.15.0 与
+#           vite 6 在 20 上验证过；用 20 与 HANDOFF.md 的口径一致。
+# JDK 17 ：pom.xml 的 <java.version>17</java.version>，用 21 编译
+#           虽然也能过，但会让"本地 17、CI 21"的差异留到上线才暴露。
+# ------------------------------------------------------------------
+
+name: CI
+
+# 只在这些分支/事件上跑：
+#   push        —— 主分支的合并结果必须绿
+#   pull_request—— 以目标分支的合并结果为准（比只看源分支更严格）
+# 不跑 tag：打 tag 是发布动作，发布前一定是绿的，没必要再花一次机时
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  # 允许在 Actions 页面手动点一次，排查"是不是环境问题"时很有用
+  workflow_dispatch:
+
+# ------------------------------------------------------------------
+# 并发组：同一分支的新提交取消旧运行
+#
+# 场景：一个 PR 连推三次，前两次的检查结果已经没有人关心了。
+# 不取消的话三份 vite build + 三份 mvn test 一起抢机器，
+# 最新那次反而排在后面 —— 等的是过期的结论。
+#
+# group 用「工作流名 + ref」：ref 对 PR 是 refs/pull/N/merge（同一 PR 稳定），
+# 对 push 是分支名。所以同一分支/PR 内互斥，不同分支互不影响。
+# cancel-in-progress **不用** matrix 里的名字拼进去 —— 那样同一分支的
+# 两个 job 会进不同的组，等于没取消。
+# ------------------------------------------------------------------
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 默认最小权限：这个工作流只读代码、只跑测试，不需要写 issue 或 PR。
+# 显式写出来是因为仓库默认权限可能更宽，而"最小权限"不该依赖于仓库设置。
+permissions:
+  contents: read
+
+jobs:
+  # ==================================================================
+  # 前端：类型 → 测试 → 打包
+  # ==================================================================
+  frontend:
+    name: frontend (typecheck / test / build)
+    runs-on: ubuntu-latest
+    # 前端全量测试本地实测约 70 秒，build 约 28 秒；
+    # 给 15 分钟是留给"冷缓存 + 慢机器"的余量，不是常态耗时。
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        # 项目不是 pnpm workspace，package.json 在 frontend/ 下
+        working-directory: frontend
+
+    steps:
+      # 浅克隆就够：测试与构建都不需要 git 历史或 tag
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # pnpm 必须在 setup-node 之前装好 —— setup-node 的 cache: 'pnpm'
+      # 会去执行 `pnpm store path` 来定位缓存目录，pnpm 不在 PATH 上时
+      # 这一步会直接失败（而不是"缓存没命中，继续跑"）。
+      #
+      # ============ 这里踩过一个坑，写下来 ============
+      #
+      # 不加 `package_json_file` 时，action-setup 会去**仓库根**找
+      # package.json 的 packageManager 字段。而本项目的 package.json
+      # 在 frontend/ 下，根目录没有 —— 于是它会报
+      # "No pnpm version is specified"，CI 在这一步就红，
+      # 且错误信息完全没提"是因为工作目录不对"，很容易查半天。
+      #
+      # 注意 defaults.run.working-directory 管不到这一步：
+      # 那只影响 `run:` 命令，不影响 `uses:` 类 action 的默认路径。
+      #
+      # 版本仍然不在这里写死 —— 指向 frontend/package.json，
+      # 让 packageManager 字段继续做唯一真相（改一处就够）。
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: 安装 Node 20 + 缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # 缓存的是 pnpm 的全局 store（依赖压缩包），不是 node_modules。
+          # key 自动包含 pnpm-lock.yaml 的哈希：锁文件一变就重新装，
+          # 不影响正确性，只是让"依赖没变"的提交少等一分钟。
+          cache: 'pnpm'
+          # setup-node 默认在仓库根找 lockfile，这里必须显式指到 frontend/
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # --frozen-lockfile：锁文件与 package.json 不一致时直接失败。
+      # 这是刻意的 —— CI 不该"顺便帮你把锁文件改了"，
+      # 那会让本地与 CI 装出不同的依赖树，而且改动没人 review。
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 第一道关：tsc -b --noEmit（两个 tsconfig project：app 与 node）
+      # 为什么要单独一步而不是靠 build 兜住：
+      #   build 里的 `tsc -b` 也做类型检查，但它同时输出产物，
+      #   一旦失败，日志里混着 vite 的输出，定位慢。
+      #   分开跑，红的就是红的那一步。
+      - name: 类型检查
+        run: pnpm typecheck
+
+      # 第二道关：vitest run（一次执行，不进 watch）
+      # 用例都在 src/** 与 server/** 下（见 vitest.config.ts），
+      # 纯内存、无外部依赖：不连数据库、不连大模型、不下载模型权重。
+      - name: 单元测试
+        run: pnpm exec vitest run
+
+      # 第三道关：tsc -b && vite build
+      # 专门为了抓"类型过、测试过、但打包才报错"的情况：
+      # 动态 import 路径写错、JSON 资源没被 resolve、manualChunks 配置冲突，
+      # 这些都只在 build 阶段暴露。
+      # 产物在 frontend/dist，由部署时的 pnpm start（standalone.ts）托管。
+      - name: 生产构建
+        run: pnpm build
+
+  # ==================================================================
+  # 后端：编译 → 测试
+  # ==================================================================
+  backend:
+    name: backend (compile / test)
+    runs-on: ubuntu-latest
+    # 首次拉依赖 + 编译 + Spring Boot 上下文测试（每个测试类都要起一次
+    # ApplicationContext），本地实测数分钟量级，给 20 分钟。
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          # 让 Maven 自己缓存 ~/.m2/repository。
+          # key 的 hashFiles 指向 pom.xml：加一个依赖就重新下载，
+          # 没加就复用 —— 这正是缓存该有的粒度。
+          # 注意这里用的是**仓库根**下的路径（setup-java 不认 defaults.run），
+          # 写成 'pom.xml' 会哈希到空值，缓存 key 永远不变，
+          # 于是"改依赖不重装"，最后在编译时报找不到类。
+          cache: 'maven'
+          cache-dependency-path: backend/pom.xml
+
+      # 编译 + 跑测试，两条命令分开而不用 `mvn verify`：
+      #   · 编译失败（写错类型、少 import）时，日志里不该混着测试输出
+      #   · 测试失败时，编译那一步是绿的，说明问题在断言而不是代码写不对
+      # 这是排查被分开的第一步，不是形式主义。
+      #
+      # -B  ：batch mode，关掉 ANSI 进度条与交互提示 —— CI 日志要可搜可 diff
+      # -ntp：No Transfer Progress，不逐行打印下载百分比（一次 500 行，没信息量）
+      #
+      # 这一步不跑 mvn package：CI 不产出可部署 jar（部署走 release/tag）。
+      # 编译能过是"能不能打 jar"的必要条件，已经覆盖了。
+      - name: 编译
+        run: mvn -B -ntp compile
+
+      # 测试。H2 是内存库（application.yml 的 datasource.url 默认 jdbc:h2:mem），
+      # 每个 Spring 上下文启动时按 schema-*.sql + data.sql 建表灌种子，
+      # 所以天然隔离：不需要起 MySQL，不需要清理数据，两个 job 并行也不冲突。
+      #
+      # 也不注入 ZHIDAO_JWT_SECRET / LLM_API_KEY：
+      # 后端不调大模型，JWT 密钥在 application.yml 里有演示用默认值，
+      # CI 里换成"随机密钥"反而会让固化了 token 的测试用例变成随机失败。
+      - name: 测试
+        run: mvn -B -ntp test

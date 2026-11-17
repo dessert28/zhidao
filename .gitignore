@@ -35,6 +35,7 @@ temp/
 *.tmp
 *.bak
 *.tsbuildinfo
+.tmp-vitest/
 
 # Archify 中间校验产物（保留 .html 与 candidate.json）
 .archify/**/run*/
@@ -55,3 +56,6 @@ test-*.txt
 # H2 文件库数据（可选模式产生）
 backend/data/
 __pycache__/
+
+# 本机工作数据（AI 助手记忆等，不入库）
+.workbuddy/
