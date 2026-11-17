@@ -18,6 +18,7 @@
  * ------------------------------------------------------------------ */
 
 import { useMemo } from 'react';
+import { SectionTitle } from './ui/SectionTitle';
 import type { MedicalRecord } from '../lib/api';
 import { hospitalName } from '../lib/api';
 import {
@@ -86,12 +87,12 @@ function ReportCard({ record, parsed }: { record: MedicalRecord; parsed: ParsedR
   return (
     <div
       className={`rounded-xl border p-3 ${
-        flag ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200 bg-white'
+        flag ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200 bg-surface'
       }`}
     >
       {/* 头部：类型 + 部位 + 日期 */}
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-medium text-white">
+        <span className="rounded bg-ink-strong px-1.5 py-0.5 text-3xs font-medium text-white">
           {meta.short}
         </span>
         <span className="text-sm font-medium text-gray-900">
@@ -100,7 +101,7 @@ function ReportCard({ record, parsed }: { record: MedicalRecord; parsed: ParsedR
           {parsed.bodyPart ? `${parsed.bodyPart}${meta.short}` : meta.label}
         </span>
         {flag ? (
-          <span className="rounded bg-amber-600 px-1.5 py-0.5 text-[10px] text-white">
+          <span className="rounded bg-amber-600 px-1.5 py-0.5 text-3xs text-white">
             报告建议复查
           </span>
         ) : null}
@@ -114,8 +115,8 @@ function ReportCard({ record, parsed }: { record: MedicalRecord; parsed: ParsedR
 
       {/* 结论优先展示 —— 患者最想看的是这一句 */}
       {parsed.conclusion ? (
-        <div className="mt-2 rounded-lg bg-white/70 px-2.5 py-2">
-          <div className="text-[10px] text-gray-400">结论</div>
+        <div className="mt-2 rounded-lg bg-surface/70 px-2.5 py-2">
+          <div className="text-3xs text-gray-400">结论</div>
           <p className="mt-0.5 whitespace-pre-line text-xs leading-relaxed text-gray-800">
             {parsed.conclusion}
           </p>
@@ -136,7 +137,7 @@ function ReportCard({ record, parsed }: { record: MedicalRecord; parsed: ParsedR
       {/* 所见折叠：多数患者不需要读到这一层，但医生需要 */}
       {parsed.findings ? (
         <details className="mt-2">
-          <summary className="cursor-pointer text-[11px] text-gray-400 hover:text-gray-600">
+          <summary className="cursor-pointer text-2xs text-gray-400 hover:text-gray-600">
             查看检查所见
           </summary>
           <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-gray-600">
@@ -148,6 +149,3 @@ function ReportCard({ record, parsed }: { record: MedicalRecord; parsed: ParsedR
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
-}

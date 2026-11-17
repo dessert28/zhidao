@@ -20,7 +20,6 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ensureLogin,
   getBookings,
@@ -38,6 +37,10 @@ import {
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
+import { SubPageHeader } from '../components/ui/SubPageHeader';
+import { SectionTitle } from '../components/ui/SectionTitle';
+import { Clamp, Fold } from '../components/ui/Fold';
+import { ChevronRightIcon, PlusIcon } from '../components/ui/icons';
 import { QueueEstimateCard } from '../components/QueueEstimateCard';
 import { CancelBookingButton } from '../components/CancelBookingButton';
 import { ReportSection } from '../components/ReportSection';
@@ -73,6 +76,17 @@ const EMPTY: DataState = {
 
 export default function RecordsPage() {
   const [state, setState] = useState<DataState>(EMPTY);
+  /*
+   * 上传表单默认收起。
+   *
+   * 这一页的核心是「这些记录说了什么」，不是「往里面塞东西」。
+   * 一个常驻的两列表单（类型 / 日期 / 院区 / 科室 / 文件 / 两段隐私说明）
+   * 会占掉手机一整屏，把时间轴推到第二屏 —— 第一次进来的人会以为
+   * 这页只是个上传入口。
+   *
+   * 一份记录都没有时自动展开：那时的确没有别的事可做。
+   */
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, failure: null }));
@@ -84,7 +98,13 @@ export default function RecordsPage() {
     }
 
     // 并行拉三份；任何一份失败都优先显示失败原因（后端挂了时三份都会失败）
-    const [rec, rem, prof] = await Promise.all([getRecords(), getReminders(), getProfile()]);
+    const [rec, rem, prof] = await Promise.all([
+      getRecords(),
+      getReminders(),
+      getProfile(),
+      // 目录只用来把 Z2-JFL 翻译成院区名，失败不影响这一页的其它内容
+      loadHospitalCatalog(),
+    ]);
 
     const failure = !rec.ok ? rec.failure : !rem.ok ? rem.failure : !prof.ok ? prof.failure : null;
     if (failure) {
@@ -113,14 +133,18 @@ export default function RecordsPage() {
     if (!r.ok) setState((s) => ({ ...s, reminders: prev }));
   };
 
+  /*
+   * 顺序按"现在最想知道什么"排：
+   *   概览 → 上传 → 该做什么 → 这些记录说了什么 → 校验 → 预约 → 隐私
+   * 时间轴从页面最底部提到中间：它是这一页最值钱的部分，
+   * 排在六块内容之后等于要求患者先滚过六屏才看见。
+   */
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">我的病历</h1>
-        <p className="mt-2 text-sm leading-relaxed text-gray-500">
-          把散在各家医院的记录放在一起，换医院时不用再凭记忆复述。
-        </p>
-      </div>
+      <SubPageHeader
+        title="我的病历"
+        subtitle="把散在各家医院的记录放在一起，换医院时不用再凭记忆复述。"
+      />
 
       {state.loading ? <Skeleton /> : null}
 
@@ -130,31 +154,114 @@ export default function RecordsPage() {
 
       {!state.loading && !state.failure ? (
         <>
+          <OverviewCard
+            records={state.records}
+            reminderCount={state.reminders.length}
+          />
+
           {state.profile ? <ProfileStrip profile={state.profile} /> : null}
-          <UploadSection onUploaded={load} />
+
+          {/*
+            页内跳转。
+            这一页折完之后还有五块，手机上仍要划三四屏。老人不擅长
+            "滚到底再往回找"，找不到就等于没有 —— 所以把块名摆在前面。
+            只列记录多时才有意义的三块，其余块本来就在第一屏附近。
+          */}
+          {state.records.length >= 4 ? (
+            <nav aria-label="页内跳转" className="-mt-2 flex flex-wrap gap-1.5">
+              {[
+                { id: 'timeline', label: '就诊记录' },
+                { id: 'reports', label: '报告解读' },
+                { id: 'appointments', label: '我的预约' },
+              ].map((a) => (
+                <a
+                  key={a.id}
+                  href={`#${a.id}`}
+                  className="rounded-full border border-gray-200 bg-surface px-2.5 py-1 text-xs text-gray-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+                >
+                  {a.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+
+          <UploadSection
+            open={uploadOpen || state.records.length === 0}
+            onToggle={() => setUploadOpen((v) => !v)}
+            collapsible={state.records.length > 0}
+            onUploaded={load}
+          />
+
+          <RemindersSection items={state.reminders} onMark={onMark} />
+
+          <div id="timeline" className="scroll-mt-32">
+            <TimelineSection records={state.records} />
+          </div>
+
           <DuplicateExamSection records={state.records} />
           {/* 影像 / 心电 / 内镜：结论型报告单独一块，与化验数值分开看 */}
-          <ReportSection records={state.records} />
-          <RemindersSection
-            items={state.reminders}
-            onMark={onMark}
-          />
-          <AppointmentsSection />
+          <div id="reports" className="scroll-mt-32">
+            <ReportSection records={state.records} />
+          </div>
+
+          <div id="appointments" className="scroll-mt-32">
+            <AppointmentsSection />
+          </div>
           {/* 谁看过我的数据 —— 「就诊即授权」能成立的前提 */}
           <PrivacySection />
-          <TimelineSection records={state.records} />
         </>
       ) : null}
 
       {/* 隐私说明常驻：即使后端挂了，这条也是我们最想让用户看到的 */}
       <PrivacyNote />
+    </div>
+  );
+}
 
-      <Link
-        to="/chat"
-        className="inline-flex h-10 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
-      >
-        返回问诊
-      </Link>
+/**
+ * 概览：三件事 —— 有多少、在哪几家、还有几件没办。
+ *
+ * <p>不做成三张 Stat 卡：这一页已经有七八个卡片区块了，
+ * 顶上也来三张会让第一屏完全被"容器"占满。一行字加一条细线足够。
+ */
+function OverviewCard({
+  records,
+  reminderCount,
+}: {
+  records: MedicalRecord[];
+  reminderCount: number;
+}) {
+  const hospitals = new Set(records.map((r) => r.hospitalCode)).size;
+  const last = [...records].sort((a, b) => b.visitDate.localeCompare(a.visitDate))[0];
+
+  if (records.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-gray-200/80 bg-surface px-4 py-3 shadow-card">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-gray-700">
+        <span className="text-lg font-semibold tabular-nums text-gray-900">{records.length}</span>
+        份记录
+        <span aria-hidden="true" className="text-gray-300">
+          ·
+        </span>
+        <span className="text-lg font-semibold tabular-nums text-gray-900">{hospitals}</span>
+        家医院
+        {reminderCount > 0 ? (
+          <>
+            <span aria-hidden="true" className="text-gray-300">
+              ·
+            </span>
+            <span className="text-lg font-semibold tabular-nums text-alert">{reminderCount}</span>
+            条待办
+          </>
+        ) : null}
+      </div>
+      {last ? (
+        <p className="mt-1 text-xs leading-relaxed text-gray-500">
+          最近一次：{hospitalName(last.hospitalCode)} · {last.department ?? '未记录科室'} ·{' '}
+          {shortDate(last.visitDate)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -186,7 +293,18 @@ function Skeleton() {
  * 用户在上传的那一刻最关心"这个文件会被传到哪"，
  * 那一刻给出的答案才有人读。
  */
-function UploadSection({ onUploaded }: { onUploaded: () => void }) {
+function UploadSection({
+  open,
+  onToggle,
+  collapsible,
+  onUploaded,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** 有记录时才允许收起：一份都没有时这是唯一能做的事 */
+  collapsible: boolean;
+  onUploaded: () => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   /**
    * 待确认的抽取草稿。
@@ -304,11 +422,50 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
     setMsg(null);
   };
 
+  if (!open) {
+    return (
+      <section>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-surface/70 px-3.5 py-3 text-left transition-colors hover:border-brand-300"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+            <PlusIcon size={16} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-gray-900">上传病历或检查单</span>
+            <span className="mt-0.5 block text-2xs leading-relaxed text-gray-500">
+              原文留在本机，只把脱敏后的文本发出去
+            </span>
+          </span>
+          <span aria-hidden="true" className="shrink-0 text-gray-300">
+            <ChevronRightIcon size={15} />
+          </span>
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section>
-      <SectionTitle>上传病历或检查单</SectionTitle>
+      <SectionTitle
+        action={
+          collapsible ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            >
+              收起
+            </button>
+          ) : undefined
+        }
+      >
+        上传病历或检查单
+      </SectionTitle>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="rounded-2xl border border-gray-200 bg-surface p-4">
         {/*
           类型选择放最上面。
           它是这份材料"要不要驱动到院指引"的分叉点，
@@ -343,16 +500,16 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
                   'flex-1 rounded-lg border px-3 py-2 text-left transition-colors ' +
                   (kind === o.v
                     ? 'border-brand-400 bg-brand-50/60'
-                    : 'border-gray-200 bg-white hover:border-gray-300')
+                    : 'border-gray-200 bg-surface hover:border-gray-300')
                 }
               >
                 <div className="text-sm font-medium text-gray-900">{o.label}</div>
-                <div className="mt-0.5 text-[11px] text-gray-500">{o.hint}</div>
+                <div className="mt-0.5 text-2xs text-gray-500">{o.hint}</div>
               </button>
             ))}
           </div>
           {kind === 'examOrder' ? (
-            <p className="mt-1.5 rounded bg-brand-50 px-2 py-1 text-[11px] leading-relaxed text-brand-800">
+            <p className="mt-1.5 rounded bg-brand-50 px-2 py-1 text-2xs leading-relaxed text-brand-800">
               上传后，到院页的「现在去哪」会按检查单上的项目重算 ——
               要拍片还是直接抽血、要不要空腹，都会跟着变。
             </p>
@@ -427,7 +584,7 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
             onClick={startReview}
             // 草稿打开时禁用：必须先「确认保存」或「取消」，避免重复解析
             disabled={!file || busy || draft !== null}
-            className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="h-9 rounded-lg bg-action px-4 text-sm font-medium text-white transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-gray-300"
           >
             {busy ? '处理中…' : draft ? '待确认' : '上传'}
           </button>
@@ -507,7 +664,7 @@ function BackendNotice({
       <button
         type="button"
         onClick={onRetry}
-        className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
+        className="mt-2 rounded-lg border border-amber-300 bg-surface px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
       >
         重试
       </button>
@@ -525,7 +682,7 @@ function ProfileStrip({ profile }: { profile: PatientProfile }) {
   if (items.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-gray-200 bg-white px-4 py-3">
+    <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-gray-200 bg-surface px-4 py-3">
       {items.map(([k, v]) => (
         <div key={k} className="text-sm">
           <span className="text-xs text-gray-400">{k}</span>
@@ -594,7 +751,7 @@ function AppointmentsSection() {
     return (
       <section>
         <SectionTitle>我的预约</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           {error ? `暂时读不到预约（${error}）` : '还没有进行中的预约。'}
         </div>
       </section>
@@ -608,9 +765,17 @@ function AppointmentsSection() {
         <span className="ml-2 text-xs font-normal text-gray-400">{orders.length} 条</span>
       </SectionTitle>
 
-      <div className="space-y-3">
-        {orders.map((o) => (
-          <div key={o.id} className="rounded-xl border border-gray-200 bg-white p-3">
+      {/*
+        超过 2 条就折起。一个人同时挂三个科的情况很少，
+        真挂了三单也只关心最近那两单；多出来的点一下就能看到。
+      */}
+      <Clamp
+        items={orders}
+        initial={2}
+        itemKey={(o) => o.id}
+        gap="space-y-3"
+        render={(o) => (
+          <div className="rounded-xl border border-gray-200 bg-surface p-3">
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-medium text-gray-900">
                 {hospitalName(o.hospitalCode)}
@@ -632,8 +797,8 @@ function AppointmentsSection() {
             {/* 退号：能不能退由后端政策决定，前端只负责展示与确认 */}
             <CancelBookingButton orderId={o.id} onCancelled={reload} />
           </div>
-        ))}
-      </div>
+        )}
+      />
     </section>
   );
 }
@@ -649,7 +814,7 @@ function RemindersSection({
     return (
       <section>
         <SectionTitle>接下来要做的事</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           暂时没有待办的提醒。
         </div>
       </section>
@@ -661,7 +826,7 @@ function RemindersSection({
       <SectionTitle>接下来要做的事（{items.length}）</SectionTitle>
       <div className="space-y-2">
         {items.map((r) => (
-          <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-4">
+          <div key={r.id} className="rounded-xl border border-gray-200 bg-surface p-4">
             <div className="flex items-start gap-2">
               <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
               <div className="min-w-0 flex-1">
@@ -763,7 +928,7 @@ function DuplicateExamSection({ records }: { records: MedicalRecord[] }) {
                   {f.occurrences.map((o, i) => (
                     <span key={i} className="flex items-center gap-1.5">
                       {i > 0 ? <span className="text-xs text-amber-400">→</span> : null}
-                      <span className="rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs text-amber-800">
+                      <span className="rounded border border-amber-200 bg-surface px-1.5 py-0.5 text-xs text-amber-800">
                         {hospitalName(o.hospitalCode)} · {shortDate(o.visitDate)}
                       </span>
                     </span>
@@ -796,7 +961,7 @@ function TimelineSection({ records }: { records: MedicalRecord[] }) {
     return (
       <section>
         <SectionTitle>跨院就诊记录</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-6 text-center text-sm text-gray-400">
           还没有上传过病历。
         </div>
       </section>
@@ -822,51 +987,84 @@ function TimelineSection({ records }: { records: MedicalRecord[] }) {
 
       <div className="space-y-3">
         {[...groups.entries()].map(([code, list]) => (
-          <div key={code} className="rounded-xl border border-gray-200 bg-white">
-            <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
-              <span
-                className={
-                  'rounded border px-1.5 py-0.5 text-xs ' +
-                  (HOSPITAL_TONE[code] ?? TONE_FALLBACK)
-                }
-              >
-                {hospitalName(code)}
-              </span>
-              <span className="text-xs text-gray-400">{list.length} 次就诊</span>
-            </div>
-
-            <ol className="divide-y divide-gray-50">
-              {[...list]
-                .sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-                .map((r) => (
-                  <li key={r.id} className="px-4 py-3">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm text-gray-800">{r.department ?? '未记录科室'}</span>
-                      <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-400">
-                        {shortDate(r.visitDate)}
-                      </span>
-                    </div>
-                    {r.diagnosisBrief ? (
-                      <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                        {r.diagnosisBrief}
-                      </p>
-                    ) : null}
-                    {r.ocrText ? (
-                      <p className="mt-1 text-xs leading-relaxed text-gray-400">{r.ocrText}</p>
-                    ) : null}
-                  </li>
-                ))}
-            </ol>
-          </div>
+          <HospitalGroup key={code} code={code} list={list} />
         ))}
       </div>
     </section>
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
+/**
+ * 一家医院的就诊列表。
+ *
+ * <p>默认只展开最近 3 次：一家医院看十几次病的慢病患者，时间轴能拉出
+ * 四五屏，把底下的「重复检查」「报告解读」全推没了。诊断与日期露着，
+ * OCR 原文折进去 —— 那是给"我核对一下系统有没有读错"用的，不是必读。
+ */
+function HospitalGroup({ code, list }: { code: string; list: MedicalRecord[] }) {
+  const [open, setOpen] = useState(false);
+
+  const sorted = [...list].sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+  const INITIAL = 3;
+  const rest = sorted.length - INITIAL;
+  const shown = open || rest <= 0 ? sorted : sorted.slice(0, INITIAL);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-surface">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <span
+          className={
+            'rounded border px-1.5 py-0.5 text-xs ' + (HOSPITAL_TONE[code] ?? TONE_FALLBACK)
+          }
+        >
+          {hospitalName(code)}
+        </span>
+        <span className="text-xs text-gray-400">{list.length} 次就诊</span>
+      </div>
+
+      <ol className="divide-y divide-gray-50">
+        {shown.map((r) => (
+          <li key={r.id} className="px-4 py-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm text-gray-800">{r.department ?? '未记录科室'}</span>
+              <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-400">
+                {shortDate(r.visitDate)}
+              </span>
+            </div>
+            {r.diagnosisBrief ? (
+              <p className="mt-1 text-xs leading-relaxed text-gray-600">{r.diagnosisBrief}</p>
+            ) : null}
+            {/* OCR 全文折起来：它是"核对用"的，不是"阅读用"的 */}
+            {r.ocrText ? (
+              <Fold label="病历原文" hint={`${r.ocrText.length} 字`} className="mt-1">
+                <p className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg bg-gray-50 px-2.5 py-2 text-xs leading-relaxed text-gray-500">
+                  {r.ocrText}
+                </p>
+              </Fold>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+
+      {rest > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center justify-center gap-1 rounded-b-xl border-t border-gray-100 py-2 text-xs text-gray-500 hover:bg-gray-50 hover:text-brand-700"
+        >
+          {open ? '只看最近 3 次' : `还有 ${rest} 次，展开`}
+          <ChevronRightIcon
+            size={11}
+            className={
+              'text-gray-400 transition-transform duration-150 ' + (open ? '-rotate-90' : 'rotate-90')
+            }
+          />
+        </button>
+      ) : null}
+    </div>
+  );
 }
+
 
 function PrivacyNote() {
   return (

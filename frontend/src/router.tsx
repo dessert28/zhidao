@@ -72,6 +72,20 @@ export const router = createBrowserRouter([
         },
       },
       {
+        /*
+         * 「我的」。
+         *
+         * 改版前这一格是「我的病历」，其余资料型入口（健康管家、摘要）
+         * 平铺在顶栏里，七个入口在 672px 里必须横滑 —— 最后两个等于不存在。
+         * 现在顶栏只留动作级入口，资料全部收进这一页。
+         */
+        path: 'mine',
+        lazy: async () => {
+          const { default: MinePage } = await import('./pages/MinePage');
+          return { Component: MinePage };
+        },
+      },
+      {
         path: 'records',
         lazy: async () => {
           const { default: RecordsPage } = await import('./pages/RecordsPage');

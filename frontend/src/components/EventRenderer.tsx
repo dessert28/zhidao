@@ -11,11 +11,8 @@
 
 import type { StreamEvent } from '../hooks/useEventStream';
 import { useTts } from '../hooks/useTts';
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BookingPreview } from '@shared/types/contract';
-import { createBooking, ensureLogin } from '../lib/api';
-import { HospitalNav } from './HospitalNav';
 import { WaitingIndicator } from './WaitingIndicator';
 
 /** 服务端渲染的卡片：直接注入 HTML */
@@ -87,62 +84,38 @@ function SpeechRow({ text }: { text: string }) {
 /**
  * 预约预览卡 —— 三段式里「在院内」的入口。
  *
- * <p><b>为什么这一张必须是客户端组件</b>：它有真实副作用（下单）。
+ * <p><b>为什么这一张必须是客户端组件</b>：它要带参数跳转到挂号页。
  * 服务端 renderToString 出来的 HTML 没有事件绑定，点了没反应。
  *
- * <p><b>为什么默认不自动下单</b>：挂号是占号的操作，
- * AI 替用户确认会让"我没让你挂"变成无法回滚的事故。
- * 所以这里只展示，确认按钮必须由人点。
+ * <p><b>为什么这里只做「去挂号」而不再直接下单</b>：
+ * 对话里只有一个"AI 给的第一个时段"，没有选择权 —— 想换时间、想看看
+ * 这周哪天有号，都做不到；而且一点就占号，误点无法回滚。
+ * 现在这一步只负责**把人带到挂号页**，真正的下单留到挂号页那次显式确认。
+ * 少一次"我点错了就占掉一个号"的机会。
  */
-function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'done' | 'error'>('idle');
-  const [message, setMessage] = useState('');
-
-  const confirm = async () => {
-    setStatus('submitting');
-    setMessage('');
-    let r = await createBooking({
-      hospitalCode: preorder.hospitalCode,
-      department: preorder.department,
-      visitTime: preorder.slot,
-    });
-    /*
-     * 401 自动重登一次。
-     *
-     * 实测场景：后端重启后 JWT 密钥重新生成，页面里存的 token 全部作废。
-     * 之前直接显示「登录已失效，请刷新页面后重试」——
-     * 但 token 已经被 request() 清掉了，此刻 ensureLogin 就能拿到新 token，
-     * 让用户手动刷新等于把能自动解决的事推给用户。
-     *
-     * 只重试一次：如果重登后再失败，那是别的问题，别掩盖。
-     */
-    if (!r.ok && r.failure.kind === 'unauthorized') {
-      const re = await ensureLogin();
-      if (re.ok) {
-        r = await createBooking({
-          hospitalCode: preorder.hospitalCode,
-          department: preorder.department,
-          visitTime: preorder.slot,
-        });
-      }
-    }
-    if (r.ok) {
-      setStatus('done');
-      setMessage('已预约成功，可在「我的病历」查看。');
-    } else {
-      setStatus('error');
-      setMessage(
-        r.failure.kind === 'unreachable'
-          ? '预约服务不可用，请到医院自助机或窗口办理。'
-          : r.failure.kind === 'unauthorized'
-            ? '登录已失效，请刷新页面后重试。'
-            : r.failure.message,
-      );
-    }
-  };
+export function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
+  /*
+   * 带上院区、科室、日期、时段四个参数过去：
+   * 到挂号页就能直接看到这一天这个时段的余量，用户在那一页改日期、换时段。
+   *
+   * departments 是**推荐科室候选**（首选在前）：挂号页把它渲染成可切换的
+   * 科室列表 —— 用户能在这几个科之间换（分诊本来就给了几个方向，
+   * 谁都不是唯一答案），但换不到推荐之外的科。要换到别的科，
+   * 回问诊重新描述症状，那样分诊会重新给一组推荐。
+   */
+  const params = new URLSearchParams({
+    hospital: preorder.hospitalCode,
+    department: preorder.department,
+    date: preorder.slot.slice(0, 10),
+    slot: preorder.slot,
+  });
+  if (preorder.departmentOptions && preorder.departmentOptions.length > 0) {
+    params.set('departments', preorder.departmentOptions.join(','));
+  }
+  const to = `/booking?${params.toString()}`;
 
   return (
-    <div className="animate-fade-up rounded-xl border border-brand-200 bg-white">
+    <div className="animate-fade-up rounded-xl border border-brand-200 bg-surface">
       <div className="border-b border-brand-100 bg-brand-50/60 px-4 py-2.5">
         <span className="text-xs font-medium text-brand-700">可预约号源</span>
       </div>
@@ -165,58 +138,17 @@ function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
           </div>
         </dl>
 
-        {status === 'done' ? (
-          <>
-            <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{message}</p>
-            {/*
-              预约成功后给一个**能回去的入口**，而不是把导航直接铺在对话里。
-
-              对话里的卡片刷新就没了 —— 而患者真正的使用时刻是
-              "明天早上站在门诊楼里"，那时对话早就不在了。
-              所以这一步把人引到独立的「到院」页，那里同样的信息
-              常驻、可刷新、手机上还有 tab。
-
-              保留一小段导航摘要是因为"约完马上走"也有意义：
-              当天来的人此刻就需要知道去哪个楼。
-            */}
-            <div className="mt-3">
-              <Link
-                to="/visit"
-                className="inline-flex items-center gap-1 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white"
-              >
-                到院后看怎么走 →
-              </Link>
-            </div>
-            <div className="mt-4 border-t border-brand-100 pt-4">
-              <HospitalNav
-                hospitalCode={preorder.hospitalCode}
-                department={preorder.department}
-                visitTime={preorder.slot}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            {status === 'error' ? (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                {message}
-              </p>
-            ) : null}
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={confirm}
-                disabled={status === 'submitting'}
-                className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                {status === 'submitting' ? '正在预约…' : '确认挂号'}
-              </button>
-              <span className="text-xs leading-relaxed text-gray-400">
-                确认后会占用该号源，请确定时间合适再点
-              </span>
-            </div>
-          </>
-        )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Link
+            to={to}
+            className="inline-flex h-9 items-center rounded-lg bg-action px-4 text-sm font-medium text-white transition-colors hover:bg-action-hover"
+          >
+            去挂号
+          </Link>
+          <span className="text-xs leading-relaxed text-gray-400">
+            到挂号页挑时段再确认，这里不会直接占号
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -317,7 +249,7 @@ export function TurnView({
     <div className="space-y-3">
       {/* 用户气泡：右对齐 */}
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-700 px-4 py-2.5 text-sm leading-relaxed text-white">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-action px-4 py-2.5 text-sm leading-relaxed text-white">
           {userText}
         </div>
       </div>

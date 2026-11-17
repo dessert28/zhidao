@@ -117,7 +117,7 @@ export function CheckInCard({
         type="button"
         onClick={() => void submit()}
         disabled={phase === 'submitting'}
-        className="mt-3 h-10 rounded-lg bg-brand-700 px-5 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+        className="mt-3 h-10 rounded-lg bg-action px-5 text-sm font-medium text-white transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-gray-300"
       >
         {phase === 'submitting' ? '正在记录…' : '我已到院'}
       </button>

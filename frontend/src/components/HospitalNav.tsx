@@ -28,6 +28,7 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SectionTitle } from './ui/SectionTitle';
 import { getNavRoute, type NavStep, type NavRoute } from '../lib/api';
 
 export interface NavProps {
@@ -48,7 +49,7 @@ const STATUS_META: Record<
     label: '已完成',
     dot: 'bg-gray-300',
     text: 'text-gray-400',
-    ring: 'border-gray-200 bg-white',
+    ring: 'border-gray-200 bg-surface',
   },
   /*
    * SKIPPED 与 DONE 视觉上要区分开。
@@ -63,7 +64,7 @@ const STATUS_META: Record<
   },
   CURRENT: {
     label: '现在去这里',
-    dot: 'bg-brand-700 ring-4 ring-brand-100',
+    dot: 'bg-action ring-4 ring-brand-100',
     text: 'text-gray-900',
     ring: 'border-brand-300 bg-brand-50/40 shadow-sm',
   },
@@ -71,7 +72,7 @@ const STATUS_META: Record<
     label: '待办',
     dot: 'bg-gray-300',
     text: 'text-gray-600',
-    ring: 'border-gray-200 bg-white',
+    ring: 'border-gray-200 bg-surface',
   },
 };
 
@@ -126,7 +127,7 @@ export function HospitalNav({ hospitalCode, department, visitTime, needsFasting 
     return (
       <section>
         <SectionTitle>到院怎么走</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           {error ?? '这个院区还没有配置院内导航，可以到一楼服务台问路。'}
         </div>
       </section>
@@ -146,7 +147,7 @@ export function HospitalNav({ hospitalCode, department, visitTime, needsFasting 
       {current ? (
         <div className="mb-3 rounded-xl border-2 border-brand-500 bg-brand-50 p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-brand-700">
-            <span className="flex h-1.5 w-1.5 rounded-full bg-brand-600" />
+            <span className="flex h-1.5 w-1.5 rounded-full bg-action" />
             现在去这里
           </div>
           <div className="mt-1.5 text-base font-semibold text-gray-900">
@@ -182,7 +183,7 @@ export function HospitalNav({ hospitalCode, department, visitTime, needsFasting 
                         {step.place.building} {step.place.floor}
                       </span>
                       {step.status === 'CURRENT' ? (
-                        <span className="ml-auto rounded bg-brand-700 px-1.5 py-0.5 text-xs text-white">
+                        <span className="ml-auto rounded bg-action px-1.5 py-0.5 text-xs text-white">
                           现在去
                         </span>
                       ) : step.status === 'DONE' ? (
@@ -239,8 +240,5 @@ export function HospitalNav({ hospitalCode, department, visitTime, needsFasting 
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
-}
 
 export default HospitalNav;

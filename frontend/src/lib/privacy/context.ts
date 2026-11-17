@@ -29,7 +29,7 @@ import { prepareOutbound } from './outbound';
 export async function composeRequestText(
   context: string,
   question: string,
-): Promise<{ text: string; contextMasked: boolean; maskedHits: number }> {
+): Promise<{ text: string; question: string; contextMasked: boolean; maskedHits: number }> {
   const ctx = await prepareOutbound(context);
   const q = await prepareOutbound(question);
 
@@ -41,6 +41,12 @@ export async function composeRequestText(
 
   return {
     text: parts.join('\n\n'),
+    /*
+     * 脱敏后的纯问题，不含档案前缀。服务端做话题切换/情绪识别时必须用它：
+     * 用合并后的 text 会把档案里的"高血压/阿司匹林"当成用户新说的症状，
+     * 于是"我失恋了"被误判成延续旧话题，答非所问。
+     */
+    question: qText,
     /** 上下文里是否真的遮掉了东西 —— 用于在界面上如实说明"连档案也过了一遍" */
     contextMasked: context.trim() !== ctxText,
     maskedHits: ctx.hits.length + q.hits.length,

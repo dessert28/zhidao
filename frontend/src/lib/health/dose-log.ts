@@ -132,7 +132,13 @@ export function summarizeProgress(
 
   if (total === 0) return { taken, skipped, total, text: '' };
   if (taken === 0 && skipped === 0) {
-    return { taken, skipped, total, text: `今天 ${total} 档，都还没到记录的时候。` };
+    /*
+     * 一条都没记录时不给句子。
+     * 原来这里写「今天 3 档，都还没到记录的时候」—— 它既不是信息
+     * （用户自己知道现在几点）也不是提醒（没到点本来就不用做什么），
+     * 只占掉一行注意力。留空，让界面只说真正有用的话。
+     */
+    return { taken, skipped, total, text: '' };
   }
   const rest = total - taken - skipped;
   const bits = [`已记录 ${taken} 档`];

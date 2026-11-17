@@ -5,13 +5,16 @@
  *
  * 对话里的预约卡是「AI 帮你选好了，你确认」。它的问题是**没有选择权**：
  *   · 想换个时段 → 没法选，只能接受给的第一个
- *   · 想换个科室 → 得重新描述一遍症状
  *   · 想看看这周哪天有号 → 卡片只显示一天
+ *   · 想换个科室 → 只能在分诊给的几个方向里挑，换不到别的
  *
  * 真实挂号场景里，"我自己看看有没有号"是高频动作，不是每次都要
  * 先讲一遍症状。所以这一页做的是**手动挂号**，和对话那条路并行：
  *   · 对话：不确定挂哪个科 → 让 AI 判断 → 它顺手给个号
  *   · 这一页：已经知道要挂什么 → 直接选 → 挑时段
+ *
+ * 从对话跳进来时，科室范围收窄成"分诊推荐的那几个"（见下方
+ * recommended）；直接打开这一页时，按院区自由选科。
  *
  * ============ 三条硬约束 ============
  *
@@ -27,7 +30,9 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { PageHeader } from '../components/ui/PageHeader';
+import { SectionTitle } from '../components/ui/SectionTitle';
 import {
   createBooking,
   ensureLogin,
@@ -68,11 +73,37 @@ function shortDateAndWeek(dateStr: string): { md: string; week: string } {
 }
 
 export default function BookingPage() {
-  const [hospitals, setHospitals] = useState<HospitalCatalogEntry[]>([]);
+  /*
+   * 从对话卡「去挂号」带过来的参数：院区 / 科室 / 日期 / 时段 / 推荐科室表。
+   *
+   * 科室的边界是**推荐范围**，不是单点锁定：分诊本来就会给两三个方向
+   * （首选 62%、次选 50%…），患者在这几个之间挑一个完全合理。
+   * 所以这里允许切换，但只在 `departments` 给的那几个科里切 ——
+   * 换成推荐之外的科，就等于绕过了整个分诊，问诊结论也就白算了。
+   */
+  const [searchParams] = useSearchParams();
+  const recommended = useMemo(
+    () =>
+      (searchParams.get('departments') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [searchParams],
+  );
+  const wantedDepartment = (searchParams.get('department') ?? '').trim();
+  const wantedHospital = (searchParams.get('hospital') ?? '').trim();
+  const wantedSlot = (searchParams.get('slot') ?? '').trim();
+
+  const [catalog, setCatalog] = useState<HospitalCatalogEntry[]>([]);
   const [hospitalCode, setHospitalCode] = useState('');
 
-  const [department, setDepartment] = useState('');
-  const [date, setDate] = useState(() => toDateStr(new Date()));
+  // 进来的那一刻：优先用指定科室，其次推荐首选，最后等目录加载后落第一个
+  const [department, setDepartment] = useState(wantedDepartment || recommended[0] || '');
+  const [date, setDate] = useState(() => {
+    const d = (searchParams.get('date') ?? '').trim();
+    // 只接受 YYYY-MM-DD，其余（含过去日期）一律回到今天
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : toDateStr(new Date());
+  });
 
   const [slots, setSlots] = useState<SlotItem[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -83,6 +114,8 @@ export default function BookingPage() {
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [bootError, setBootError] = useState<BackendFailure | null>(null);
+  /** 目录加载完（成功或失败）都置 true，用来区分"还在加载"和"确实没有可约院区" */
+  const [catalogReady, setCatalogReady] = useState(false);
 
   const days = useMemo(() => nextDays(DAYS), []);
 
@@ -92,33 +125,81 @@ export default function BookingPage() {
     void (async () => {
       const r = await loadHospitalCatalog();
       if (cancelled) return;
+      setCatalogReady(true);
       if (!r.ok) {
         setBootError(r.failure);
         return;
       }
-      setHospitals(r.data);
-      const first = r.data[0];
-      if (first) {
-        setHospitalCode(first.code);
-        // 学院区第一个科室，省掉"什么都是空的"那一步
-        setDepartment(first.departments[0] ?? '');
+      setCatalog(r.data);
+
+      /*
+       * 选初始院区：对话指定的那家优先，但它得**真的开了这个科**；
+       * 否则退到第一家开这个科的，再不行才退到第一家。
+       * 不这么挑的话，用户会落进一个没这个科的院区，看到"没放号"。
+       */
+      const offers = (h: HospitalCatalogEntry) =>
+        !department || h.departments.includes(department);
+      const pick =
+        r.data.find((h) => h.code === wantedHospital && offers(h)) ??
+        r.data.find(offers) ??
+        r.data[0];
+      if (pick) {
+        setHospitalCode(pick.code);
+        if (!department) setDepartment(pick.departments[0] ?? '');
       }
     })();
     return () => {
       cancelled = true;
     };
+    // 参数来自地址栏，进页面后不会再变；只在挂载时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const current = hospitals.find((h) => h.code === hospitalCode);
+  const current = catalog.find((h) => h.code === hospitalCode);
 
-  /* ---------- 换院区时，科室要跟着换 ---------- */
+  /*
+   * 可选院区。
+   *
+   * 有推荐科室时：**按当前科室过滤**，只列开了这个科的院区 ——
+   * 换科室会让院区列表跟着变，这样"心血管内科 → 滨江"这种组合
+   * 永远是真实存在的。
+   * 没有推荐科室时（用户直接进挂号页）：全部院区，科室反过来跟着院区走。
+   */
+  const visibleHospitals = useMemo(() => {
+    if (recommended.length === 0) return catalog;
+    return catalog.filter((h) => h.departments.includes(department));
+  }, [recommended.length, catalog, department]);
+
+  /* ---------- 院区必须落在可见列表里 ---------- */
   useEffect(() => {
-    if (!current) return;
+    if (visibleHospitals.length === 0) return;
+    if (!visibleHospitals.some((h) => h.code === hospitalCode)) {
+      setHospitalCode(visibleHospitals[0]!.code);
+    }
+  }, [visibleHospitals, hospitalCode]);
+
+  /* ---------- 没有推荐时：科室跟着院区走（原有行为） ---------- */
+  useEffect(() => {
+    if (recommended.length > 0 || !current) return;
     // 原来选的科室在新院区没有 → 落到第一个，避免查一个不存在的科
     if (!current.departments.includes(department)) {
       setDepartment(current.departments[0] ?? '');
     }
-  }, [current, department]);
+  }, [recommended.length, current, department]);
+
+  /* ---------- 有推荐时：科室必须落在推荐范围内 ---------- */
+  useEffect(() => {
+    if (recommended.length === 0 || catalog.length === 0) return;
+    const allowed = recommended.filter((d) =>
+      catalog.some((h) => h.departments.includes(d)),
+    );
+    if (allowed.length === 0) {
+      // 推荐里没有一个科真的可约 —— 交给下面的空态说明，不要乱选
+      if (department) setDepartment('');
+      return;
+    }
+    if (!allowed.includes(department)) setDepartment(allowed[0]!);
+  }, [recommended, catalog, department]);
 
   /* ---------- 查号源 ---------- */
   const loadSlots = useCallback(
@@ -156,6 +237,21 @@ export default function BookingPage() {
   useEffect(() => {
     void loadSlots();
   }, [loadSlots]);
+
+  /*
+   * 预选对话里给的那个时段。
+   *
+   * 只做一次（preselected 守卫）：之后用户自己换日期/时段，
+   * 不能被这个 effect 又拽回去。余量为 0 时也不选 ——
+   * 给一个"选中了但点不了"的状态比不选更让人困惑。
+   */
+  const [preselected, setPreselected] = useState(false);
+  useEffect(() => {
+    if (preselected || !wantedSlot || slots.length === 0) return;
+    const hit = slots.find((s) => s.visitTime === wantedSlot && s.remaining > 0);
+    if (hit) setSelected(hit);
+    setPreselected(true);
+  }, [slots, wantedSlot, preselected]);
 
   /* ---------- 下单 ---------- */
   const confirm = async () => {
@@ -216,19 +312,57 @@ export default function BookingPage() {
     );
   }
 
+  /*
+   * 推荐的科室一个都约不上（目录里就没开）—— 必须说清楚"不是你挂号点错了，
+   * 是这个科这段时间不开线上号"，否则用户会以为自己在瞎点。
+   */
+  if (catalogReady && recommended.length > 0 && visibleHospitals.length === 0) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="text-sm font-medium text-amber-900">
+          推荐的{recommended.map((d) => `「${d}」`).join('、')}暂时没有可预约的院区
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+          这段时间线上没有放这些科的号，可以到院自助机或窗口办理，也可以
+          <Link to="/chat" className="mx-1 text-brand-700 underline">
+            回问诊
+          </Link>
+          重新描述一下症状，让分诊再判断一次。
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">挂号</h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
-          自己选院区和时段。不确定该挂哪个科，可以先去<Link to="/chat" className="mx-1 text-brand-700 underline">问诊</Link>，让 AI 帮你判断。
-        </p>
-      </header>
+      <PageHeader
+        title="挂号"
+        subtitle={
+          recommended.length > 0 ? (
+            <>
+              科室按问诊推荐给出（首选「{wantedDepartment || recommended[0]}」），可以在这几个科之间换。
+              要换到别的科，请
+              <Link to="/chat" className="mx-1 text-brand-700 underline">
+                回问诊
+              </Link>
+              重新描述症状。
+            </>
+          ) : (
+            <>
+              自己选院区和时段。不确定该挂哪个科，可以先去
+              <Link to="/chat" className="mx-1 text-brand-700 underline">
+                问诊
+              </Link>
+              ，让 AI 帮你判断。
+            </>
+          )
+        }
+      />
 
       {/* ---------- 院区 ---------- */}
       <Section title="选院区">
         <div className="grid gap-2">
-          {hospitals.map((h) => {
+          {visibleHospitals.map((h) => {
             const active = h.code === hospitalCode;
             return (
               <button
@@ -239,7 +373,7 @@ export default function BookingPage() {
                   'rounded-xl border p-3 text-left transition-colors ' +
                   (active
                     ? 'border-brand-400 bg-brand-50/50'
-                    : 'border-gray-200 bg-white hover:border-gray-300')
+                    : 'border-gray-200 bg-surface hover:border-gray-300')
                 }
               >
                 <div className="text-sm font-medium text-gray-900">{h.name}</div>
@@ -253,8 +387,49 @@ export default function BookingPage() {
       </Section>
 
       {/* ---------- 科室 ---------- */}
-      <Section title="选科室">
-        {current && current.departments.length > 0 ? (
+      <Section title={recommended.length > 0 ? '选科室（问诊推荐）' : '选科室'}>
+        {/*
+          有推荐：只列推荐的几个科，可以在这几个里切换。
+          没有推荐（用户直接进这一页）：列当前院区的全部科室。
+
+          为什么推荐之外不给选项：分诊已经给过方向了，在这里随手换成
+          一个没被推荐过的科，等于把问诊结论丢掉重来 —— 而且要换到
+          别的科，本来就该回问诊再描述一次，那样分诊会重新判断。
+        */}
+        {recommended.length > 0 ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {recommended.map((d) => {
+                // 目录里没有这个科 → 给一个不可点的按钮，并说明原因。
+                // 直接藏起来会让用户以为推荐错了。
+                const available = catalog.some((h) => h.departments.includes(d));
+                const active = d === department;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={!available}
+                    onClick={() => setDepartment(d)}
+                    className={
+                      'rounded-lg border px-3 py-1.5 text-sm transition-colors ' +
+                      (!available
+                        ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300'
+                        : active
+                          ? 'border-brand-500 bg-action text-white'
+                          : 'border-gray-200 bg-surface text-gray-700 hover:border-gray-300')
+                    }
+                  >
+                    {d}
+                    {!available ? <span className="ml-1 text-2xs">暂不可约</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs leading-relaxed text-gray-400">
+              这几个科是问诊给出的方向，在这里换科室不会影响判断；要挂推荐之外的科，请回问诊重新描述症状。
+            </p>
+          </div>
+        ) : current && current.departments.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {current.departments.map((d) => {
               const active = d === department;
@@ -266,8 +441,8 @@ export default function BookingPage() {
                   className={
                     'rounded-lg border px-3 py-1.5 text-sm transition-colors ' +
                     (active
-                      ? 'border-brand-500 bg-brand-700 text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300')
+                      ? 'border-brand-500 bg-action text-white'
+                      : 'border-gray-200 bg-surface text-gray-700 hover:border-gray-300')
                   }
                 >
                   {d}
@@ -299,8 +474,8 @@ export default function BookingPage() {
                 className={
                   'flex min-w-[62px] shrink-0 flex-col items-center rounded-lg border px-2 py-1.5 text-xs transition-colors ' +
                   (active
-                    ? 'border-brand-500 bg-brand-700 text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300')
+                    ? 'border-brand-500 bg-action text-white'
+                    : 'border-gray-200 bg-surface text-gray-600 hover:border-gray-300')
                 }
               >
                 <span className="font-medium tabular-nums">{md}</span>
@@ -341,14 +516,14 @@ export default function BookingPage() {
                     (full
                       ? 'cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300'
                       : active
-                        ? 'border-brand-500 bg-brand-700 text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-brand-300')
+                        ? 'border-brand-500 bg-action text-white'
+                        : 'border-gray-200 bg-surface text-gray-700 hover:border-brand-300')
                   }
                 >
                   <div className="text-sm font-medium tabular-nums">{s.visitTime.slice(11, 16)}</div>
                   <div
                     className={
-                      'mt-0.5 truncate text-[11px] ' +
+                      'mt-0.5 truncate text-2xs ' +
                       (full ? 'text-gray-300' : active ? 'text-white/80' : 'text-gray-400')
                     }
                   >
@@ -363,7 +538,7 @@ export default function BookingPage() {
 
       {/* ---------- 确认 ---------- */}
       {selected ? (
-        <section className="rounded-xl border border-brand-200 bg-white p-4">
+        <section className="rounded-xl border border-brand-200 bg-surface p-4">
           <h2 className="text-sm font-medium text-gray-700">确认挂号信息</h2>
           <dl className="mt-2 space-y-1.5 text-sm">
             <Row label="院区" value={current?.name ?? hospitalCode} />
@@ -390,13 +565,13 @@ export default function BookingPage() {
             <div className="mt-3 flex gap-2">
               <Link
                 to="/visit"
-                className="rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white"
+                className="rounded-lg bg-action px-3 py-1.5 text-xs font-medium text-white"
               >
                 到院后看怎么走 →
               </Link>
               <Link
                 to="/records"
-                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700"
+                className="rounded-lg border border-gray-200 bg-surface px-3 py-1.5 text-xs text-gray-700"
               >
                 我的预约
               </Link>
@@ -407,7 +582,7 @@ export default function BookingPage() {
                 type="button"
                 onClick={() => void confirm()}
                 disabled={submitting}
-                className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="h-9 rounded-lg bg-action px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {submitting ? '正在挂号…' : '确认挂号'}
               </button>
@@ -431,7 +606,7 @@ export default function BookingPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium text-gray-700">{title}</h2>
+      <SectionTitle>{title}</SectionTitle>
       {children}
     </section>
   );
@@ -458,7 +633,7 @@ function NoSlots({ date, today }: { date: string; today: string }) {
   const isToday = date === today;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-3">
+    <div className="rounded-lg border border-gray-200 bg-surface px-3 py-3">
       <p className="text-sm text-gray-700">
         {isPast
           ? '这一天已经过去了，选今天或之后的日期。'

@@ -317,7 +317,10 @@ export function useEventStream() {
        * 放在这里而不是交给调用方：调用方只需要给"原始的档案摘要"，
        * 不需要知道还要脱敏。少一次"记得自己脱敏"的机会，就少一次漏掉的机会。
        */
-      const { text: outboundText } = await composeRequestText(opts.context ?? '', opts.text);
+      const { text: outboundText, question: outboundQuestion } = await composeRequestText(
+        opts.context ?? '',
+        opts.text,
+      );
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -328,6 +331,8 @@ export function useEventStream() {
           // 刷新后前端还从 session-1 重新开始，而后端那边早就是另一份数据。
           sessionId: sessionIdRef.current ?? resolveSessionId(),
           text: outboundText,
+          // 纯问题（脱敏后、不含健康档案），供服务端识别话题切换与情绪主诉
+          question: outboundQuestion,
           facts: opts.facts,
           // 关键：把上一轮攒下的槽位与轮次带上，
           // 服务端才知道"这个槽位已经问过了"
@@ -414,7 +419,7 @@ export function useEventStream() {
   }, []);
 
   /**
-   * 清空对话 —— 三件事必须同时做，否则「重来」是假的。
+   * 清空对话 —— 四件事必须同时做，否则「重来」是假的。
    *
    * <p>1. 掐掉在飞的流：不掐断的话，正在回来的 token 会往已经清空的
    *       turns 里 patch，出现一条没有问题的回答。
@@ -422,6 +427,12 @@ export function useEventStream() {
    *      会话里从头写起，下次刷新又能读到旧内容。
    * <p>3. 清服务端历史：只清本地 state 的话，刷新一下就全回来了 ——
    *      用户点「重来」的心愿就是从零开始。
+   * <p>4. 清分诊会话状态（槽位 + 轮次）：这一条曾经漏掉，后果是气泡和
+   *       历史都没了，但 `sessionRef` 里还留着上一轮采到的「肚子/三天/
+   *       胀痛」。用户点完「重来」说一句全新的「我失恋了」，请求仍带着
+   *       旧槽位、`round>0`，服务端判定"继续采集"，直接把旧症状和新主诉
+   *       揉在一起 —— 界面清空了，AI 的记忆没清空，这是最隐蔽的一种
+   *       「假重来」。必须把 ref 显式复位，才算真正从头开始。
    *
    * <p>清历史用 void 不 await：这是删除操作，等它没意义，
    * 而且后端没起时它会失败 —— 失败也不该拦住本地清空
@@ -430,6 +441,9 @@ export function useEventStream() {
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setTurns([]);
+
+    // 第 4 步：分诊状态归零 —— 不复位这里，"重来"只清了表面
+    sessionRef.current = { slots: {}, round: 0 };
 
     const old = sessionIdRef.current;
     sessionIdRef.current = rotateSessionId();

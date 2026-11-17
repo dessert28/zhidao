@@ -25,6 +25,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Callout } from '../components/ui/Callout';
+import { PageHeader } from '../components/ui/PageHeader';
+import { SectionTitle } from '../components/ui/SectionTitle';
 import {
   clearToken,
   ensureLogin,
@@ -114,9 +117,8 @@ export default function VisitPage() {
 
   if (state.failure) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <div className="text-sm font-medium text-amber-900">暂时读不到你的预约</div>
-        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+      <Callout tone="neutral" title="暂时读不到你的预约">
+        <span className="text-xs">
           {state.failure.kind === 'unreachable'
             ? '后端未启动。在 backend 目录执行 mvn spring-boot:run 后再试。'
             : state.failure.kind === 'unauthorized'
@@ -124,8 +126,8 @@ export default function VisitPage() {
               : 'disabled' in state.failure
                 ? state.failure.message
                 : '读不到预约数据，请稍后重试。'}
-        </p>
-      </div>
+        </span>
+      </Callout>
     );
   }
 
@@ -140,13 +142,13 @@ export default function VisitPage() {
         <div className="mt-5 flex gap-2">
           <Link
             to="/chat"
-            className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white"
+            className="rounded-lg bg-action px-4 py-2 text-sm font-medium text-white"
           >
             去问诊约号
           </Link>
           <Link
             to="/records"
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700"
+            className="rounded-lg border border-gray-200 bg-surface px-4 py-2 text-sm text-gray-700"
           >
             看看全部预约
           </Link>
@@ -340,13 +342,15 @@ function VisitDetail({ order: initialOrder }: { order: BookingOrder }) {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">到院</h1>
-        <p className="mt-1.5 text-sm text-gray-500">
-          {hospitalName(order.hospitalCode)} · {order.department} ·{' '}
-          {order.visitTime.slice(5, 10)} {order.visitTime.slice(11, 16)}
-        </p>
-      </header>
+      <PageHeader
+        title="到院"
+        subtitle={
+          <>
+            {hospitalName(order.hospitalCode)} · {order.department} ·{' '}
+            {order.visitTime.slice(5, 10)} {order.visitTime.slice(11, 16)}
+          </>
+        }
+      />
 
       {/*
         签到排在「现在去哪」之前。
@@ -396,7 +400,7 @@ function VisitDetail({ order: initialOrder }: { order: BookingOrder }) {
       {route && route.steps.length > 0 ? (
         <StepsBlock route={route} marks={marks} onMark={handleMark} marking={marking} />
       ) : !navError ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           这个院区还没有配置院内导航，可以到一楼服务台问路。
         </div>
       ) : null}
@@ -414,7 +418,7 @@ function VisitDetail({ order: initialOrder }: { order: BookingOrder }) {
         我们不知道医生到底开了什么检查，也不知道报告什么时候出。
         给一个具体时间点就是在编。
       */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4">
+      <section className="rounded-xl border border-gray-200 bg-surface p-4">
         <h2 className="text-sm font-medium text-gray-700">看完之后</h2>
         <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-gray-700">
           <li>
@@ -486,7 +490,7 @@ function ExamSequenceHint({ record }: { record: LocalRecord | null }) {
           {unknown.join('、')} 要不要空腹、怎么排，先问分诊台。
         </p>
       ) : null}
-      <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+      <p className="mt-1 text-2xs leading-relaxed text-gray-500">
         这是流程上的先后建议，用来补充下面的到院路线；走哪一层、去哪一站仍以院内路线和现场指示为准。
       </p>
     </section>
@@ -506,7 +510,7 @@ function QueueBlock({ queue }: { queue: QueueInfo }) {
   const unreliable = !estimate.reasonable || estimate.confidence === 'LOW';
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4">
+    <section className="rounded-xl border border-gray-200 bg-surface p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-gray-700">还要等多久</h2>
         <span className="text-xs text-gray-400">按每人约 {queue.minutesPerPatient} 分钟估算</span>
@@ -574,17 +578,20 @@ function StepsBlock({
 }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-medium text-gray-700">
+      <SectionTitle
+        count={
+          <>
+            {route.steps.length} 步 · 约 {route.totalMinutes} 分钟
+            {Object.keys(marks).length > 0 ? (
+              <span className="ml-2 text-brand-700">
+                （已手动标记 {Object.keys(marks).length} 步）
+              </span>
+            ) : null}
+          </>
+        }
+      >
         到院怎么走
-        <span className="ml-2 text-xs font-normal text-gray-400">
-          {route.steps.length} 步 · 约 {route.totalMinutes} 分钟
-        </span>
-        {Object.keys(marks).length > 0 ? (
-          <span className="ml-2 text-xs font-normal text-brand-700">
-            （已手动标记 {Object.keys(marks).length} 步）
-          </span>
-        ) : null}
-      </h2>
+      </SectionTitle>
 
       <ol className="space-y-2">
         {route.steps.map((s, i) => {
@@ -605,7 +612,7 @@ function StepsBlock({
                   ? 'border-brand-300 bg-brand-50/40 shadow-sm'
                   : settled
                     ? 'border-gray-100 bg-gray-50'
-                    : 'border-gray-200 bg-white')
+                    : 'border-gray-200 bg-surface')
               }
             >
               <div className="flex items-baseline gap-2">
@@ -626,7 +633,7 @@ function StepsBlock({
                 </span>
 
                 {isCurrent ? (
-                  <span className="ml-auto rounded bg-brand-700 px-1.5 py-0.5 text-xs text-white">
+                  <span className="ml-auto rounded bg-action px-1.5 py-0.5 text-xs text-white">
                     现在去
                   </span>
                 ) : isDone ? (
@@ -659,7 +666,7 @@ function StepsBlock({
                       onClick={() => onMark(key, 'DONE')}
                       className={
                         'rounded px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ' +
-                        (isCurrent ? 'bg-brand-700 text-white' : 'bg-gray-100 text-gray-700')
+                        (isCurrent ? 'bg-action text-white' : 'bg-gray-100 text-gray-700')
                       }
                     >
                       {busy ? '处理中…' : '做完了'}
@@ -694,7 +701,7 @@ function StepsBlock({
  */
 function PharmacyNote({ hospitalCode }: { hospitalCode: string }) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4">
+    <section className="rounded-xl border border-gray-200 bg-surface p-4">
       <h2 className="text-sm font-medium text-gray-700">取药</h2>
       <ol className="mt-2 space-y-1.5 text-sm leading-relaxed text-gray-700">
         <li>1. 先完成缴费（自助机、窗口或手机缴费都可以）。</li>

@@ -72,13 +72,13 @@ export class RouteErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             onClick={() => this.setState({ error: null })}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700"
+            className="rounded-lg border border-gray-200 bg-surface px-4 py-2 text-sm text-gray-700"
           >
             重试
           </button>
           <Link
             to="/"
-            className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white"
+            className="rounded-lg bg-action px-4 py-2 text-sm font-medium text-white"
           >
             回到今日
           </Link>

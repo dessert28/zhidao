@@ -25,12 +25,12 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ensureLogin,
   getProfile,
   getRecords,
   hospitalName,
+  loadHospitalCatalog,
   type BackendFailure,
   type MedicalRecord,
   type PatientProfile,
@@ -39,6 +39,8 @@ import { buildTrends } from '../lib/health/markers';
 import { dedupeByLatest, extractMedications } from '../lib/health/medications';
 import { buildCheckupSuggestions } from '../lib/health/checkups';
 import { buildSummaryText, genderLabel } from '../lib/health/summary-text';
+import { SubPageHeader } from '../components/ui/SubPageHeader';
+import { Clamp } from '../components/ui/Fold';
 
 interface State {
   loading: boolean;
@@ -54,11 +56,45 @@ export default function SummaryPage() {
   const [copied, setCopied] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
+  /*
+   * 屏幕上"就诊记录"只露最近 6 条，但**打印必须全出**。
+   *
+   * 一页纸是给医生的：他要知道五年前做过什么，折叠按钮帮不上忙
+   * （纸上的按钮点不动）。所以打印前把折叠状态强制打开。
+   *
+   * 监听 beforeprint 而不是只在按钮里开：患者更可能按 Ctrl+P，
+   * 那条路径不经过我们的 onClick。
+   */
+  const [printAll, setPrintAll] = useState(false);
+  useEffect(() => {
+    const onBefore = () => setPrintAll(true);
+    const onAfter = () => setPrintAll(false);
+    window.addEventListener('beforeprint', onBefore);
+    window.addEventListener('afterprint', onAfter);
+    return () => {
+      window.removeEventListener('beforeprint', onBefore);
+      window.removeEventListener('afterprint', onAfter);
+    };
+  }, []);
+
+  const doPrint = () => {
+    setPrintAll(true);
+    // 等一帧让展开后的 DOM 落地，否则可能打到折起来的版本
+    requestAnimationFrame(() => {
+      window.print();
+      setPrintAll(false);
+    });
+  };
+
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, failure: null }));
 
     const fetchAll = async () => {
-      const [rec, prof] = await Promise.all([getRecords(), getProfile()]);
+      const [rec, prof] = await Promise.all([
+        getRecords(),
+        getProfile(),
+        loadHospitalCatalog(),
+      ]);
       return { rec, prof };
     };
 
@@ -150,7 +186,7 @@ export default function SummaryPage() {
         <button
           type="button"
           onClick={load}
-          className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
+          className="mt-2 rounded-lg border border-amber-300 bg-surface px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
         >
           重试
         </button>
@@ -163,38 +199,33 @@ export default function SummaryPage() {
   return (
     <div>
       {/* 屏幕上的操作条：打印与复制。打印时整条隐藏 */}
-      <div className="no-print mb-4 flex flex-wrap items-center gap-2">
-        <div className="mr-auto">
-          <h1 className="text-lg font-semibold tracking-tight text-gray-900">就诊摘要</h1>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">
-            把你在 {hospitalCount} 家医院的记录压成一页。打印出来带去门诊，
-            或复制成文字发给医生。
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="h-9 rounded-lg bg-brand-700 px-3.5 text-sm font-medium text-white hover:bg-brand-800"
-        >
-          打印 / 存为 PDF
-        </button>
-        <button
-          type="button"
-          onClick={copyText}
-          className="h-9 rounded-lg border border-gray-200 bg-white px-3.5 text-sm text-gray-700 hover:border-brand-300"
-        >
-          {copied ? '已复制' : '复制文字'}
-        </button>
-        <Link
-          to="/health"
-          className="h-9 rounded-lg border border-gray-200 bg-white px-3.5 text-sm leading-9 text-gray-700 hover:border-brand-300"
-        >
-          健康管家
-        </Link>
+      <div className="no-print">
+        <SubPageHeader
+          title="就诊摘要"
+          subtitle={`把你在 ${hospitalCount} 家医院的记录压成一页。打印出来带去门诊，或复制成文字发给医生。`}
+          action={
+            <>
+              <button
+                type="button"
+                onClick={doPrint}
+                className="h-9 rounded-lg bg-action px-3.5 text-sm font-medium text-white hover:bg-action-hover"
+              >
+                打印 / 存为 PDF
+              </button>
+              <button
+                type="button"
+                onClick={copyText}
+                className="h-9 rounded-lg border border-gray-200 bg-surface px-3.5 text-sm text-gray-700 hover:border-brand-300"
+              >
+                {copied ? '已复制' : '复制文字'}
+              </button>
+            </>
+          }
+        />
       </div>
 
       {/* ============ 打印区 ============ */}
-      <div ref={printRef} className="print-sheet rounded-xl border border-gray-200 bg-white p-5">
+      <div ref={printRef} className="print-sheet rounded-xl border border-gray-200 bg-surface p-5">
         {/* 标题 */}
         <div className="border-b border-gray-200 pb-2">
           <div className="flex items-baseline gap-2">
@@ -298,23 +329,39 @@ export default function SummaryPage() {
           {state.records.length === 0 ? (
             <p className="text-xs text-gray-400">暂无就诊记录。</p>
           ) : (
-            <ul className="space-y-1">
-              {[...state.records]
-                .sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-                .map((r) => (
-                  <li key={r.id} className="flex items-baseline gap-2 text-xs">
-                    {/* 日期不能折行：原来给 4.6em 太窄，被折成 "2026-11-" 和 "10" 两行 */}
-                    <span className="w-[5.4em] shrink-0 whitespace-nowrap tabular-nums text-gray-500">
+            /*
+             * 6 条以内全出，超过就折。手机上十几条会把下面的
+             * 「该做但尚未做的检查」推到三屏之外 —— 而那一块
+             * 恰恰是医生开单前最该看到的。
+             * 打印时 forceOpen 打开，一页纸上是完整的。
+             */
+            <Clamp
+              items={[...state.records].sort((a, b) => b.visitDate.localeCompare(a.visitDate))}
+              initial={6}
+              itemKey={(r) => r.id}
+              gap="space-y-1"
+              unit="次"
+              forceOpen={printAll}
+              render={(r) => (
+                /*
+                 * 一行挤四段（日期 / 医院 / 科室 / 诊断）在窄屏上会把
+                 * 诊断压成竖排的单字柱 —— 医院全名本来就长。
+                 * 改成"时间地点一行、诊断另起一行"，打印出来也更好读。
+                 */
+                <div className="text-xs">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="shrink-0 whitespace-nowrap tabular-nums text-gray-500">
                       {r.visitDate}
                     </span>
-                    <span className="shrink-0 text-gray-700">{hospitalName(r.hospitalCode)}</span>
-                    {r.department ? (
-                      <span className="shrink-0 text-gray-500">{r.department}</span>
-                    ) : null}
-                    <span className="text-gray-600">{r.diagnosisBrief ?? ''}</span>
-                  </li>
-                ))}
-            </ul>
+                    <span className="text-gray-700">{hospitalName(r.hospitalCode)}</span>
+                    {r.department ? <span className="text-gray-500">{r.department}</span> : null}
+                  </div>
+                  {r.diagnosisBrief ? (
+                    <p className="mt-0.5 leading-relaxed text-gray-600">{r.diagnosisBrief}</p>
+                  ) : null}
+                </div>
+              )}
+            />
           )}
         </Section>
 
@@ -341,7 +388,7 @@ export default function SummaryPage() {
 
         {/* 页脚：来源与免责，打印也保留 */}
         <div className="mt-3 border-t border-gray-200 pt-2">
-          <p className="text-[10px] leading-relaxed text-gray-400">
+          <p className="text-3xs leading-relaxed text-gray-400">
             本页由患者本人使用「智诊通」整理，数据来源为患者自行上传的病历，
             未经医院核对。内容仅供医生参考，不作为诊断依据。
             如有出入请以医院原始记录为准。
@@ -367,7 +414,7 @@ function InfoBox({
         emphasis ? 'border-red-200 bg-red-50/60' : 'border-gray-200 bg-gray-50/60'
       }`}
     >
-      <div className={`text-[10px] ${emphasis ? 'text-red-600' : 'text-gray-400'}`}>{label}</div>
+      <div className={`text-3xs ${emphasis ? 'text-red-600' : 'text-gray-400'}`}>{label}</div>
       <div className={`mt-0.5 text-xs font-medium ${emphasis ? 'text-red-900' : 'text-gray-900'}`}>
         {value}
       </div>
@@ -389,7 +436,7 @@ function Section({
     <div className="mt-3">
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-xs font-semibold text-brand-800">{title}</span>
-        {hint ? <span className="text-[10px] text-gray-400">{hint}</span> : null}
+        {hint ? <span className="text-3xs text-gray-400">{hint}</span> : null}
       </div>
       {children}
     </div>

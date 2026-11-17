@@ -10,6 +10,7 @@ import { useRedaction } from '../hooks/useRedaction';
 import { TurnView } from '../components/EventRenderer';
 import { RedactionPreview } from '../components/RedactionPreview';
 import { prepareOutbound } from '../lib/privacy/outbound';
+import { needsHealthContext } from '../lib/health/context-relevance';
 
 /**
  * 示例问题刻意分类，让评审一眼看到四类路径：
@@ -77,7 +78,13 @@ export default function ChatPage() {
 
   // 新内容出现时滚到底部
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    /*
+     * 尊重"减少动画"偏好。
+     * 这条之前漏了：CSS 里的 prefers-reduced-motion 兜底管不到 JS 的
+     * smooth 滚动，前庭功能敏感的人一样会被这段平滑位移影响。
+     */
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    endRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'end' });
   }, [turns]);
 
   const submit = async (text: string) => {
@@ -129,7 +136,9 @@ export default function ChatPage() {
          * 加这个前缀后，问「我能吃什么」的回答会带上"你糖化偏高"这类
          * 具体信息，而不是泛泛而谈。
          */
-        context: healthContext,
+        // 按需注入：情绪/闲聊轮次不带档案，避免把"高血压/阿司匹林"
+        // 当成此刻的症状背景，干扰分诊判断
+        context: needsHealthContext(t) ? healthContext : '',
       });
 
       setInput('');
@@ -178,9 +187,11 @@ export default function ChatPage() {
                 key={e.label}
                 type="button"
                 onClick={() => void submit(e.text)}
-                className="group rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40"
+                className="group animate-fade-up rounded-xl border border-gray-200 bg-surface p-3 text-left transition-all duration-150 hover:-translate-y-px hover:border-brand-300 hover:shadow-sm"
               >
-                <div className="text-xs font-medium text-brand-700">{e.label}</div>
+                <div className="text-2xs font-medium uppercase tracking-wider text-brand-700">
+                  {e.label}
+                </div>
                 <div className="mt-1 text-sm leading-relaxed text-gray-700">{e.text}</div>
               </button>
             ))}
@@ -217,9 +228,9 @@ export default function ChatPage() {
         {speech.listening ? (
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2">
             <span className="flex gap-0.5" aria-hidden="true">
-              <span className="h-3 w-0.5 animate-pulse bg-brand-600" />
-              <span className="h-3 w-0.5 animate-pulse bg-brand-600 [animation-delay:150ms]" />
-              <span className="h-3 w-0.5 animate-pulse bg-brand-600 [animation-delay:300ms]" />
+              <span className="h-3 w-0.5 animate-pulse bg-action" />
+              <span className="h-3 w-0.5 animate-pulse bg-action [animation-delay:150ms]" />
+              <span className="h-3 w-0.5 animate-pulse bg-action [animation-delay:300ms]" />
             </span>
             <span className="text-xs text-brand-800">
               {speech.interim ? `正在听：${speech.interim}` : '正在听，请说话…'}
@@ -249,7 +260,7 @@ export default function ChatPage() {
           说完再补一句声明，等于事后通知。
         */}
         {speech.support === 'supported' ? (
-          <p className="mb-2 text-[11px] leading-relaxed text-gray-400">{SPEECH_PRIVACY_NOTICE}</p>
+          <p className="mb-2 text-2xs leading-relaxed text-gray-400">{SPEECH_PRIVACY_NOTICE}</p>
         ) : null}
 
         <div className="flex items-end gap-2">
@@ -271,8 +282,8 @@ export default function ChatPage() {
             className={
               'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ' +
               (speech.listening
-                ? 'border-brand-600 bg-brand-600 text-white'
-                : 'border-gray-200 bg-white text-gray-500 hover:border-brand-300 hover:text-brand-700')
+                ? 'border-action bg-action text-white'
+                : 'border-gray-200 bg-surface text-gray-500 hover:border-brand-300 hover:text-brand-700')
             }
           >
             <MicIcon />
@@ -291,14 +302,14 @@ export default function ChatPage() {
             }}
             rows={1}
             placeholder="描述你的症状，或直接说想挂哪个科…"
-            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm leading-relaxed placeholder:text-gray-400 focus:border-brand-400 focus:outline-none"
+            className="max-h-32 min-h-[44px] flex-1 resize-none rounded-xl border border-gray-200 bg-surface px-3.5 py-2.5 text-sm leading-relaxed placeholder:text-gray-400 focus:border-brand-400 focus:outline-none"
           />
 
           {busy ? (
             <button
               type="button"
               onClick={stop}
-              className="h-11 shrink-0 rounded-xl border border-gray-300 px-4 text-sm text-gray-600 hover:bg-white"
+              className="h-11 shrink-0 rounded-xl border border-gray-300 px-4 text-sm text-gray-600 hover:bg-surface"
             >
               停止
             </button>
@@ -307,7 +318,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => void submit(input)}
               disabled={!input.trim()}
-              className="h-11 shrink-0 rounded-xl bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="h-11 shrink-0 rounded-xl bg-action px-4 text-sm font-medium text-white transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               发送
             </button>

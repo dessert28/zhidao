@@ -512,10 +512,21 @@ export function slotTemporal(slot: DoseSlot, now: Date): 'upcoming' | 'now' | 'p
 
 /* ============================ 摘要 ============================ */
 
+/**
+ * 今天一共几种药（按药名去重）。
+ *
+ * <p>不能用 `slots.reduce` 把每档的药数相加：同一盒药一天 3 次，就会
+ * 在 3 个时间点里各出现一次，相加会把"2 种药"说成"6 种药"。种数是
+ * 患者拿去核对药盒的数字，错一次他就不信这个界面了。
+ */
+export function countDistinctMeds(slots: DoseSlot[]): number {
+  return new Set(slots.flatMap((s) => s.meds.map((m) => m.name))).size;
+}
+
 /** 给界面用的一句话摘要 */
 export function summarizeDay(slots: DoseSlot[]): string {
   if (slots.length === 0) return '今天没有需要按时服用的药。';
-  const total = slots.reduce((n, s) => n + s.meds.length, 0);
+  const total = countDistinctMeds(slots);
   const fuzzy = slots.filter((s) => s.kind === 'fuzzy').length;
   const tail = fuzzy > 0 ? `，其中 ${fuzzy} 档按饭后/饭前把握` : '';
   return `今天共 ${slots.length} 个服药时间点，涉及 ${total} 种药${tail}。`;

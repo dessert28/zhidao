@@ -38,7 +38,7 @@ export function ExamOrderCard({ record }: { record: LocalRecord | null }) {
   /* ---------- 还没上传：告诉患者这一步能做什么 ---------- */
   if (!record) {
     return (
-      <section className="rounded-xl border border-dashed border-gray-300 bg-white p-4">
+      <section className="rounded-xl border border-dashed border-gray-300 bg-surface p-4">
         <h2 className="text-sm font-medium text-gray-700">医生开了检查单？</h2>
         <p className="mt-1 text-xs leading-relaxed text-gray-500">
           上传之后，上面的"现在去哪"会按检查项目重算 ——
@@ -83,7 +83,7 @@ export function ExamOrderCard({ record }: { record: LocalRecord | null }) {
   const unknownFasting = unknownNames.length > 0;
 
   return (
-    <section className="rounded-xl border border-brand-200 bg-white p-4">
+    <section className="rounded-xl border border-brand-200 bg-surface p-4">
       <div className="flex items-baseline gap-2">
         <h2 className="text-sm font-medium text-gray-800">这次要做的检查</h2>
         <span className="text-xs text-gray-400">{items.length} 项</span>
@@ -93,24 +93,24 @@ export function ExamOrderCard({ record }: { record: LocalRecord | null }) {
       <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2.5">
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-brand-800">建议顺序</span>
-          <span className="text-[11px] text-brand-700">按流程先后排，不是医学判断</span>
+          <span className="text-2xs text-brand-700">按流程先后排，不是医学判断</span>
         </div>
         <ol className="mt-1.5 space-y-1.5">
           {steps.map((s) => (
             <li key={`${s.order}-${s.exam.name}`} className="flex gap-2">
-              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-700 text-[10px] font-medium text-white">
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-action text-3xs font-medium text-white">
                 {s.order}
               </span>
               <div className="min-w-0">
                 <div className="text-xs text-gray-800">
                   {s.exam.name}
                   {s.needsConfirmation ? (
-                    <span className="ml-1.5 rounded bg-white px-1 py-0.5 text-[10px] text-amber-700">
+                    <span className="ml-1.5 rounded bg-surface px-1 py-0.5 text-3xs text-amber-700">
                       待确认
                     </span>
                   ) : null}
                 </div>
-                <p className="text-[11px] leading-relaxed text-gray-600">{s.reason}</p>
+                <p className="text-2xs leading-relaxed text-gray-600">{s.reason}</p>
               </div>
             </li>
           ))}
@@ -121,15 +121,15 @@ export function ExamOrderCard({ record }: { record: LocalRecord | null }) {
         {items.map((it, i) => (
           <li key={i} className="flex items-baseline gap-2 text-sm">
             <span className="text-gray-800">{it.name}</span>
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-2xs text-gray-600">
               {it.placeType === 'LAB' ? '抽血' : it.placeType === 'EXAM' ? '检查' : '其他'}
             </span>
             {it.fasting === true ? (
-              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">
+              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-2xs text-amber-700">
                 需空腹
               </span>
             ) : it.fasting === false ? (
-              <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500">
+              <span className="rounded bg-gray-50 px-1.5 py-0.5 text-2xs text-gray-500">
                 无需空腹
               </span>
             ) : null}

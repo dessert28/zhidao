@@ -18,6 +18,7 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useState } from 'react';
+import { SectionTitle } from './ui/SectionTitle';
 import {
   createBinding,
   getAccessLog,
@@ -98,17 +99,51 @@ export function PrivacySection() {
     setTimeout(() => setFeedback(null), 6000);
   };
 
+  /*
+   * 默认收起。
+   *
+   * 「谁看过我的数据」必须**可查**，但不是每天要看的 —— 绝大多数时候
+   * 访问记录是空的。常驻展开会让它在病历页末尾占掉一整屏，
+   * 而那一屏的位置更适合留给「跨院重复检查」这类真正有内容的东西。
+   * 收起时保留一句摘要 + 最近的调阅，信息没有消失。
+   */
+  const [open, setOpen] = useState(false);
+  const latest = logs?.length
+    ? logs.reduce((a, b) => ((a.createdAt ?? '') > (b.createdAt ?? '') ? a : b))
+    : null;
+
   return (
     <section>
-      <SectionTitle>
+      <SectionTitle
+        action={
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+          >
+            {open ? '收起' : '展开'}
+          </button>
+        }
+      >
         隐私与授权
-        <span className="ml-2 text-xs font-normal text-gray-400">
-          谁看过你的数据
-        </span>
+        <span className="ml-2 text-xs font-normal text-gray-400">谁看过你的数据</span>
       </SectionTitle>
 
-      {/* 自动授权开关 */}
-      <div className="rounded-xl border border-gray-200 bg-white p-3">
+      {!open ? (
+        <p className="rounded-xl border border-gray-200 bg-surface px-3 py-2.5 text-xs leading-relaxed text-gray-600">
+          {logs === null
+            ? '正在读取访问记录…'
+            : latest === null
+              ? '还没有医院调阅过你的数据。'
+              : `共 ${logs!.length} 次调阅，最近一次：${hospitalName(latest.hospitalCode)}${
+                  latest.createdAt ? ` · ${latest.createdAt.slice(0, 10)}` : ''
+                }。`}
+          <span className="text-gray-400"> 点「展开」可关闭自动授权或生成就诊匹配码。</span>
+        </p>
+      ) : (
+        <div>
+          {/* 自动授权开关 */}
+      <div className="rounded-xl border border-gray-200 bg-surface p-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-gray-900">
@@ -124,12 +159,12 @@ export function PrivacySection() {
             disabled={busy}
             onClick={toggleAuto}
             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              autoGrant ? 'bg-brand-700' : 'bg-gray-300'
+              autoGrant ? 'bg-action' : 'bg-gray-300'
             } disabled:opacity-50`}
             aria-label={autoGrant ? '关闭自动授权' : '开启自动授权'}
           >
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface transition-transform ${
                 autoGrant ? 'translate-x-5.5' : 'translate-x-0.5'
               }`}
               style={{ transform: `translateX(${autoGrant ? '22px' : '2px'})` }}
@@ -159,7 +194,7 @@ export function PrivacySection() {
             {bindings.map((b) => (
               <div
                 key={b.matchCode}
-                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2"
+                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-surface px-3 py-2"
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-gray-500">{hospitalName(b.hospitalCode)}</div>
@@ -179,7 +214,7 @@ export function PrivacySection() {
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+          <div className="rounded-lg border border-gray-200 bg-surface px-3 py-2">
             <p className="text-xs leading-relaxed text-gray-500">
               还没有匹配码。生成后告诉挂号窗口，该院医生本次就诊时就能调阅你的报告。
             </p>
@@ -187,7 +222,7 @@ export function PrivacySection() {
               type="button"
               onClick={() => void genCode('Z2-JFL')}
               disabled={busy}
-              className="mt-2 h-8 rounded-lg bg-brand-700 px-3 text-xs font-medium text-white hover:bg-brand-800 disabled:opacity-50"
+              className="mt-2 h-8 rounded-lg bg-action px-3 text-xs font-medium text-white hover:bg-action-hover disabled:opacity-50"
             >
               生成浙大二院的匹配码
             </button>
@@ -200,7 +235,7 @@ export function PrivacySection() {
         <div className="mb-1.5 flex items-baseline gap-2">
           <span className="text-xs font-medium text-gray-600">访问记录</span>
           {logs && logs.length > 0 ? (
-            <span className="text-[10px] text-gray-400">{logs.length} 条</span>
+            <span className="text-3xs text-gray-400">{logs.length} 条</span>
           ) : null}
         </div>
 
@@ -212,7 +247,7 @@ export function PrivacySection() {
         ) : logs === null ? (
           <div className="h-14 animate-pulse rounded-lg bg-gray-100" />
         ) : logs.length === 0 ? (
-          <div className="rounded-lg border border-gray-200 bg-white px-3 py-3 text-xs text-gray-400">
+          <div className="rounded-lg border border-gray-200 bg-surface px-3 py-3 text-xs text-gray-400">
             还没有医院调阅过你的数据。一旦有调阅，这里会显示是哪家医院、什么时候、看了几条。
           </div>
         ) : (
@@ -224,11 +259,11 @@ export function PrivacySection() {
                   ? 'bg-green-500'
                   : meta.tone === 'warn'
                     ? 'bg-amber-500'
-                    : 'bg-brand-600';
+                    : 'bg-action';
               return (
                 <li
                   key={l.id}
-                  className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2"
+                  className="flex items-start gap-2 rounded-lg border border-gray-200 bg-surface px-3 py-2"
                 >
                   <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
                   <div className="min-w-0 flex-1">
@@ -241,7 +276,7 @@ export function PrivacySection() {
                         <span className="text-xs text-gray-400">{l.itemCount} 条</span>
                       ) : null}
                     </div>
-                    <div className="mt-0.5 text-[10px] text-gray-400">
+                    <div className="mt-0.5 text-3xs text-gray-400">
                       {l.createdAt?.replace('T', ' ').slice(0, 16)}
                       {l.visitDate ? ` · 就诊日 ${l.visitDate}` : ''}
                     </div>
@@ -258,10 +293,9 @@ export function PrivacySection() {
         每一次调阅都会记录在这里，你可以随时关闭自动授权。
         我们不会把你的数据提供给任何其他机构。
       </p>
+        </div>
+      )}
     </section>
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
-}

@@ -7,7 +7,7 @@ export default function NotFoundPage() {
       <p className="mt-1.5 text-xs text-gray-400">链接可能已失效。</p>
       <Link
         to="/"
-        className="mt-5 inline-flex h-10 items-center rounded-lg bg-brand-700 px-4 text-sm text-white"
+        className="mt-5 inline-flex h-10 items-center rounded-lg bg-action px-4 text-sm text-white"
       >
         回到问诊
       </Link>

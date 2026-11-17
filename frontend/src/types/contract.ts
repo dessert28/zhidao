@@ -172,12 +172,20 @@ export interface BookingPreview {
    * 院区编码。下单时必须带 —— 后端按 `hospitalCode` 分发到对应的
    * `HospitalAdapter`，只有展示名是查不到的。
    *
-   * 加这一列是实测出来的：预览卡上有「确认挂号」按钮，
-   * 而原契约只有 `hospital`（展示名"，无法用于下单。
+   * 加这一列是实测出来的：预览卡的「去挂号」要把它带到挂号页，
+   * 而原契约只有 `hospital`（展示名），无法用于下单。
    */
   hospitalCode: string;
   hospital: string;
   department: string;
+  /**
+   * 分诊给出的科室候选（首选在前），空数组/undefined 表示没有候选。
+   *
+   * 挂号页用它渲染可切换的科室：用户能在**推荐范围内**换科，
+   * 但不能换成列表外的科 —— 既给了选择权，也不至于让挂号结果
+   * 和问诊结论完全脱节。
+   */
+  departmentOptions?: string[];
   doctor: string | null;
   slot: string;
   /** 锁号 TTL，前端倒计时依据 */

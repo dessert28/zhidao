@@ -24,6 +24,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AskBar } from '../components/home/AskBar';
+import { NextBookingBanner, type UpcomingBooking } from '../components/home/NextBookingBanner';
+import { TodayHero } from '../components/home/TodayHero';
+import { Card } from '../components/ui/Card';
+import { Callout } from '../components/ui/Callout';
+import { SectionTitle } from '../components/ui/SectionTitle';
 import {
   ensureLogin,
   getBookings,
@@ -31,13 +37,14 @@ import {
   getRecords,
   getReminders,
   hospitalName,
+  loadHospitalCatalog,
   type BackendFailure,
   type BookingOrder,
   type MedicalRecord,
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
-import { buildDosePlan, slotTemporal, summarizeDay, type DoseSlot } from '../lib/health/dosing';
+import { buildDosePlan, countDistinctMeds, slotTemporal, summarizeDay, type DoseSlot } from '../lib/health/dosing';
 import {
   getDayStatus,
   readDoseLog,
@@ -82,7 +89,15 @@ export default function TodayPage() {
     setState((s) => ({ ...s, loading: true, failure: null }));
 
     const fetchAll = async () =>
-      Promise.all([getRecords(), getProfile(), getReminders(), getBookings()]);
+      /*
+       * 院区目录一起拉。
+       *
+       * 原来这页从不 loadHospitalCatalog，而标题里又调 hospitalName() ——
+       * 目录没加载时 hospitalName 只能返回编码本身，于是首页会出现
+       * "H001 消化内科"这种内部编号。患者看不懂，演示时也不好解释。
+       * 失败不影响其他数据：降级成编码而已，所以放进同一个 Promise.all。
+       */
+      Promise.all([getRecords(), getProfile(), getReminders(), getBookings(), loadHospitalCatalog()]);
 
     let [rec, prof, rem, bk] = await fetchAll();
 
@@ -239,71 +254,124 @@ export default function TodayPage() {
     return { todayItems, soonItems };
   }, [state.reminders, state.bookings, now]);
 
-  const dateLabel = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
-  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
+  /**
+   * 下一次就诊。
+   *
+   * <p>首页顶部的横条只放一条最该知道的预约：过期的、已取消的都排除，
+   * 按时间升序取第一条。没有就整条不渲染。
+   */
+  const nextBooking = useMemo<UpcomingBooking | null>(() => {
+    const today = toDateStr(now);
+    const upcoming = state.bookings
+      .filter(
+        (b) =>
+          (b.status === 'CREATED' || b.status === 'CONFIRMED') &&
+          new Date(b.visitTime).getTime() >= now.getTime(),
+      )
+      .sort((a, b) => a.visitTime.localeCompare(b.visitTime));
+    const b = upcoming[0];
+    if (!b) return null;
+
+    /*
+     * 「还剩几天」按日历天数算，不按 24 小时算。
+     * 今晚 23:00 打开、预约明天 09:00 就诊：实际只差 10 小时，
+     * 但患者说的是"明天"。拿毫秒除会得到 0 天，横条上就写成"今天"了。
+     */
+    const visitDay = new Date(`${b.visitTime.slice(0, 10)}T00:00:00`);
+    const todayDay = new Date(`${today}T00:00:00`);
+    const daysUntil = Math.max(
+      0,
+      Math.round((visitDay.getTime() - todayDay.getTime()) / 86_400_000),
+    );
+
+    return {
+      department: b.department,
+      hospital: hospitalName(b.hospitalCode),
+      visitTime: b.visitTime,
+      today: b.visitTime.slice(0, 10) === today,
+      daysUntil,
+      pending: b.status === 'CREATED',
+    };
+  }, [state.bookings, now]);
 
   if (state.loading) {
     return (
-      <div className="space-y-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-100" />
-        ))}
+      /*
+       * 骨架必须包含英雄区，且高度接近。
+       * 原来这里是 3 个 h-24，内容一到位整页会往下跳一截 ——
+       * 滑到一半被顶开比"多看一眼骨架"更难受。
+       */
+      <div className="space-y-5">
+        <div className="h-[300px] animate-pulse rounded-3xl bg-gray-100" />
+        <div className="space-y-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-100" />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (state.failure) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <div className="text-sm font-medium text-amber-900">暂时读不到你的数据</div>
-        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+      /*
+       * 后端读不到数据用中性灰虚线，不是琥珀。
+       * 琥珀在这个界面里表示"你要做点什么"（空腹、复查到期）；
+       * 服务没起来是"我们这边没读到"，把它染成警告色，
+       * 真正的医疗提醒就会被一起忽略。
+       */
+      <Callout
+        tone="neutral"
+        title="暂时读不到你的数据"
+        action={
+          <button
+            type="button"
+            onClick={load}
+            className="rounded-lg border border-gray-300 bg-surface px-3 py-1 text-xs text-gray-700 hover:border-gray-400"
+          >
+            重试
+          </button>
+        }
+      >
+        <span className="text-xs">
           {state.failure.kind === 'unreachable'
             ? '后端未启动。在 backend 目录执行 mvn spring-boot:run 后再试。'
             : state.failure.kind === 'unauthorized'
               ? '登录已失效，请重试。'
               : state.failure.message}
-        </p>
-        <button
-          type="button"
-          onClick={load}
-          className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
-        >
-          重试
-        </button>
-      </div>
+        </span>
+      </Callout>
     );
   }
 
-  const medCount = plan.slots.reduce((n, s) => n + s.meds.length, 0);
+  const medCount = countDistinctMeds(plan.slots);
+  // 只算「今天」：明天有预约不代表今天有安排，标题不能替用户把话说满
   const hasAnything = plan.slots.length > 0 || agenda.todayItems.length > 0;
 
   return (
-    <div className="space-y-5">
-      {/* 顶部：今天 */}
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">
-          今天要做什么
-        </h1>
-        <p className="mt-1.5 text-sm text-gray-500">
-          {dateLabel} · {weekday}
-          {medCount > 0 ? ` · 今天共 ${plan.slots.length} 个服药时间点` : ''}
-        </p>
-      </div>
+    <>
+      {/*
+        pb-20：给底部那条悬浮的「问一句」留位置。
+        不留的话，最后一行说明会被它压住 —— 而那行字恰好是免责说明，
+        是这个产品最不能含糊的一句话。
+      */}
+      <div className="space-y-5 pb-20">
+        {nextBooking ? <NextBookingBanner booking={nextBooking} /> : null}
 
-      {!hasAnything ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 text-center">
-          <p className="text-sm text-gray-500">今天没有安排。</p>
-          <p className="mt-1 text-xs text-gray-400">
-            上传一份病历，我就能帮你把要吃的药和该做的检查整理出来。
-          </p>
-          <Link
-            to="/records"
-            className="mt-3 inline-flex h-9 items-center rounded-lg bg-brand-700 px-4 text-sm font-medium text-white hover:bg-brand-800"
-          >
-            上传病历
-          </Link>
-        </div>
-      ) : null}
+        <TodayHero
+          now={now}
+          slotsTotal={plan.slots.length}
+          medCount={medCount}
+          taken={progress.taken}
+          skipped={progress.skipped}
+          todayCount={agenda.todayItems.length}
+          hasAnything={hasAnything}
+          hasVisitToday={nextBooking?.today ?? false}
+          hasUpcomingBooking={nextBooking != null}
+        />
+
+      {/* 空态不再单独占一张卡 —— 英雄区已经说了"今天没有安排"并给出唯一动作，
+          两张卡说同一句话只会让人以为漏翻了什么 */}
 
       {/* 今天的药 */}
       {plan.slots.length > 0 ? (
@@ -318,13 +386,10 @@ export default function TodayPage() {
 
       {/* 用法未记录的药：单独列出，不猜 */}
       {plan.unscheduled.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-          <div className="text-xs font-medium text-amber-900">这些药病历里没写用法</div>
-          <p className="mt-1 text-xs leading-relaxed text-amber-800">
-            {plan.unscheduled.map((u) => u.name).join('、')}
-            —— 建议按药盒说明服用，有疑问问医生或药师。
-          </p>
-        </div>
+        <Callout tone="neutral" title="病历里未具体说明这些药的用法" dense>
+          {plan.unscheduled.map((u) => u.name).join('、')}
+          —— 建议按药盒说明服用，有疑问问医生或药师。
+        </Callout>
       ) : null}
 
       {/* 今天 + 接下来 */}
@@ -335,34 +400,16 @@ export default function TodayPage() {
         <AgendaSection title="接下来" items={agenda.soonItems} />
       ) : null}
 
-      {/* 底部入口 */}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <Link
-          to="/chat"
-          className="inline-flex h-9 items-center rounded-lg bg-brand-700 px-4 text-sm font-medium text-white hover:bg-brand-800"
-        >
-          去问诊
-        </Link>
-        <Link
-          to="/health"
-          className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
-        >
-          健康管家
-        </Link>
-        <Link
-          to="/summary"
-          className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
-        >
-          就诊摘要
-        </Link>
+        {/* 底部入口不再重复导航 —— 六个快捷入口已经在英雄区里 */}
+        <p className="text-xs leading-relaxed text-gray-500">
+          服药时间来自病历上的频次与时机。病历只写「饭后」「睡前」时，这里给的是一段时间
+          （如早饭后），不是某个钟点 —— 按你那天实际的吃饭时间把握即可。
+          「已服用」只是你的自记，留在本机，不会上传，也不代替医嘱。
+        </p>
       </div>
 
-      <p className="text-xs leading-relaxed text-gray-400">
-        服药时间来自病历上的频次与时机。病历只写「饭后」「睡前」时，这里给的是一段时间
-        （如早饭后），不是某个钟点 —— 按你那天实际的吃饭时间把握即可。
-        「已服用」只是你的自记，留在本机，不会上传，也不代替医嘱。
-      </p>
-    </div>
+      <AskBar />
+    </>
   );
 }
 
@@ -381,6 +428,44 @@ export default function TodayPage() {
  *   · 待服    → 有色块。模糊时间显示「早饭后 · 约 07:30–09:00」，
  *               精确时间显示「08:30」，并且**不把模糊档印成钟点**
  */
+/**
+ * 把病历上的时机词翻译成"手上该怎么吃"。
+ *
+ * <p>「餐后服用」四个字，实际要做的事是"先吃点东西再吃药"——但患者
+ * 看到"餐后"经常理解成"吃完饭以后随便什么时候"。这一句话就是把名词
+ * 变成动作。
+ *
+ * <p>只复述病历里写了什么，不添加病历没写的医嘱（不写"空腹伤胃"这种
+ * 它没说过的因果）。同一句话只说一次：三档都写"餐后"不该印三遍。
+ */
+function doseTips(slots: DoseSlot[]): string[] {
+  const said = new Map<string, string>();
+
+  for (const slot of slots) {
+    for (const med of slot.meds) {
+      const raw = med.timing?.trim();
+      if (!raw) continue;
+
+      const action = /不可空腹|忌空腹|不宜空腹|避免空腹/.test(raw)
+        ? '别空腹吃：先吃点东西，再吃药。'
+        : /空腹|餐前|饭前/.test(raw)
+          ? '先吃药，再吃饭。'
+          : /餐后|饭后/.test(raw)
+            ? '先吃点东西再吃药，别空腹。'
+            : /睡前|临睡/.test(raw)
+              ? '睡前吃，吃完就别再吃东西。'
+              : /晨起|清晨|早上/.test(raw)
+                ? '起床后先吃，再吃早饭。'
+                : null;
+
+      if (!action) continue;
+      if (!said.has(action)) said.set(action, `病历写的是「${raw}」：${action}`);
+    }
+  }
+
+  return [...said.values()];
+}
+
 function DoseSection({
   slots,
   now,
@@ -394,39 +479,59 @@ function DoseSection({
   onMark: (slotId: string, next: DoseStatus | null) => void;
   progressText: string;
 }) {
+  const tips = doseTips(slots);
+
   return (
     <section>
-      <SectionTitle>
-        今天的药
-        <span className="ml-2 text-xs font-normal text-gray-400">{summarizeDay(slots)}</span>
-      </SectionTitle>
+      <SectionTitle>今天要吃哪些药</SectionTitle>
 
-      {progressText ? (
-        <p className="mb-2 text-xs text-gray-500">{progressText}</p>
+      {/*
+        摘要与进度分两行、两种语气：
+        第一行说"今天一共多少药"（客观事实），第二行说"你记了几档"（进度）。
+        原来这两句挤在标题右边，读起来像一句很长的话，谁都不突出。
+
+        一条都没记录时 progressText 是空的 —— "今天 3 档，都还没到记录的
+        时候"这种话既不是信息也不是提醒，只会占掉一行注意力。
+      */}
+      <p className="mb-1 text-xs leading-relaxed text-gray-600">{summarizeDay(slots)}</p>
+
+      {/*
+        把「餐后」「空腹」翻译成动作。
+        病历写"餐后服用"，很多人照样空腹吞 —— 一句话的差别是胃受不受得了。
+        只复述病历写了什么，不加它没写的医嘱。
+      */}
+      {tips.length > 0 ? (
+        <div className="mb-2 space-y-1 rounded-lg border border-alert-line bg-alert-soft px-2.5 py-2">
+          {tips.map((t) => (
+            <p key={t} className="text-xs leading-relaxed text-gray-800">
+              {t}
+            </p>
+          ))}
+        </div>
       ) : null}
 
-      <div className="space-y-2">
+      {progressText ? (
+        <p className="mb-2 text-xs leading-relaxed text-gray-500">{progressText}</p>
+      ) : null}
+
+      <div className="stagger-1 space-y-2">
         {slots.map((slot) => {
           const state = status[slot.id];
           const temporal = slotTemporal(slot, now);
           const done = state === 'taken' || state === 'skipped';
 
           /*
-           * 三种底色的含义，不能混用：
-           *   done        → 灰（已处理，别再吸引注意力）
-           *   now         → 蓝（就是现在这一段，最该看）
-           *   passed/未来 → 中性
-           * 只有"正在这一段"用强色：一直在闪的东西等于一直在喊，
+           * 三档含义，不能混用：
+           *   done  → 灰（已处理，别再吸引注意力）
+           *   now   → 青绿浅底 + 左侧强调条（就是现在这一段，最该看）
+           *   其它  → 中性
+           * 只有"正在这一段"上色：一直在闪的东西等于一直在喊，
            * 喊久了没人听。
            */
-          const box = done
-            ? 'border-gray-200 bg-gray-50'
-            : temporal === 'now'
-              ? 'border-brand-300 bg-brand-50'
-              : 'border-gray-200 bg-white';
+          const tone = done ? 'muted' : temporal === 'now' ? 'brand' : 'neutral';
 
           return (
-            <div key={slot.id} className={`rounded-xl border p-3 ${box}`}>
+            <Card key={slot.id} as="div" pad="sm" tone={tone} accent={!done && temporal === 'now'}>
               <div className="flex gap-3">
                 <div className="w-16 shrink-0">
                   {slot.kind === 'exact' ? (
@@ -450,7 +555,9 @@ function DoseSection({
                       {slot.label}
                     </div>
                   )}
-                  <div className="mt-0.5 text-[10px] text-gray-400">
+                  <div
+                    className={`mt-0.5 text-2xs ${temporal === 'now' && !done ? 'font-medium text-brand-700' : 'text-gray-500'}`}
+                  >
                     {state === 'taken'
                       ? '已服用'
                       : state === 'skipped'
@@ -469,7 +576,7 @@ function DoseSection({
 
                 <div className="min-w-0 flex-1">
                   {slot.kind === 'fuzzy' && slot.hint ? (
-                    <p className="mb-1 text-[11px] text-gray-400">{slot.hint}</p>
+                    <p className="mb-1 text-2xs text-gray-400">{slot.hint}</p>
                   ) : null}
                   {slot.meds.map((m) => (
                     <div key={m.name} className="text-sm leading-relaxed">
@@ -495,8 +602,8 @@ function DoseSection({
                       aria-pressed={state === 'taken'}
                       className={`rounded-lg border px-2 py-0.5 text-xs ${
                         state === 'taken'
-                          ? 'border-brand-600 bg-brand-600 text-white'
-                          : 'border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700'
+                          ? 'border-action bg-action text-white'
+                          : 'border-gray-300 bg-surface text-gray-600 hover:border-brand-400 hover:text-brand-700'
                       }`}
                     >
                       已服用
@@ -508,7 +615,7 @@ function DoseSection({
                       className={`rounded-lg border px-2 py-0.5 text-xs ${
                         state === 'skipped'
                           ? 'border-gray-400 bg-gray-200 text-gray-700'
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-400'
+                          : 'border-gray-200 bg-surface text-gray-500 hover:border-gray-400'
                       }`}
                     >
                       跳过
@@ -516,7 +623,7 @@ function DoseSection({
                   </div>
                 </div>
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>
@@ -545,51 +652,59 @@ function AgendaSection({
 }) {
   return (
     <section>
-      <SectionTitle>
-        {title}
-        <span className="ml-2 text-xs font-normal text-gray-400">{items.length} 项</span>
-      </SectionTitle>
+      <SectionTitle count={`${items.length} 项`}>{title}</SectionTitle>
 
-      <div className="space-y-2">
+      <div className="stagger-1 space-y-2">
         {items.map((it) => {
-          const dot =
-            it.kind === 'warn' ? 'bg-amber-500' : it.kind === 'booking' ? 'bg-brand-600' : 'bg-gray-400';
-          const box = highlight
-            ? it.kind === 'warn'
-              ? 'border-amber-200 bg-amber-50/60'
-              : 'border-gray-200 bg-white'
-            : 'border-gray-200 bg-white';
+          /*
+           * 颜色按"这件事是什么"分，不按"它要不要紧"分：
+           *   预约（已确认）→ 蓝。时间是这一页最需要被一眼找到的信息
+           *   待确认预约   → 琥珀。还需要你打个电话 / 到自助机取号
+           *   提醒         → 琥珀。复查到期、空腹禁食都属于"该做点什么"
+           * 用一条左侧强调条而不是整块铺色：一列浅黄铺满之后，
+           * 每一块都在喊，等于都没喊。
+           */
+          const tone = it.kind === 'booking' ? 'appt' : 'alert';
+          const badge = it.kind === 'booking' ? '预约' : it.kind === 'warn' ? '待确认' : '提醒';
           return (
-            <div key={it.key} className={`flex gap-2.5 rounded-xl border p-3 ${box}`}>
-              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium leading-snug text-gray-900">{it.title}</div>
-                <p className="mt-0.5 text-xs leading-relaxed text-gray-600">{it.detail}</p>
-                {/*
-                  可点的入口。
-                  原来 detail 里写着「请打开预约详情确认或取消」，
-                  但整块是死的、没有链接 —— 一句话指了个不存在的地方，
-                  比不说更让人恼火。现在这句话后面真的能点。
-                */}
-                {it.href ? (
-                  <Link
-                    to={it.href}
-                    className="mt-1 inline-block text-xs font-medium text-brand-700 underline underline-offset-2"
-                  >
-                    查看预约详情
-                  </Link>
-                ) : null}
+            <Card key={it.key} pad="sm" tone={tone} accent={highlight || it.kind !== 'reminder'}>
+              <div className="flex items-start gap-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <div className="text-sm font-medium leading-snug text-gray-900">
+                      {it.title}
+                    </div>
+                    <span
+                      className={`ml-auto shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium ${
+                        it.kind === 'booking' ? 'bg-appt-solid text-white' : 'bg-alert-solid text-white'
+                      }`}
+                    >
+                      {badge}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-gray-700">{it.detail}</p>
+                  {/*
+                    可点的入口。
+                    原来 detail 里写着「请打开预约详情确认或取消」，
+                    但整块是死的、没有链接 —— 一句话指了个不存在的地方，
+                    比不说更让人恼火。现在这句话后面真的能点。
+                  */}
+                  {it.href ? (
+                    <Link
+                      to={it.href}
+                      className="mt-1 inline-block text-xs font-medium text-brand-700 underline underline-offset-2"
+                    >
+                      查看详情
+                    </Link>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>
     </section>
   );
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
 }
 
 /* ============================ 日期工具 ============================ */

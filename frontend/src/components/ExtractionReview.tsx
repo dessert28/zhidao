@@ -98,7 +98,7 @@ export function ExtractionReview({
     <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
       <div className="flex items-baseline gap-2">
         <h3 className="text-sm font-medium text-gray-900">核对识别结果</h3>
-        <span className="rounded bg-white px-1.5 py-0.5 text-[11px] text-brand-700">
+        <span className="rounded bg-surface px-1.5 py-0.5 text-2xs text-brand-700">
           规则抽取
         </span>
       </div>
@@ -119,10 +119,10 @@ export function ExtractionReview({
           onChange={(e) => setBrief(e.target.value)}
           rows={3}
           maxLength={BRIEF_LIMIT}
-          className="mt-1 block w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-relaxed text-gray-800"
+          className="mt-1 block w-full resize-y rounded-lg border border-gray-200 bg-surface px-3 py-2 text-sm leading-relaxed text-gray-800"
           placeholder="没有抽取到文字，可以手动填写主诉或诊断"
         />
-        <div className="mt-1 flex items-center justify-between text-[11px] text-gray-400">
+        <div className="mt-1 flex items-center justify-between text-2xs text-gray-400">
           <span>这段摘要会显示在时间轴上；改这里不会改动本地原文。</span>
           <span className="tabular-nums">
             {brief.length}/{BRIEF_LIMIT}
@@ -134,7 +134,7 @@ export function ExtractionReview({
         <div className="mt-4">
           <div className="flex items-baseline gap-2">
             <span className="text-xs font-medium text-gray-600">检查项目</span>
-            <span className="text-[11px] text-gray-400">{items.length} 项</span>
+            <span className="text-2xs text-gray-400">{items.length} 项</span>
           </div>
 
           {items.length === 0 ? (
@@ -147,7 +147,7 @@ export function ExtractionReview({
               {items.map((it) => (
                 <li
                   key={it.key}
-                  className="rounded-lg border border-gray-200 bg-white p-2.5"
+                  className="rounded-lg border border-gray-200 bg-surface p-2.5"
                 >
                   <div className="flex items-center gap-2">
                     <input
@@ -181,7 +181,7 @@ export function ExtractionReview({
                     </button>
                   </div>
 
-                  <div className="mt-1 flex items-center gap-2 text-[11px]">
+                  <div className="mt-1 flex items-center gap-2 text-2xs">
                     {it.fasting === true ? (
                       <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
                         需空腹
@@ -209,14 +209,14 @@ export function ExtractionReview({
           <button
             type="button"
             onClick={addItem}
-            className="mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:border-brand-300"
+            className="mt-2 rounded-lg border border-gray-300 bg-surface px-3 py-1 text-xs text-gray-700 hover:border-brand-300"
           >
             + 新增一项
           </button>
         </div>
       ) : null}
 
-      <p className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-gray-500">
+      <p className="mt-3 rounded-lg bg-surface/70 px-3 py-2 text-xs leading-relaxed text-gray-500">
         {draft.kind === 'examOrder' ? (
           <>
             检查项目是规则抽取，可能有遗漏或误判，
@@ -236,7 +236,7 @@ export function ExtractionReview({
           type="button"
           onClick={confirm}
           disabled={busy}
-          className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className="h-9 rounded-lg bg-action px-4 text-sm font-medium text-white transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-gray-300"
         >
           {busy ? '保存中…' : '确认保存'}
         </button>
@@ -244,7 +244,7 @@ export function ExtractionReview({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:text-gray-400"
+          className="h-9 rounded-lg border border-gray-200 bg-surface px-4 text-sm text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:text-gray-400"
         >
           取消
         </button>

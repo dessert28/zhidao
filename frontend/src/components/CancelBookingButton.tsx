@@ -125,7 +125,7 @@ export function CancelBookingButton({
             type="button"
             disabled={submitting}
             onClick={() => setState({ phase: 'idle', policy: state.policy })}
-            className="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 disabled:opacity-60"
+            className="rounded border border-gray-300 bg-surface px-3 py-1 text-xs text-gray-700 disabled:opacity-60"
           >
             不了
           </button>

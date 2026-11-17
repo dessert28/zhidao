@@ -77,7 +77,7 @@ export function QueueEstimateCard({ orderId }: QueueEstimateCardProps) {
 
   if (error || !info) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-400">
+      <div className="rounded-xl border border-gray-200 bg-surface p-3 text-xs text-gray-400">
         {error ?? '暂时查不到排队情况'}
       </div>
     );
@@ -88,7 +88,7 @@ export function QueueEstimateCard({ orderId }: QueueEstimateCardProps) {
   const unreliable = e.confidence === 'LOW' || !e.reasonable;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white">
+    <div className="rounded-xl border border-gray-200 bg-surface">
       <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
         <span className="text-xs font-medium text-gray-700">排队情况</span>
         <span className={`text-xs ${meta.tone}`}>· {meta.label}</span>

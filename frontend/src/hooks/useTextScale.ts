@@ -18,10 +18,13 @@
  *
  * 行距一并放大：只放字号不放行距，中文会挤在一起反而更难读。
  *
- * ============ 偏好存哪 ============
+ * ============ 为什么改成切 data-scale 而不是写行内样式 ============
  *
- * localStorage 而不是 sessionStorage：视力需求不随"关掉标签页"改变。
- * 老人家下次打开浏览器，不该再去找一遍开关。
+ * 原来 applyTextScale 往 <html> 上写 style.fontSize，但那个值只有在
+ * React 挂载之后才生效 —— 设了"特大"的用户每次打开都要先看一次
+ * "小字跳成大字号"。现在数值写在 index.css 里，index.html 的内联脚本
+ * 在首帧前就把 data-scale 打好，打开即最终状态，一次跳变都没有。
+ * 顺带的好处是"115%"这类魔法数字只存在一处。
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -31,15 +34,32 @@ const STORAGE_KEY = 'zhidao:text-scale';
 /** 三档：标准 / 大 / 特大。不做连续滑块 —— 三个按钮一眼能选，滑块要看半天 */
 export type TextScale = 'normal' | 'large' | 'xlarge';
 
-const SCALES: Record<TextScale, { root: string; lineHeight: string; label: string }> = {
-  normal: { root: '100%', lineHeight: '1.5', label: '标准' },
+/**
+ * 档位元数据。
+ *
+ * <p>percent 只用于展示与测试断言 —— 真正生效的字号在 index.css 的
+ * html[data-scale=…] 规则里。两处值必须一致。
+ */
+const SCALES: Record<TextScale, { percent: number; label: string }> = {
+  normal: { percent: 100, label: '标准' },
   // 115%：大约 14px → 16px，是"看得出来但没变样"的第一档
-  large: { root: '115%', lineHeight: '1.65', label: '大' },
+  large: { percent: 115, label: '大' },
   // 132%：接近系统"超大字体"，正文接近 18.5px
-  xlarge: { root: '132%', lineHeight: '1.8', label: '特大' },
+  xlarge: { percent: 132, label: '特大' },
 };
 
 function readStored(): TextScale {
+  /*
+   * ?scale=large / ?scale=xlarge 覆盖（演示与截图用）。
+   * 与 index.html 的内联脚本读同一个参数 —— 否则首帧按 URL 放大、
+   * 挂载后又被 localStorage 改回去，用户会看到字号跳一下。
+   */
+  try {
+    const forced = new URLSearchParams(window.location.search).get('scale');
+    if (forced === 'large' || forced === 'xlarge') return forced;
+  } catch {
+    /* 非浏览器环境（测试）时没有 location.search */
+  }
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === 'large' || v === 'xlarge' || v === 'normal') return v;
@@ -49,11 +69,19 @@ function readStored(): TextScale {
   return 'normal';
 }
 
-/** 把档位应用到 <html>。放独立函数，方便在首屏渲染前调用一次 */
+/**
+ * 把档位应用到 <html>。
+ *
+ * <p>标准档删掉属性而不是写 data-scale="normal"：
+ * 少一条属性就少一条 CSS 规则要匹配，也让"默认态"在 DOM 上可见。
+ */
 export function applyTextScale(scale: TextScale): void {
   const root = document.documentElement;
-  root.style.fontSize = SCALES[scale].root;
-  root.style.lineHeight = SCALES[scale].lineHeight;
+  if (scale === 'normal') {
+    delete root.dataset.scale;
+  } else {
+    root.dataset.scale = scale;
+  }
 }
 
 export function useTextScale(): {

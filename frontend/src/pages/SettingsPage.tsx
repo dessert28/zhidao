@@ -20,6 +20,10 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useState } from 'react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { SectionTitle } from '../components/ui/SectionTitle';
+import { THEME_OPTIONS } from '../hooks/useTheme';
+import { useUiPrefs } from '../hooks/ui-prefs';
 
 const STORAGE_KEY = 'zhidao:llm-config';
 
@@ -68,6 +72,7 @@ type TestResult =
   | { phase: 'fail'; message: string; detail?: string };
 
 export default function SettingsPage() {
+  const { themeMode, setThemeMode } = useUiPrefs();
   const [provider, setProvider] = useState('deepseek');
   const [baseURL, setBaseURL] = useState(PRESETS[0]!.baseURL);
   const [model, setModel] = useState(PRESETS[0]!.model);
@@ -248,13 +253,15 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">模型设置</h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
-          填你自己的大模型接口。不填也能用 —— 系统会自动退回本地规则，
-          只是回答没那么灵活。
-        </p>
-      </header>
+      <PageHeader
+        title="页面与模型设置"
+        subtitle={
+          <>
+            模型接口填你自己的也行，不填也能用 —— 系统会自动退回本地规则，只是回答没那么灵活。
+            下面的外观设置只影响这台设备。
+          </>
+        }
+      />
 
       {/* ---------- 当前状态 ---------- */}
       {serverState ? (
@@ -292,7 +299,7 @@ export default function SettingsPage() {
       </section>
 
       {/* ---------- 表单 ---------- */}
-      <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+      <section className="space-y-3 rounded-xl border border-gray-200 bg-surface p-4">
         <label className="block text-xs text-gray-500">
           服务商
           <select
@@ -370,15 +377,15 @@ export default function SettingsPage() {
           </div>
 
           {modelState === 'ok' ? (
-            <p className="mt-1 text-[11px] text-gray-400">
+            <p className="mt-1 text-2xs text-gray-400">
               已从服务商拉到 {models.length} 个模型，从上面选一个即可。
             </p>
           ) : null}
           {modelState === 'fail' ? (
-            <p className="mt-1 text-[11px] leading-relaxed text-amber-700">{modelHint}</p>
+            <p className="mt-1 text-2xs leading-relaxed text-amber-700">{modelHint}</p>
           ) : null}
           {modelState === 'idle' ? (
-            <p className="mt-1 text-[11px] leading-relaxed text-gray-400">
+            <p className="mt-1 text-2xs leading-relaxed text-gray-400">
               可以先保存，再点「获取模型列表」—— 不用自己去查模型名。
             </p>
           ) : null}
@@ -413,7 +420,7 @@ export default function SettingsPage() {
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white disabled:bg-gray-300"
+            className="h-9 rounded-lg bg-action px-4 text-sm font-medium text-white disabled:bg-gray-300"
           >
             {saving ? '保存中…' : '保存'}
           </button>
@@ -421,7 +428,7 @@ export default function SettingsPage() {
             type="button"
             onClick={() => void runTest()}
             disabled={test.phase === 'testing'}
-            className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 disabled:opacity-60"
+            className="h-9 rounded-lg border border-gray-200 bg-surface px-4 text-sm text-gray-700 disabled:opacity-60"
           >
             {test.phase === 'testing' ? '测试中…' : '测试连接'}
           </button>
@@ -445,7 +452,7 @@ export default function SettingsPage() {
           <div className="rounded-lg bg-amber-50 px-3 py-2">
             <p className="text-xs leading-relaxed text-amber-900">{test.message}</p>
             {test.detail ? (
-              <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-amber-700">
+              <p className="mt-1 break-all font-mono text-2xs leading-relaxed text-amber-700">
                 {test.detail}
               </p>
             ) : null}
@@ -457,6 +464,57 @@ export default function SettingsPage() {
         保存后配置只放在本机浏览器；本地服务这一侧仅临时持有、不落盘，
         服务重启后由页面重新提交。密钥不会写进日志，也不会出现在任何接口返回里。
       </p>
+
+      {/* ---------- 外观 ---------- */}
+      {/*
+        顶栏只放了一个太阳/月亮（点一下就在亮暗之间切），
+        三选一放在这里：默认"跟随系统"这一步不能省 ——
+        手机系统已经是深色的人，不该被我们先亮一下。
+      */}
+      <section>
+        <SectionTitle>外观</SectionTitle>
+        <div className="space-y-1.5">
+          {THEME_OPTIONS.map((o) => {
+            const active = themeMode === o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setThemeMode(o.value)}
+                aria-pressed={active}
+                className={
+                  'flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors ' +
+                  (active
+                    ? 'border-brand-300 bg-brand-50'
+                    : 'border-gray-200 bg-surface hover:border-gray-300')
+                }
+              >
+                <span
+                  className={
+                    'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ' +
+                    (active ? 'border-action bg-action' : 'border-gray-300')
+                  }
+                  aria-hidden="true"
+                >
+                  {active ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+                </span>
+                <span className="min-w-0">
+                  <span
+                    className={
+                      'block text-sm font-medium ' + (active ? 'text-brand-800' : 'text-gray-900')
+                    }
+                  >
+                    {o.label}
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-gray-500">
+                    {o.hint}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

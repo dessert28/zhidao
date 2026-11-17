@@ -29,12 +29,14 @@ import {
   type MedicalRecord,
   type PatientProfile,
 } from '../lib/api';
+import { Callout } from '../components/ui/Callout';
+import { SubPageHeader } from '../components/ui/SubPageHeader';
+import { SectionTitle } from '../components/ui/SectionTitle';
+import { Clamp, Fold } from '../components/ui/Fold';
+import { ChevronRightIcon } from '../components/ui/icons';
+import { Stat } from '../components/ui/Stat';
 import { buildTrends, type MarkerTrend } from '../lib/health/markers';
-import {
-  buildCheckupSuggestions,
-  summarizeCheckups,
-  type CheckupSuggestion,
-} from '../lib/health/checkups';
+import { buildCheckupSuggestions, type CheckupSuggestion } from '../lib/health/checkups';
 import {
   dedupeByLatest,
   describeMedication,
@@ -156,6 +158,57 @@ export default function HealthPage() {
     [prepDept, state.profile, state.records],
   );
 
+  /*
+   * 一句话总结。
+   *
+   * 这个文件顶部的注释写了"三块内容：指标趋势 / 该做的检查 / 一句话总结"，
+   * 但代码里一直没有实现第三块 —— 三张统计卡加四块内容摆在那儿，
+   * 「我现在到底该关心哪件事」得患者自己归纳。这一句就是替他把话说出来。
+   *
+   * 优先级：到期的检查 > 超标指标 > 一切正常 > 没有数据。
+   * 检查优先，因为它是**有动作**的那件事；指标只是"知道"。
+   */
+  const headline = useMemo(() => {
+    const due = checkups.filter((c) => c.status === 'DUE');
+    const first = due[0];
+    if (first) {
+      return {
+        tone: 'alert' as const,
+        label: '现在最该做的检查',
+        text:
+          first.monthsSince !== null
+            ? `${first.name}已经 ${first.monthsSince} 个月没做了，下次就诊时一起安排上。`
+            : `${first.name}${first.reason}。`,
+      };
+    }
+
+    const a = trends.find((t) => t.points[t.points.length - 1]!.level !== 'normal');
+    if (a) {
+      const last = a.points[a.points.length - 1]!;
+      return {
+        tone: 'clinical' as const,
+        label: '最该留意的一项指标',
+        text: `最近一次${a.name}是 ${a.latest}${a.unit}，${
+          last.level === 'high' ? '高于' : '低于'
+        }参考范围。我们不做判断，下次就诊时把这张单子给医生看。`,
+      };
+    }
+
+    if (trends.length > 0) {
+      return {
+        tone: 'done' as const,
+        label: '现状',
+        text: `记录里的 ${trends.length} 项指标，最近一次都落在参考范围内。按计划复查即可，不用额外做什么。`,
+      };
+    }
+
+    return {
+      tone: 'neutral' as const,
+      label: '还没有可判断的数据',
+      text: '上传一份化验单，这里会直接告诉你现在最该关心哪一件事。',
+    };
+  }, [checkups, trends]);
+
   if (state.loading) {
     return (
       <div className="space-y-3">
@@ -168,46 +221,100 @@ export default function HealthPage() {
 
   if (state.failure) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <div className="text-sm font-medium text-amber-900">读不到你的健康数据</div>
-        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+      /* 读不到数据是"未知"，不是"危险"，所以走中性虚线而不是琥珀 */
+      <Callout
+        tone="neutral"
+        title="读不到你的健康数据"
+        action={
+          <button
+            type="button"
+            onClick={load}
+            className="rounded-lg border border-gray-300 bg-surface px-3 py-1 text-xs text-gray-700 hover:border-gray-400"
+          >
+            重试
+          </button>
+        }
+      >
+        <span className="text-xs">
           {state.failure.kind === 'unreachable'
             ? '后端未启动。在 backend 目录执行 mvn spring-boot:run 后再试。'
             : 'kind' in state.failure && 'message' in state.failure
               ? state.failure.message
               : '请稍后重试。'}
-        </p>
-        <button
-          type="button"
-          onClick={load}
-          className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
-        >
-          重试
-        </button>
-      </div>
+        </span>
+      </Callout>
     );
   }
 
+  /*
+   * 锚点条。
+   *
+   * 这一页有四块内容，加起来将近四屏。老人不会用"滚到底再往回找"，
+   * 找不到就等于没有 —— 所以把四个块名摆在最前面，点一下就跳过去。
+   * 计数为零的块不出现：点了跳到一个空块只会更困惑。
+   */
+  const anchors = [
+    { id: 'checkups', label: '该做的检查', count: checkups.length },
+    { id: 'trends', label: '指标', count: trends.length },
+    { id: 'meds', label: '用药', count: medications.length },
+    { id: 'prep', label: '就诊准备', count: prepItems.length },
+  ].filter((a) => a.count > 0);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900">健康管家</h1>
-        <p className="mt-2 text-sm leading-relaxed text-gray-500">
-          根据你上传的病历，帮你看懂指标、记住该做的检查。我们不做诊断，只在需要时提醒你找医生。
-        </p>
+    <div className="space-y-5">
+      <SubPageHeader
+        title="健康管家"
+        subtitle="帮你看懂指标、记住该做的检查。不做诊断，需要时提醒你找医生。"
+      />
+
+      <HeadlineCard {...headline} />
+
+      <SummaryStrip
+        trends={trends}
+        checkups={checkups}
+        chronicCount={state.profile?.chronics.length ?? 0}
+      />
+
+      {anchors.length > 1 ? (
+        <nav aria-label="页内跳转" className="-mt-1 flex flex-wrap gap-1.5">
+          {anchors.map((a) => (
+            <a
+              key={a.id}
+              href={`#${a.id}`}
+              className="rounded-full border border-gray-200 bg-surface px-2.5 py-1 text-xs text-gray-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+            >
+              {a.label}
+              <span className="ml-1 tabular-nums text-gray-400">{a.count}</span>
+            </a>
+          ))}
+        </nav>
+      ) : null}
+
+      {/*
+        顺序：能做的事（检查）→ 该看懂的事（指标）→ 查得到的事（用药）
+        → 到了医院再说的事（准备）。
+        原来把"用药"排在"指标"前面，于是想确认趋势的人要先滚过一整屏药名。
+      */}
+      <div id="checkups" className="scroll-mt-32">
+        <CheckupSection
+          items={checkups}
+          hasChronic={(state.profile?.chronics.length ?? 0) > 0}
+        />
       </div>
 
-      <SummaryStrip trends={trends} checkups={checkups} chronicCount={state.profile?.chronics.length ?? 0} />
+      <div id="trends" className="scroll-mt-32">
+        <TrendSection trends={trends} recordCount={state.records.length} />
+      </div>
 
-      <CheckupSection items={checkups} hasChronic={(state.profile?.chronics.length ?? 0) > 0} />
+      <div id="meds" className="scroll-mt-32">
+        <MedicationSection items={medications} knownNames={state.profile?.medications ?? []} />
+      </div>
 
-      <MedicationSection items={medications} knownNames={state.profile?.medications ?? []} />
+      <div id="prep" className="scroll-mt-32">
+        <PrepSection items={prepItems} department={prepDept} />
+      </div>
 
-      <PrepSection items={prepItems} department={prepDept} />
-
-      <TrendSection trends={trends} recordCount={state.records.length} />
-
-      <div className="rounded-xl bg-gray-100 p-4">
+      <div className="rounded-2xl bg-gray-100 p-4">
         <p className="text-xs leading-relaxed text-gray-600">
           <strong className="font-medium text-gray-800">这些判断的依据：</strong>
           参考范围取自成人通用标准，但不同医院的化验单参考范围可能略有差异，
@@ -216,20 +323,38 @@ export default function HealthPage() {
         </p>
       </div>
 
-      <div className="flex gap-2">
-        <Link
-          to="/records"
-          className="inline-flex h-10 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
-        >
-          我的病历
-        </Link>
-        <Link
-          to="/chat"
-          className="inline-flex h-10 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm text-gray-700 hover:border-brand-300"
-        >
-          去问诊
-        </Link>
-      </div>
+      <Link
+        to="/chat"
+        className="inline-flex h-10 items-center rounded-lg border border-gray-200 bg-surface px-4 text-sm text-gray-700 hover:border-brand-300"
+      >
+        还有别的问题，去问一句
+      </Link>
+    </div>
+  );
+}
+
+/* ============================ 一句话总结 ============================ */
+
+const HEADLINE_TONE = {
+  alert: 'border-alert-line bg-alert-soft',
+  clinical: 'border-clinical-line bg-clinical-soft',
+  done: 'border-done-line bg-done-soft',
+  neutral: 'border-gray-200 bg-surface',
+} as const;
+
+function HeadlineCard({
+  tone,
+  label,
+  text,
+}: {
+  tone: keyof typeof HEADLINE_TONE;
+  label: string;
+  text: string;
+}) {
+  return (
+    <div className={`rounded-2xl border p-4 shadow-card ${HEADLINE_TONE[tone]}`}>
+      <div className="text-2xs font-medium tracking-wide text-gray-500">{label}</div>
+      <p className="mt-1 text-sm leading-relaxed text-gray-900">{text}</p>
     </div>
   );
 }
@@ -250,34 +375,45 @@ function SummaryStrip({
     return last && last.level !== 'normal';
   });
   const due = checkups.filter((c) => c.status === 'DUE');
+  const unknown = checkups.filter((c) => c.status === 'UNKNOWN').length;
 
+  /*
+   * 三格一律并排，窄屏也不折行。
+   *
+   * 原来是 sm:grid-cols-3，手机上竖着排成三张高卡 —— 加上页头的返回条、
+   * 切换条和一句话总结，第一屏就什么都看不全了。
+   * 改成三列后每格只剩"一个大数字 + 一行短说明"，
+   * 长说明交给上面那句话和下面的正文。
+   */
   return (
-    <div className="grid gap-2 sm:grid-cols-3">
-      <div className="rounded-xl border border-gray-200 bg-white p-3">
-        <div className="text-xs text-gray-400">已跟踪指标</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
-          {trends.length}
-        </div>
-        <div className="mt-0.5 text-xs text-gray-500">
-          {abnormal.length > 0 ? `其中 ${abnormal.length} 项最近一次超出参考范围` : '最近一次都在参考范围内'}
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-3">
-        <div className="text-xs text-gray-400">该做的检查</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{due.length}</div>
-        <div className="mt-0.5 text-xs text-gray-500">
-          {chronicCount === 0 ? '档案里还没有慢病记录' : summarizeCheckups(checkups)}
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-3">
-        <div className="text-xs text-gray-400">建档慢病</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{chronicCount}</div>
-        <div className="mt-0.5 text-xs text-gray-500">
-          {chronicCount > 0 ? '建议按病种定期复查' : '补全档案后提醒更准'}
-        </div>
-      </div>
+    <div className="grid grid-cols-3 gap-2">
+      <Stat
+        label="已跟踪指标"
+        value={trends.length}
+        hint={abnormal.length > 0 ? `${abnormal.length} 项超范围` : '都在范围内'}
+        className="p-2.5"
+      />
+      <Stat
+        label="该做的检查"
+        value={due.length}
+        hint={
+          chronicCount === 0
+            ? '未建档'
+            : due.length > 0
+              ? `${checkups.length} 项在跟踪`
+              : unknown > 0
+                ? `${unknown} 项缺记录`
+                : '暂无到期'
+        }
+        tone={due.length > 0 ? 'alert' : 'neutral'}
+        className="p-2.5"
+      />
+      <Stat
+        label="建档慢病"
+        value={chronicCount}
+        hint="按病种复查"
+        className="p-2.5"
+      />
     </div>
   );
 }
@@ -290,17 +426,18 @@ const STATUS_META: Record<
 > = {
   DUE: {
     label: '该做了',
-    box: 'border-amber-300 bg-amber-50/60',
-    badge: 'bg-amber-600 text-white',
+    // 用 alert 语义色而不是 amber-600 实心：后者白字只有 2.9:1
+    box: 'border-alert-line bg-alert-soft',
+    badge: 'bg-alert-solid text-white',
   },
   UNKNOWN: {
     label: '记录缺失',
-    box: 'border-gray-200 bg-white',
-    badge: 'bg-gray-200 text-gray-600',
+    box: 'border-gray-200 bg-surface',
+    badge: 'bg-gray-200 text-gray-700',
   },
   NOT_YET: {
     label: '有效期内',
-    box: 'border-gray-200 bg-white',
+    box: 'border-gray-200 bg-surface',
     badge: 'bg-green-100 text-green-700',
   },
 };
@@ -316,7 +453,7 @@ function CheckupSection({
     return (
       <section>
         <SectionTitle>该做的检查</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           档案里还没有慢病记录，暂时无法给出按病种的检查建议。
         </div>
       </section>
@@ -327,10 +464,7 @@ function CheckupSection({
 
   return (
     <section>
-      <SectionTitle>
-        该做的检查
-        <span className="ml-2 text-xs font-normal text-gray-400">{items.length} 项</span>
-      </SectionTitle>
+      <SectionTitle count={`${items.length} 项`}>该做的检查</SectionTitle>
 
       <div className="space-y-2">
         {items.map((c) => {
@@ -359,7 +493,10 @@ function CheckupSection({
                 <span>{c.where}</span>
               </div>
 
-              <p className="mt-1 text-xs text-gray-400">依据：{c.basis}</p>
+              {/* 指南出处折起来：想核对的人会点开，其余人只关心"该不该做" */}
+              <Fold label="指南依据" className="mt-1">
+                <p className="text-xs leading-relaxed text-gray-500">{c.basis}</p>
+              </Fold>
             </div>
           );
         })}
@@ -396,7 +533,7 @@ function MedicationSection({
     return (
       <section>
         <SectionTitle>用药</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           没有在用药物记录。
         </div>
       </section>
@@ -405,12 +542,7 @@ function MedicationSection({
 
   return (
     <section>
-      <SectionTitle>
-        用药
-        <span className="ml-2 text-xs font-normal text-gray-400">
-          {items.length + missing.length} 种
-        </span>
-      </SectionTitle>
+      <SectionTitle count={`${items.length + missing.length} 种`}>用药</SectionTitle>
 
       <div className="space-y-2">
         {items.map((m) => {
@@ -419,7 +551,7 @@ function MedicationSection({
             <div
               key={`${m.name}-${m.visitDate}`}
               className={`rounded-xl border p-3 ${
-                complete ? 'border-gray-200 bg-white' : 'border-amber-200 bg-amber-50/50'
+                complete ? 'border-gray-200 bg-surface' : 'border-amber-200 bg-amber-50/50'
               }`}
             >
               <div className="flex items-baseline gap-2">
@@ -437,14 +569,18 @@ function MedicationSection({
               <p className="mt-1 text-sm leading-relaxed text-gray-700">
                 {describeMedication(m)}
               </p>
-              {/* 原始片段：患者可以对照药盒确认我们没有读错 */}
-              <p className="mt-1 text-xs text-gray-400">病历原文：{m.source}</p>
+              {/* 原始片段折起来：患者可以对照药盒确认我们没有读错 */}
+              <Fold label="病历原文" className="mt-1">
+                <p className="rounded bg-gray-50 px-2 py-1 text-xs leading-relaxed text-gray-500">
+                  {m.source}
+                </p>
+              </Fold>
             </div>
           );
         })}
 
         {missing.length > 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-3">
+          <div className="rounded-xl border border-gray-200 bg-surface p-3">
             <div className="text-sm font-medium text-gray-900">档案里有、病历里查不到用法</div>
             <p className="mt-1 text-sm text-gray-700">{missing.join('、')}</p>
             <p className="mt-1 text-xs leading-relaxed text-gray-500">
@@ -467,25 +603,38 @@ function MedicationSection({
 /* ============================ 就诊准备 ============================ */
 
 const PREP_META: Record<PrepItem['level'], { label: string; dot: string; box: string }> = {
-  must: { label: '必须', dot: 'bg-red-500', box: 'border-gray-200 bg-white' },
+  must: { label: '必须', dot: 'bg-red-500', box: 'border-gray-200 bg-surface' },
   ask: { label: '要问医生', dot: 'bg-amber-500', box: 'border-amber-200 bg-amber-50/50' },
-  should: { label: '建议', dot: 'bg-gray-400', box: 'border-gray-200 bg-white' },
+  should: { label: '建议', dot: 'bg-gray-400', box: 'border-gray-200 bg-surface' },
 };
 
+/**
+ * 下次就诊前准备。
+ *
+ * <p>七条全铺开是整屏，把底下的「这些判断的依据」和"再问一句"全推走。
+ * 但这里是**唯一会漏掉就白跑一趟**的区块（空腹、带旧片、停药），
+ * 所以按级别分开处理：`must` 一条都不折，其余折起并写明条数。
+ *
+ * <p>一条 must 都没有时（比如常规复查），固定露前两条 ——
+ * 收起后一条不剩会让人以为这块是空的。
+ */
 function PrepSection({ items, department }: { items: PrepItem[]; department: string }) {
+  const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
+
+  const must = items.filter((p) => p.level === 'must');
+  const pinned = must.length > 0 ? must : items.slice(0, 2);
+  const hidden = items.length - pinned.length;
+  const shown = open ? items : pinned;
 
   return (
     <section>
-      <SectionTitle>
+      <SectionTitle count={`按 ${department} 生成 · ${items.length} 条`}>
         下次就诊前准备
-        <span className="ml-2 text-xs font-normal text-gray-400">
-          按 {department} 生成
-        </span>
       </SectionTitle>
 
       <div className="space-y-2">
-        {items.map((p) => {
+        {shown.map((p) => {
           const meta = PREP_META[p.level];
           return (
             <div key={p.title} className={`rounded-xl border p-3 ${meta.box}`}>
@@ -499,13 +648,33 @@ function PrepSection({ items, department }: { items: PrepItem[]; department: str
                     </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-gray-700">{p.detail}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-400">为什么：{p.why}</p>
+                  {/* 「为什么」是给不信的人看的：默认收起，但不能没有 */}
+                  <Fold label="为什么" className="mt-0.5">
+                    <p className="text-xs leading-relaxed text-gray-500">{p.why}</p>
+                  </Fold>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {hidden > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 bg-surface/60 py-2 text-xs text-gray-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+        >
+          {open ? '只看必须做的' : `还有 ${hidden} 条建议，展开`}
+          <ChevronRightIcon
+            size={11}
+            className={
+              'text-gray-400 transition-transform duration-150 ' +
+              (open ? '-rotate-90' : 'rotate-90')
+            }
+          />
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -517,7 +686,7 @@ function TrendSection({ trends, recordCount }: { trends: MarkerTrend[]; recordCo
     return (
       <section>
         <SectionTitle>我的指标</SectionTitle>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-surface p-4 text-sm text-gray-400">
           {recordCount === 0
             ? '还没有病历。上传一份化验单，我就能帮你把指标整理出来。'
             : '已上传的病历里没有识别到常见指标（血糖、血脂、血压等）。'}
@@ -529,20 +698,35 @@ function TrendSection({ trends, recordCount }: { trends: MarkerTrend[]; recordCo
     );
   }
 
+  /*
+   * 超标的排前面，再按原顺序。
+   *
+   * 默认收起是有代价的：被折起来的那几项，患者不会点开第二次。
+   * 所以先保证"异常项一定在可见的 4 项里" —— 排序动一下位置，
+   * 比让人误以为"指标都正常"要安全得多。
+   */
+  const ordered = useMemo(
+    () =>
+      [...trends].sort((a, b) => {
+        const bad = (t: MarkerTrend) => (t.points[t.points.length - 1]!.level !== 'normal' ? 1 : 0);
+        return bad(b) - bad(a);
+      }),
+    [trends],
+  );
+
   return (
     <section>
-      <SectionTitle>
+      <SectionTitle count={`${trends.length} 项 · 来自 ${recordCount} 份病历`}>
         我的指标
-        <span className="ml-2 text-xs font-normal text-gray-400">
-          {trends.length} 项 · 来自 {recordCount} 份病历
-        </span>
       </SectionTitle>
 
-      <div className="space-y-2">
-        {trends.map((t) => (
-          <TrendCard key={t.name} trend={t} />
-        ))}
-      </div>
+      <Clamp
+        items={ordered}
+        initial={4}
+        itemKey={(t) => t.name}
+        unit="项"
+        render={(t) => <TrendCard trend={t} />}
+      />
     </section>
   );
 }
@@ -554,7 +738,7 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
   return (
     <div
       className={`rounded-xl border p-3 ${
-        abnormal ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-white'
+        abnormal ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-surface'
       }`}
     >
       <div className="flex items-baseline gap-2">
@@ -597,7 +781,7 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
                   style={{ height: `${h}px` }}
                   title={`${p.date}: ${p.value}`}
                 />
-                <span className="text-[10px] text-gray-400">{p.date.slice(5, 7)}月</span>
+                <span className="text-3xs text-gray-400">{p.date.slice(5, 7)}月</span>
               </div>
             );
           })}
@@ -607,6 +791,3 @@ function TrendCard({ trend }: { trend: MarkerTrend }) {
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 text-sm font-medium text-gray-700">{children}</h2>;
-}
