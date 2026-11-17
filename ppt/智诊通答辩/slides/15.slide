@@ -1,0 +1,43 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  {/* 左侧出血深青块（镜像封面） */}
+  <Box style={{ position: 'absolute', top: -68, left: -84, width: 396, height: 856, background: '#0E3B3A' }} />
+  <Box style={{ position: 'absolute', top: -68, left: 312, width: 6, height: 856, background: '#B0512E' }} />
+
+  <Box style={{ position: 'absolute', top: 176, left: 0, width: 300, flexDirection: 'column', gap: 20 }}>
+    <Text style={{ fontSize: 13, color: 'rgba(247,243,234,0.55)', letterSpacing: 1 }}>四句话</Text>
+    <Text style={{ fontSize: 17, color: '#FFFCF5', lineHeight: 2.1 }}>
+      原文不出设备
+      <br />
+      AI 负责准备
+      <br />
+      人负责拍板
+      <br />
+      看病交给医生
+    </Text>
+  </Box>
+
+  <Box style={{ position: 'absolute', top: 148, left: 470, width: 660 }}>
+    <Text style={{ fontSize: 30, color: '#6B6459', lineHeight: 1.6 }}>我们只做三件事：</Text>
+    <Text style={{ fontSize: 46, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.5, marginTop: 6 }}>
+      整理信息、提示风险、
+      <br />
+      帮你少跑腿。
+    </Text>
+    <Box style={{ width: 80, height: 3, background: '#B0512E', marginTop: 34 }} />
+    <Text style={{ fontSize: 22, color: '#14110F', lineHeight: 1.9, marginTop: 30 }}>
+      病历原文不出设备，AI 负责准备，人负责拍板。
+      <br />
+      看病的事，交给医生。
+    </Text>
+    <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 44 }}>谢谢 · 智诊通团队</Text>
+  </Box>
+</Slide>

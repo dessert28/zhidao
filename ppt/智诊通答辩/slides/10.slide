@@ -1,0 +1,92 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    十次就诊，两家医院
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    跨院不是打通医院 —— 是把患者手里的记录，排到一条轴上。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 42, marginTop: 34 }}>
+    <Box style={{ flexDirection: 'column', gap: 10, width: 350 }}>
+      <Box style={{ background: '#FFFCF5', padding: 5, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/records-timeline.png" style={{ width: 336, height: 331 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：病历页按院区分组，共 10 次 · 2 家医院。</Text>
+    </Box>
+
+    <Box style={{ flexDirection: 'column', gap: 16 }}>
+      <svg width={640} height={286} viewBox='0 0 640 286' fontFamily="'Microsoft YaHei', sans-serif">
+        <g font-family='Microsoft YaHei, PingFang SC, sans-serif'>
+        <text x='0' y='46' fontSize='12' fill='#0E3B3A' fontWeight='bold'>解放路院区</text>
+        <text x='0' y='62' fontSize='11' fill='#6B6459'>7 次</text>
+        <line x1='96' y1='56' x2='636' y2='56' stroke='rgba(14,59,58,0.22)' strokeWidth='1' />
+
+        <text x='0' y='150' fontSize='12' fill='#B0512E' fontWeight='bold'>滨江院区</text>
+        <text x='0' y='166' fontSize='11' fill='#6B6459'>3 次</text>
+        <line x1='96' y1='160' x2='636' y2='160' stroke='rgba(176,81,46,0.28)' strokeWidth='1' />
+
+        <circle cx='158' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='247' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='303' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='343' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='382' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='443' cy='56' r='4' fill='#0E3B3A' />
+        <circle cx='527' cy='56' r='4' fill='#0E3B3A' />
+
+        <circle cx='343' cy='160' r='4' fill='#B0512E' />
+        <circle cx='370' cy='160' r='4' fill='#B0512E' />
+        <circle cx='460' cy='160' r='4' fill='#B0512E' />
+
+        {/* 跨院重复：糖化血红蛋白 9/12（解放路） ↔ 10/20（滨江），相隔 38 天 */}
+        <circle cx='158' cy='56' r='8' fill='none' stroke='#B0512E' strokeWidth='1.5' />
+        <circle cx='370' cy='160' r='8' fill='none' stroke='#B0512E' strokeWidth='1.5' />
+        <path d='M158 64 L158 108 L370 108 L370 152' fill='none' stroke='#B0512E' strokeWidth='1' strokeDasharray='3 3' />
+        <text x='238' y='102' fontSize='11' fill='#B0512E'>糖化血红蛋白 · 相隔 38 天</text>
+
+        <line x1='96' y1='200' x2='96' y2='216' stroke='rgba(20,17,15,0.3)' strokeWidth='1' />
+        <line x1='262' y1='200' x2='262' y2='216' stroke='rgba(20,17,15,0.3)' strokeWidth='1' />
+        <line x1='438' y1='200' x2='438' y2='216' stroke='rgba(20,17,15,0.3)' strokeWidth='1' />
+        <text x='84' y='232' fontSize='11' fill='#6B6459'>9 月</text>
+        <text x='250' y='232' fontSize='11' fill='#6B6459'>10 月</text>
+        <text x='426' y='232' fontSize='11' fill='#6B6459'>11 月</text>
+              </g>
+      </svg>
+
+      <Box style={{ flexDirection: 'row', gap: 26 }}>
+        <Box style={{ width: 300 }}>
+          <Text style={{ fontSize: 16, fontWeight: 700, color: '#14110F' }}>不需要医院授权</Text>
+          <Text style={{ fontSize: 14, color: '#6B6459', lineHeight: 1.8, marginTop: 6 }}>
+            记录来自患者自己上传的病历，在本地归一后排轴。
+          </Text>
+        </Box>
+        <Box style={{ width: 300 }}>
+          <Text style={{ fontSize: 16, fontWeight: 700, color: '#14110F' }}>大厂做不到的原因</Text>
+          <Text style={{ fontSize: 14, color: '#6B6459', lineHeight: 1.8, marginTop: 6 }}>
+            单院体系跨院涉及数据确权，机构侧推不动。
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>10</Text>
+  </Box>
+</Slide>

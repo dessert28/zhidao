@@ -1,0 +1,68 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    打开就是「今天要做什么」
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    首页不是聊天框。慢病患者一年问诊几次，吃药却是每天三次。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 52, marginTop: 40, alignItems: 'flex-start' }}>
+    <Box style={{ width: 580, flexDirection: 'column', gap: 30, paddingTop: 6 }}>
+      <Box style={{ flexDirection: 'row', gap: 16 }}>
+        <Box style={{ width: 42, height: 2, background: '#B0512E', marginTop: 12 }} />
+        <Box style={{ width: 500 }}>
+          <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F' }}>每天真正要回答的问题是「今天」</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 8 }}>
+            今天几个服药时间点、哪一档就是现在、今天和接下来要办的事，一行一行列清楚。
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ flexDirection: 'row', gap: 16 }}>
+        <Box style={{ width: 42, height: 2, background: '#B0512E', marginTop: 12 }} />
+        <Box style={{ width: 500 }}>
+          <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F' }}>不替医生印一个钟点</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 8 }}>
+            病历只写"饭后"的，我们给一段时间，不给一个具体时刻。
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ flexDirection: 'row', gap: 16 }}>
+        <Box style={{ width: 42, height: 2, background: '#B0512E', marginTop: 12 }} />
+        <Box style={{ width: 500 }}>
+          <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F' }}>记的是患者点了什么</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 8 }}>
+            每档只有「已服用 / 跳过」，不是宣称"患者吃了什么"。
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+
+    <Box style={{ flexDirection: 'column', gap: 10 }}>
+      <Box style={{ background: '#FFFCF5', padding: 6, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/today.png" style={{ width: 400, height: 419 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：今日页，「晚饭后」那一档标着"就是现在"。</Text>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>09</Text>
+  </Box>
+</Slide>

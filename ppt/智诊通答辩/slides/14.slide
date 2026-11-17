@@ -1,0 +1,79 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    能跑的，和还没做的
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    没做完的四件事，我们印在页上，不用您问。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 54, marginTop: 34 }}>
+    <Box style={{ width: 400, flexDirection: 'column', paddingTop: 4 }}>
+      <Text style={{ fontSize: 132, fontWeight: 700, color: '#0E3B3A', lineHeight: 0.95, letterSpacing: -2 }}>836</Text>
+      <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 6 }}>条自动化用例 · 前端 717 + 后端 119</Text>
+      <Box style={{ width: 360, height: 1, background: 'rgba(20,17,15,0.12)', marginTop: 26 }} />
+      <Box style={{ flexDirection: 'row', gap: 30, marginTop: 22 }}>
+        <Box>
+          <Text style={{ fontSize: 26, fontWeight: 700, color: '#B0512E' }}>3</Text>
+          <Text style={{ fontSize: 12, color: '#6B6459', marginTop: 4 }}>套 E2E 脚本</Text>
+        </Box>
+        <Box>
+          <Text style={{ fontSize: 26, fontWeight: 700, color: '#B0512E' }}>29</Text>
+          <Text style={{ fontSize: 12, color: '#6B6459', marginTop: 4 }}>页技术文档</Text>
+        </Box>
+        <Box>
+          <Text style={{ fontSize: 26, fontWeight: 700, color: '#B0512E' }}>0</Text>
+          <Text style={{ fontSize: 12, color: '#6B6459', marginTop: 4 }}>Key 也能跑通</Text>
+        </Box>
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459', lineHeight: 1.8, marginTop: 24 }}>
+        任何人 clone 下来跑一遍，就能复现页上的每一张截图。
+      </Text>
+    </Box>
+
+    <Box style={{ width: 620, flexDirection: 'column' }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>已知缺口</Text>
+      <Box style={{ flexDirection: 'column', gap: 14, marginTop: 14 }}>
+        <Box style={{ flexDirection: 'row', gap: 16, paddingBottom: 12, borderBottom: '1px solid rgba(20,17,15,0.10)' }}>
+          <Text style={{ fontSize: 13, color: '#6B6459', width: 20 }}>01</Text>
+          <Text style={{ fontSize: 16, color: '#14110F', lineHeight: 1.6 }}>
+            真实医院对接为 Mock 适配器，接口层已抽象
+          </Text>
+        </Box>
+        <Box style={{ flexDirection: 'row', gap: 16, paddingBottom: 12, borderBottom: '1px solid rgba(20,17,15,0.10)' }}>
+          <Text style={{ fontSize: 13, color: '#6B6459', width: 20 }}>02</Text>
+          <Text style={{ fontSize: 16, color: '#14110F', lineHeight: 1.6 }}>
+            MCP 工具层签名已对齐，真握手待开发
+          </Text>
+        </Box>
+        <Box style={{ flexDirection: 'row', gap: 16, paddingBottom: 12, borderBottom: '1px solid rgba(20,17,15,0.10)' }}>
+          <Text style={{ fontSize: 13, color: '#6B6459', width: 20 }}>03</Text>
+          <Text style={{ fontSize: 16, color: '#14110F', lineHeight: 1.6 }}>
+            端侧智能三件套，只落地了 PII 脱敏一项
+          </Text>
+        </Box>
+        <Box style={{ flexDirection: 'row', gap: 16 }}>
+          <Text style={{ fontSize: 13, color: '#6B6459', width: 20 }}>04</Text>
+          <Text style={{ fontSize: 16, color: '#14110F', lineHeight: 1.6 }}>
+            多实例部署需换 Redis 与分布式锁，当前单实例
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, bottom: 30 }}>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>智诊通 · 答辩材料</Text>
+  </Box>
+  <Box style={{ position: 'absolute', right: 84, bottom: 30 }}>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>14</Text>
+  </Box>
+</Slide>

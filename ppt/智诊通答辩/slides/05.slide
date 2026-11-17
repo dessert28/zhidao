@@ -1,0 +1,71 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    每句话都能追到出处
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    决策 → 可信 → 可溯，三张卡是一条链。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 46, marginTop: 36 }}>
+    <Box style={{ flexDirection: 'column', gap: 12 }}>
+      <Box style={{ background: '#FFFCF5', padding: 5, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/card-dept.png" style={{ width: 548, height: 219 }} />
+      </Box>
+      <Box style={{ background: '#FFFCF5', padding: 5, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/card-review.png" style={{ width: 548, height: 98 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459', marginTop: 2 }}>
+        实拍：示例「明确 → 直接分诊」下发的两张卡，随 SSE 流式渲染。
+      </Text>
+    </Box>
+
+    <Box style={{ width: 480, flexDirection: 'column', gap: 22, paddingTop: 4 }}>
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>决策</Text>
+        <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F', marginTop: 8 }}>给科室，也给理由</Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.75, marginTop: 6 }}>
+          每个候选科带百分比与一句依据，不是只甩一个答案。
+        </Text>
+      </Box>
+      <Box style={{ width: 420, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>可信</Text>
+        <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F', marginTop: 8 }}>
+          安全占四成，不合格整体不合格
+        </Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.75, marginTop: 6 }}>
+          四维自检：安全、准确、完整、依据 —— 分数是屏幕上的数字。
+        </Text>
+      </Box>
+      <Box style={{ width: 420, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>可溯</Text>
+        <Text style={{ fontSize: 20, fontWeight: 700, color: '#14110F', marginTop: 8 }}>找不到依据就说不足</Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.75, marginTop: 6 }}>
+          检索 → 充分性判定 → 改写重试 → 逐句接地检查。
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>05</Text>
+  </Box>
+</Slide>

@@ -1,0 +1,88 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    急救，不能等模型
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    五类红线是确定性规则，命中即短路 —— 全程不经过大模型。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 44, marginTop: 36 }}>
+    {/* 左：五类红线 + 结论 */}
+    <Box style={{ width: 330, flexDirection: 'column' }}>
+      <Text style={{ fontSize: 13, color: '#9B2C1F', letterSpacing: 1 }}>五类红线 · 正则规则表</Text>
+      <Box style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16, width: 320 }}>
+        <Box style={{ padding: '8px 14px', background: 'rgba(155,44,31,0.08)', border: '1px solid rgba(155,44,31,0.35)' }}>
+          <Text style={{ fontSize: 15, color: '#9B2C1F' }}>胸痛</Text>
+        </Box>
+        <Box style={{ padding: '8px 14px', background: 'rgba(155,44,31,0.08)', border: '1px solid rgba(155,44,31,0.35)' }}>
+          <Text style={{ fontSize: 15, color: '#9B2C1F' }}>卒中</Text>
+        </Box>
+        <Box style={{ padding: '8px 14px', background: 'rgba(155,44,31,0.08)', border: '1px solid rgba(155,44,31,0.35)' }}>
+          <Text style={{ fontSize: 15, color: '#9B2C1F' }}>呼吸困难</Text>
+        </Box>
+        <Box style={{ padding: '8px 14px', background: 'rgba(155,44,31,0.08)', border: '1px solid rgba(155,44,31,0.35)' }}>
+          <Text style={{ fontSize: 15, color: '#9B2C1F' }}>意识改变</Text>
+        </Box>
+        <Box style={{ padding: '8px 14px', background: 'rgba(155,44,31,0.08)', border: '1px solid rgba(155,44,31,0.35)' }}>
+          <Text style={{ fontSize: 15, color: '#9B2C1F' }}>大出血</Text>
+        </Box>
+      </Box>
+      <Text style={{ fontSize: 17, color: '#14110F', lineHeight: 1.85, marginTop: 28 }}>
+        「没有胸痛」也会命中。
+        <br />
+        急诊场景宁可误报一次，
+        <br />
+        不能漏报一次。
+      </Text>
+      <Text style={{ fontSize: 13, color: '#6B6459', lineHeight: 1.7, marginTop: 18 }}>
+        red-flag.ts · 44 个用例，20 个专测红线命中与误报
+      </Text>
+    </Box>
+
+    {/* 右：事件流 + 实拍卡 */}
+    <Box style={{ flexDirection: 'column', gap: 16 }}>
+      <svg width={640} height={206} viewBox='0 0 640 206' fontFamily="'Microsoft YaHei', sans-serif">
+        <g font-family='Microsoft YaHei, PingFang SC, sans-serif'>
+        <line x1='118' y1='20' x2='118' y2='196' stroke='rgba(20,17,15,0.25)' strokeWidth='1' strokeDasharray='4 4' />
+        <text x='0' y='46' fontSize='13' fill='#6B6459'>普通链路</text>
+        <rect x='118' y='34' width='492' height='14' fill='rgba(20,17,15,0.13)' />
+        <text x='118' y='30' fontSize='11' fill='#6B6459'>plan → token → … → done</text>
+        <text x='560' y='70' fontSize='12' fill='#6B6459'>4.1s</text>
+
+        <text x='0' y='132' fontSize='13' fill='#9B2C1F'>红线命中</text>
+        <rect x='118' y='120' width='26' height='14' fill='#9B2C1F' />
+        <text x='118' y='116' fontSize='11' fill='#9B2C1F'>emergency → speech → done</text>
+        <text x='152' y='156' fontSize='12' fill='#9B2C1F'>0.2s</text>
+
+        <text x='118' y='192' fontSize='12' fill='#6B6459'>没有 plan 事件 —— 在 LLM 之前就返回了</text>
+              </g>
+      </svg>
+
+      <Box style={{ background: '#FFFCF5', padding: 5, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/card-emergency.png" style={{ width: 640, height: 136 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：输入"我爸突然胸口疼得厉害，还出冷汗"，警示卡直接占屏。</Text>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>06</Text>
+  </Box>
+</Slide>

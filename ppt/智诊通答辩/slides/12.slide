@@ -1,0 +1,83 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    一页纸，带去下一家医院
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    数据还给患者的最终形态，不是 App 里的数据，是一张能带走的纸。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 54, marginTop: 30, alignItems: 'flex-start' }}>
+    <Box style={{ width: 470, flexDirection: 'column', gap: 22, paddingTop: 8 }}>
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>把十次记录压成一页</Text>
+        <Text style={{ fontSize: 16, color: '#6B6459', lineHeight: 1.85, marginTop: 8 }}>
+          基本信息、过敏史、在用药物、近期指标、就诊记录按时间倒序 ——
+          换任何一家医院，这一页都成立。
+        </Text>
+      </Box>
+      <Box style={{ width: 430, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>三种带走方式</Text>
+        <Text style={{ fontSize: 16, color: '#6B6459', lineHeight: 1.85, marginTop: 8 }}>
+          打印、存 PDF、复制成文字发给医生。不需要患者装第二个 App。
+        </Text>
+      </Box>
+      <Box style={{ width: 430, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>页脚印着边界</Text>
+        <Text style={{ fontSize: 16, color: '#6B6459', lineHeight: 1.85, marginTop: 8 }}>
+          "本人整理，未经医院核对，仅供医生参考" —— 印在纸上，不藏在文档里。
+        </Text>
+      </Box>
+    </Box>
+
+    <Box style={{ flexDirection: 'column', gap: 10 }}>
+      <Box style={{ background: '#FFFCF5', padding: 6, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/summary.png" style={{ width: 360, height: 378 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：就诊摘要页，A4 打印即成品。</Text>
+    </Box>
+  </Box>
+
+  {/* 底部赭色带 */}
+  <Box
+    style={{
+      position: 'absolute',
+      left: 84,
+      right: 84,
+      bottom: 60,
+      height: 54,
+      background: '#F0DCCE',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 40,
+      padding: '0 24px',
+    }}
+  >
+    <Text style={{ fontSize: 14, color: '#8A3B1F', letterSpacing: 1 }}>上传的即时回报</Text>
+    <Text style={{ fontSize: 16, color: '#14110F' }}>
+      患者第一次用，就能拿走一份能给医生看的东西 —— 不是先做公益再等回报。
+    </Text>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>12</Text>
+  </Box>
+</Slide>

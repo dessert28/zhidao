@@ -1,0 +1,68 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    在医院里，只问现在去哪
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    人站在大厅里，只需要一个答案 —— 所以这块字号最大。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 46, marginTop: 30 }}>
+    <Box style={{ width: 486, flexDirection: 'column', gap: 22, paddingTop: 10 }}>
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>先签到</Text>
+        <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F', marginTop: 8 }}>只是让我们知道你到了</Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 6 }}>
+          正式报到还要在自助机或分诊台完成，那一步才算进院方队列。
+        </Text>
+      </Box>
+      <Box style={{ width: 430, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>检查顺序</Text>
+        <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F', marginTop: 8 }}>
+          先抽血还是先拍片，都给理由
+        </Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 6 }}>
+          按空腹要求与预约规则排序，不是随便列一张清单。
+        </Text>
+      </Box>
+      <Box style={{ width: 430, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>写在页面上</Text>
+        <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F', marginTop: 8 }}>
+          楼层是示意，以现场指示牌为准
+        </Text>
+        <Text style={{ fontSize: 15, color: '#6B6459', lineHeight: 1.8, marginTop: 6 }}>
+          不把这句话藏进文档里。
+        </Text>
+      </Box>
+    </Box>
+
+    <Box style={{ flexDirection: 'column', gap: 10 }}>
+      <Box style={{ background: '#FFFCF5', padding: 6, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/visit.png" style={{ width: 400, height: 419 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：到院页首屏，「现在去哪」是整页字号最大的一块。</Text>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>08</Text>
+  </Box>
+</Slide>

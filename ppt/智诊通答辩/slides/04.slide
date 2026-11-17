@@ -1,0 +1,70 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    信息不够，它就先问
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    不硬答，也不把同一个问题问第二遍。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 44, marginTop: 40 }}>
+    <Box style={{ width: 400, flexDirection: 'column', gap: 26, paddingTop: 8 }}>
+      <Box style={{ flexDirection: 'row', gap: 14 }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>01</Text>
+        <Box>
+          <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F' }}>槽位不够就问</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 6, lineHeight: 1.7 }}>
+            问时长、问诱因，一次只问必要的那一个
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ width: 360, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box style={{ flexDirection: 'row', gap: 14 }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>02</Text>
+        <Box>
+          <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F' }}>一句话补齐就给结论</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 6, lineHeight: 1.7 }}>
+            「三天了」→ 直接出科室卡，不重复追问
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ width: 360, height: 1, background: 'rgba(20,17,15,0.10)' }} />
+      <Box style={{ flexDirection: 'row', gap: 14 }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>03</Text>
+        <Box>
+          <Text style={{ fontSize: 19, fontWeight: 700, color: '#14110F' }}>追问有上限</Text>
+          <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 6, lineHeight: 1.7 }}>
+            会话级记忆，问到信息够了就停
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+
+    <Box style={{ flexDirection: 'column', gap: 10 }}>
+      <Box style={{ background: '#FFFCF5', padding: 6, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/chat-clarify-1.png" style={{ width: 608, height: 386 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>实拍：示例「模糊 → 追问」，输入"最近老是头晕"后的第一轮。</Text>
+    </Box>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>04</Text>
+  </Box>
+</Slide>

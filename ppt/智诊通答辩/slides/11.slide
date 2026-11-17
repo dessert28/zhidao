@@ -1,0 +1,78 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    同一年，两次 CT
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    归一名称 + 时效窗口 + 必须跨院，三条同时成立才提示。
+  </Text>
+
+  <Box style={{ flexDirection: 'row', gap: 46, marginTop: 34 }}>
+    <Box style={{ flexDirection: 'column', gap: 10 }}>
+      <Box style={{ background: '#FFFCF5', padding: 5, border: '1px solid rgba(20,17,15,0.16)' }}>
+        <Image src="assets/records-duplicate.png" style={{ width: 552, height: 276 }} />
+      </Box>
+      <Text style={{ fontSize: 13, color: '#6B6459' }}>
+        实拍：两项跨院重复（空腹血糖 21 天、糖化血红蛋白 38 天），每项都写出依据。
+      </Text>
+    </Box>
+
+    <Box style={{ width: 470, flexDirection: 'column', gap: 18, paddingTop: 2 }}>
+      <Box style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>01</Text>
+        <Box>
+          <Text style={{ fontSize: 18, fontWeight: 700, color: '#14110F' }}>归一名称</Text>
+          <Text style={{ fontSize: 14, color: '#6B6459', lineHeight: 1.75, marginTop: 4 }}>
+            7 项检查词典 + 别名，把两家医院的写法认成同一项。
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>02</Text>
+        <Box>
+          <Text style={{ fontSize: 18, fontWeight: 700, color: '#14110F' }}>时效窗口</Text>
+          <Text style={{ fontSize: 14, color: '#6B6459', lineHeight: 1.75, marginTop: 4 }}>
+            糖化 90 天、空腹血糖 30 天 —— 超出窗口就不算重复。
+          </Text>
+        </Box>
+      </Box>
+      <Box style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1, marginTop: 4 }}>03</Text>
+        <Box>
+          <Text style={{ fontSize: 18, fontWeight: 700, color: '#14110F' }}>必须跨院</Text>
+          <Text style={{ fontSize: 14, color: '#6B6459', lineHeight: 1.75, marginTop: 4 }}>
+            同一家医院内部的复查不提示，只提示不同医院之间。
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  </Box>
+
+  <Box style={{ width: 1112, height: 1, background: 'rgba(20,17,15,0.12)', marginTop: 26 }} />
+  <Box style={{ flexDirection: 'row', alignItems: 'baseline', gap: 20, marginTop: 18 }}>
+    <Text style={{ fontSize: 30, fontWeight: 700, color: '#B0512E' }}>只提示，不判断</Text>
+    <Text style={{ fontSize: 16, color: '#6B6459' }}>
+      是否真的重复、能不能省掉，由医生决定。用药冲突同理：只提醒"请让医生确认能否同服"。
+    </Text>
+  </Box>
+
+  <Box style={{ position: 'absolute', left: 84, right: 84, bottom: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 0.5 }}>智诊通</Text>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>去之前</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>在院内</Text>
+      <Text style={{ fontSize: 13, color: 'rgba(107,100,89,0.5)' }}>—</Text>
+      <Text style={{ fontSize: 13, color: '#B0512E', fontWeight: 600 }}>回家后</Text>
+    </Box>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>11</Text>
+  </Box>
+</Slide>

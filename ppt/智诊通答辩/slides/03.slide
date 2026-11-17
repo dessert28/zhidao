@@ -1,0 +1,61 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    让病历跟着人走
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    原文留在浏览器，只有脱敏文本上行 —— 跨院不需要任何一家医院点头。
+  </Text>
+
+  {/* 三段链路 */}
+  <Box style={{ flexDirection: 'row', gap: 24, marginTop: 44 }}>
+    <Box style={{ width: 354, padding: '24px 26px', background: '#FFFCF5', border: '1px solid rgba(20,17,15,0.10)' }}>
+      <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 1 }}>浏览器 · IndexedDB</Text>
+      <Text style={{ fontSize: 25, fontWeight: 700, color: '#0E3B3A', marginTop: 14 }}>病历原文</Text>
+      <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 10, lineHeight: 1.7 }}>只在这台设备上</Text>
+    </Box>
+
+    <Box style={{ width: 354, padding: '24px 26px 24px 24px', background: '#FFFCF5', border: '1px solid rgba(20,17,15,0.10)', borderLeft: '3px solid #B0512E' }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>Node BFF</Text>
+      <Text style={{ fontSize: 25, fontWeight: 700, color: '#0E3B3A', marginTop: 14 }}>只有脱敏文本</Text>
+      <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 10, lineHeight: 1.7 }}>上行字段名就叫 text</Text>
+    </Box>
+
+    <Box style={{ width: 354, padding: '24px 26px', background: '#FFFCF5', border: '1px solid rgba(20,17,15,0.10)' }}>
+      <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 1 }}>业务层</Text>
+      <Text style={{ fontSize: 25, fontWeight: 700, color: '#0E3B3A', marginTop: 14 }}>跨院归一</Text>
+      <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 10, lineHeight: 1.7 }}>时间轴 · 提醒 · 排程</Text>
+    </Box>
+  </Box>
+
+  <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 }}>
+    <Box style={{ width: 40, height: 1, background: '#B0512E' }} />
+    <Text style={{ fontSize: 14, color: '#B0512E' }}>这条线以上，原文从未离开设备</Text>
+  </Box>
+
+  {/* 脱敏实拍 */}
+  <Box style={{ flexDirection: 'row', gap: 40, marginTop: 34, alignItems: 'flex-end' }}>
+    <Box style={{ width: 300 }}>
+      <Text style={{ fontSize: 15, color: '#B0512E', letterSpacing: 1 }}>端侧脱敏 · 实拍</Text>
+      <Text style={{ fontSize: 17, color: '#14110F', lineHeight: 1.8, marginTop: 12 }}>
+        手机号、身份证在浏览器里被替换成占位符，
+        <br />
+        再上行。首次加载 129MB 模型，之后走缓存。
+      </Text>
+      <Text style={{ fontSize: 13, color: '#6B6459', lineHeight: 1.7, marginTop: 14 }}>
+        例外：语音识别走浏览器云端，识别后的文字才在本机脱敏。
+      </Text>
+    </Box>
+    <Box style={{ background: '#FFFCF5', padding: 6, border: '1px solid rgba(20,17,15,0.16)' }}>
+      <Image src="assets/redact-detail.png" style={{ width: 700, height: 206 }} />
+    </Box>
+  </Box>
+</Slide>

@@ -1,0 +1,73 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  {/* 右侧出血：深青色块 + 贴边赭色细带 */}
+  <Box style={{ position: 'absolute', top: -68, right: -84, width: 396, height: 856, background: '#0E3B3A' }} />
+  <Box style={{ position: 'absolute', top: -68, right: 316, width: 6, height: 856, background: '#B0512E' }} />
+
+  {/* 赛道标签 */}
+  <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+    <Box style={{ width: 8, height: 8, background: '#B0512E' }} />
+    <Text style={{ fontSize: 13, color: '#6B6459', letterSpacing: 1.2 }}>
+      2026 全国高校 AI Web 开发挑战赛 · AI WEB 网页开发赛道
+    </Text>
+  </Box>
+
+  {/* 主标题区 */}
+  <Box style={{ marginTop: 138, width: 700 }}>
+    <Text style={{ fontSize: 76, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.05, letterSpacing: 2 }}>
+      智诊通
+    </Text>
+    <Text style={{ fontSize: 34, fontWeight: 500, color: '#14110F', lineHeight: 1.5, marginTop: 18 }}>
+      把一次就医，连成一条线
+    </Text>
+    <Box style={{ width: 72, height: 3, background: '#B0512E', marginTop: 30 }} />
+    <Text style={{ fontSize: 18, color: '#6B6459', lineHeight: 1.9, marginTop: 26, width: 620 }}>
+      不是又一个挂号 App。病历碎片化才是真问题 —— 我们让数据跟着患者走。
+    </Text>
+  </Box>
+
+  {/* 右侧三段指示 */}
+  <Box
+    style={{
+      position: 'absolute',
+      top: 96,
+      right: -84,
+      width: 396,
+      height: 528,
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: '0 0 0 46px',
+      gap: 34,
+    }}
+  >
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1.6 }}>01</Text>
+      <Text style={{ fontSize: 26, color: '#F7F3EA', fontWeight: 500 }}>去之前</Text>
+    </Box>
+    <Box style={{ width: 240, height: 1, background: 'rgba(247,243,234,0.22)' }} />
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1.6 }}>02</Text>
+      <Text style={{ fontSize: 26, color: '#F7F3EA', fontWeight: 500 }}>在院内</Text>
+    </Box>
+    <Box style={{ width: 240, height: 1, background: 'rgba(247,243,234,0.22)' }} />
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+      <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1.6 }}>03</Text>
+      <Text style={{ fontSize: 26, color: '#F7F3EA', fontWeight: 500 }}>回家之后</Text>
+    </Box>
+  </Box>
+
+  {/* 页脚占位 */}
+  <Box style={{ position: 'absolute', left: 84, bottom: 52, flexDirection: 'row', alignItems: 'flex-end', gap: 28 }}>
+    <Text style={{ fontSize: 14, color: '#6B6459' }}>XX 大学 · 队伍名称</Text>
+    <Text style={{ fontSize: 14, color: '#6B6459' }}>成员：XXX / XXX / XXX</Text>
+    <Text style={{ fontSize: 14, color: '#6B6459' }}>指导教师：XXX</Text>
+  </Box>
+</Slide>

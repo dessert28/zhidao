@@ -1,0 +1,121 @@
+<Slide
+  style={{
+    width: 1280,
+    height: 720,
+    background: '#F7F3EA',
+    fontFamily: "'Microsoft YaHei', 'PingFang SC', sans-serif",
+    padding: '68px 84px 56px 84px',
+    position: 'relative',
+  }}
+>
+  <Text style={{ fontSize: 42, fontWeight: 700, color: '#0E3B3A', lineHeight: 1.2 }}>
+    五个智能体，一张契约
+  </Text>
+  <Text style={{ fontSize: 24, fontWeight: 500, color: '#14110F', lineHeight: 1.6, marginTop: 12 }}>
+    编排是契约驱动，不是自由发挥 —— 模型挂了，事件流形状不变。
+  </Text>
+
+  <Box style={{ flexDirection: 'column', gap: 14, marginTop: 26 }}>
+    {/* 浏览器层 */}
+    <Box style={{ flexDirection: 'row', alignItems: 'stretch', gap: 0 }}>
+      <Box style={{ width: 130, flexDirection: 'column', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>浏览器</Text>
+        <Text style={{ fontSize: 11, color: '#6B6459' }}>数据不出设备</Text>
+      </Box>
+      <Box
+        style={{
+          flex: 1,
+          padding: '14px 20px',
+          background: '#FFFCF5',
+          border: '1px solid rgba(20,17,15,0.12)',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Text style={{ fontSize: 15, color: '#14110F' }}>React 18 + Vite 6</Text>
+        <Text style={{ fontSize: 14, color: '#6B6459' }}>端侧脱敏 ONNX</Text>
+        <Text style={{ fontSize: 14, color: '#6B6459' }}>IndexedDB 原文</Text>
+        <Text style={{ fontSize: 14, color: '#6B6459' }}>语音 / TTS</Text>
+      </Box>
+    </Box>
+
+    {/* 上行 */}
+    <Box style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 130, height: 26 }}>
+      <Box style={{ width: 1, height: 26, background: '#B0512E' }} />
+      <Text style={{ fontSize: 12, color: '#B0512E', marginLeft: 10 }}>只有脱敏文本上行</Text>
+    </Box>
+
+    {/* Node BFF */}
+    <Box style={{ flexDirection: 'row', alignItems: 'stretch' }}>
+      <Box style={{ width: 130, flexDirection: 'column', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>Node BFF</Text>
+        <Text style={{ fontSize: 11, color: '#6B6459' }}>持有 Key · SSE</Text>
+      </Box>
+      <Box style={{ flex: 1, padding: '16px 20px', background: '#0E3B3A' }}>
+        <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Box style={{ width: 132, padding: '12px 14px', background: 'rgba(247,243,234,0.10)', border: '1px solid rgba(247,243,234,0.28)' }}>
+            <Text style={{ fontSize: 14, color: '#FFFCF5', fontWeight: 700 }}>Supervisor</Text>
+            <Text style={{ fontSize: 11, color: 'rgba(247,243,234,0.66)', marginTop: 4 }}>总管</Text>
+          </Box>
+          <Text style={{ fontSize: 15, color: 'rgba(247,243,234,0.6)' }}>→</Text>
+          <Box style={{ flexDirection: 'column', gap: 8, width: 210 }}>
+            <Box style={{ padding: '7px 12px', background: 'rgba(247,243,234,0.07)', border: '1px solid rgba(247,243,234,0.20)' }}>
+              <Text style={{ fontSize: 13, color: '#F7F3EA' }}>Triage 分诊</Text>
+            </Box>
+            <Box style={{ padding: '7px 12px', background: 'rgba(247,243,234,0.07)', border: '1px solid rgba(247,243,234,0.20)' }}>
+              <Text style={{ fontSize: 13, color: '#F7F3EA' }}>Retrieval 检索</Text>
+            </Box>
+            <Box style={{ padding: '7px 12px', background: 'rgba(247,243,234,0.07)', border: '1px solid rgba(247,243,234,0.20)' }}>
+              <Text style={{ fontSize: 13, color: '#F7F3EA' }}>Scheduler 排程</Text>
+            </Box>
+          </Box>
+          <Text style={{ fontSize: 15, color: 'rgba(247,243,234,0.6)' }}>→</Text>
+          <Box style={{ width: 132, padding: '12px 14px', background: 'rgba(176,81,46,0.22)', border: '1px solid rgba(176,81,46,0.6)' }}>
+            <Text style={{ fontSize: 14, color: '#FFFCF5', fontWeight: 700 }}>Reviewer</Text>
+            <Text style={{ fontSize: 11, color: 'rgba(247,243,234,0.75)', marginTop: 4 }}>四维自评 · 回退</Text>
+          </Box>
+          <Box style={{ flex: 1, flexDirection: 'column', gap: 6 }}>
+            <Text style={{ fontSize: 11, color: 'rgba(247,243,234,0.55)' }}>三级降级</Text>
+            <Text style={{ fontSize: 12, color: 'rgba(247,243,234,0.82)', lineHeight: 1.7 }}>
+              坏 JSON 重试
+              <br />
+              超时回规则路由
+              <br />
+              冲突固定串行
+            </Text>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+
+    {/* Spring Boot */}
+    <Box style={{ flexDirection: 'row', alignItems: 'stretch' }}>
+      <Box style={{ width: 130, flexDirection: 'column', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 13, color: '#B0512E', letterSpacing: 1 }}>Spring Boot 3</Text>
+        <Text style={{ fontSize: 11, color: '#6B6459' }}>业务闭环</Text>
+      </Box>
+      <Box
+        style={{
+          flex: 1,
+          padding: '13px 20px',
+          background: '#FFFCF5',
+          border: '1px solid rgba(20,17,15,0.12)',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Text style={{ fontSize: 14, color: '#14110F' }}>建档 · 病历归档</Text>
+        <Text style={{ fontSize: 14, color: '#14110F' }}>提醒引擎</Text>
+        <Text style={{ fontSize: 14, color: '#14110F' }}>院区适配器</Text>
+        <Text style={{ fontSize: 14, color: '#6B6459' }}>MySQL 8 · pgvector</Text>
+      </Box>
+    </Box>
+  </Box>
+
+  <Box style={{ flexDirection: 'row', gap: 34, marginTop: 22 }}>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>不引 Redis｜默认 H2 内存库，评委本机无需装数据库</Text>
+    <Text style={{ fontSize: 13, color: '#6B6459' }}>无 API Key 时自动走规则路由，事件流结构完全一致</Text>
+  </Box>
+</Slide>
