@@ -66,11 +66,25 @@ public class HospitalService {
 
     /** 距今天最近的一笔未完成预约；没有则 null */
     public BookingOrder nextBooking(long userId) {
+        return nextBooking(userId, LocalDate.now());
+    }
+
+    /**
+     * 距「指定今天」最近的一笔未完成预约。
+     *
+     * <p><b>为什么把 today 做成参数，而不是在这里直接用 {@code LocalDate.now()}：</b>
+     * 提醒引擎按传入的 now 计算"距就诊几小时"，如果这个过滤偷偷用系统时钟，
+     * 两条时间轴就会打架。真实踩到的表现是：测试固定 2026-11-14，
+     * 而机器已经是 11-17，种子预约 11-15 被当成"一天前"过滤掉，
+     * 禁食提醒永远不触发 —— 测试在开发当天是绿的，过几天就红。
+     * 时间必须从同一个入口进来。
+     */
+    public BookingOrder nextBooking(long userId, LocalDate today) {
         return bookingsOf(userId).stream()
                 .filter(b -> !BookingOrder.STATUS_CANCELLED.equals(b.getStatus()))
                 .filter(b -> !BookingOrder.STATUS_COMPLETED.equals(b.getStatus()))
                 .filter(b -> b.getVisitTime() != null
-                        && !b.getVisitTime().toLocalDate().isBefore(LocalDate.now().minusDays(1)))
+                        && !b.getVisitTime().toLocalDate().isBefore(today.minusDays(1)))
                 .findFirst()
                 .orElse(null);
     }

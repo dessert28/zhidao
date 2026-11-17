@@ -133,7 +133,8 @@ public class ReminderEngine {
      */
     List<ReminderTask> ruleFastingBeforeVisit(long userId, LocalDateTime now, java.util.Set<String> existing) {
         List<ReminderTask> out = new ArrayList<>();
-        BookingOrder next = hospitalService.nextBooking(userId);
+        // 用传入的 now 作为「今天」，和下面算 hours 的时间轴保持一致
+        BookingOrder next = hospitalService.nextBooking(userId, now.toLocalDate());
         if (next == null || next.getVisitTime() == null) {
             return out;
         }
