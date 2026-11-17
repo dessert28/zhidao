@@ -1,0 +1,52 @@
+# ------------------------------------------------------------------
+# 生产 profile —— 和 mysql 一起用：--spring.profiles.active=mysql,prod
+#
+# ============ 它存在的理由：防止重启把真库清空 ============
+#
+# schema-mysql.sql 开头是 DROP TABLE IF EXISTS，而 mysql profile 的
+# spring.sql.init.mode 默认是 always。两者碰上，**每次重启都会删表重建**。
+#
+# 演示期这是优点（每次都是干净数据）；上线后这是灾难
+# （患者昨天建的预约、上传的病历摘要全没）。
+#
+# 所以生产环境必须显式加载这个 profile，把自动初始化彻底关掉。
+# 这是"多敲四个字" vs "丢一整库数据"的区别，没有中间选项。
+#
+# ============ 上线流程 ============
+#
+#   1. 首次部署前，手工建库灌种子：
+#        mysql -u zhidao -p zhidao < schema-mysql.sql
+#        mysql -u zhidao -p zhidao < data.sql        # 演示账号、院区、院内地点
+#      注意 data.sql 里的种子是**演示数据**，真实上线应该只灌
+#      必须存在的行（如院区配置），患者相关的一条都不要。
+#
+#   2. 之后启动一律带 prod：
+#        java -jar ... --spring.profiles.active=mysql,prod
+#
+#   3. 以后要改表结构，用 Flyway / Liquibase 的增量脚本，
+#      **不要**再执行 schema-mysql.sql（它会先删表）。
+#
+# ============ 为什么不用 Flyway 自动接管 ============
+#
+# 那需要引入依赖并把现有 schema.sql 改写成 V1__init.sql 的迁移版本，
+# 是一次独立改造。当前阶段"关掉危险的自动初始化 + 手工建库"已经能
+# 保证数据不丢，风险与工作量的比值更合理。真要上 CI/CD 自动迁移时
+# 再做替换，那时这份配置就是接入点。
+# ------------------------------------------------------------------
+
+spring:
+  sql:
+    init:
+      # 生产永远不自动建表/灌数据。表结构交给运维与迁移工具。
+      mode: never
+
+  # 生产环境不该有 H2 控制台（mysql profile 已关，这里再兜一次）
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    # 生产日志只留必要的：INFO 级别以上，且不打印 SQL
+    com.zhidao: info
+    org.springframework.jdbc: warn

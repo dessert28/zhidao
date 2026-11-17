@@ -106,6 +106,7 @@ CREATE TABLE booking_order (
                     COMMENT 'CREATED -> CONFIRMED -> COMPLETED，任一状态可 -> CANCELLED',
   external_order_no VARCHAR(64)           COMMENT '对方系统单号，Mock 阶段为空',
   remark            VARCHAR(500),
+  checkin_at        DATETIME              COMMENT '本地签到时间；不代表院方侧已报到',
   created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted           TINYINT(1)   NOT NULL DEFAULT 0,

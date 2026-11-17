@@ -106,9 +106,37 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/bookings/hospitals/catalog",
-                                "/api/bookings/integration-contract")
+                                "/api/bookings/integration-contract",
+                                "/api/bookings/integration-spec",
+                                "/api/bookings/integration-smoke-tests")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/nav/**")
+                        .permitAll()
+                        /*
+                         * 健康探针**不需要登录**。
+                         *
+                         * 调用方不是人，是 K8s livenessProbe / 负载均衡 / 监控系统，
+                         * 它们手里没有、也拿不到 JWT。要求鉴权的后果不是"更安全"，
+                         * 而是探针恒失败 → 容器被反复重启 —— 比不探活严重得多。
+                         *
+                         * "放行"不等于"公开细节"：
+                         * application.yml 里 endpoint.health.show-details=when-authorized，
+                         * 匿名只能拿到 {"status":"UP"} 这种没有信息量的结果，
+                         * 数据库连通性、磁盘水位等细节仍要登录。
+                         * 暴露的端点也只有 health/info/metrics，
+                         * env / heapdump 这类会吐出基础设施信息的没开。
+                         *
+                         * 写成 HttpMethod.GET 而不是裸路径：写明方法，
+                         * 万一将来加了写操作的 actuator 端点，不至于跟着一起裸奔。
+                         * 用 /actuator/health/** 是为了让 /actuator/health/liveness、
+                         * /readiness 这两个 K8s 专用分组也能匿名访问 ——
+                         * 它们同样只回一个 state，不涉及任何业务数据。
+                         *
+                         * 刻意**不放行** /actuator/info 与 /actuator/metrics：
+                         * 探针只需要 health；metrics 里有 JVM/HTTP 明细，
+                         * 给匿名访问没有必要。需要排障时带 JWT 就能看。
+                         */
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**")
                         .permitAll()
                         /*
                          * 院方调用的接口不经过 JWT。
@@ -133,6 +161,38 @@ public class SecurityConfig {
                                 "/api/his/patient-report",
                                 "/api/his/patient-report/archived")
                         .permitAll()
+                        /*
+                         * 预留接口：医生端预问诊摘要。
+                         *
+                         * **permitAll 只是「不拦 JWT」，不等于「无认证」。**
+                         * 真实的门禁是 URL 路径里的那个一次性 token，将来在
+                         * DoctorBriefController 里校验（一次性、短期、只读、只回脱敏摘要）。
+                         * 之所以不能要求患者 JWT：医生不会、也不该注册患者账号。
+                         *
+                         * 当前该接口恒定返回 501 且不读取 token，
+                         * 因此放行不会泄露任何数据 —— 它连数据库都不碰。
+                         * 实现时必须先补 token 校验再考虑放开到什么程度，
+                         * 绝不能因为「反正现在 501」而把这一步忘掉。
+                         */
+                        .requestMatchers("/api/doctor/brief/**")
+                        .permitAll()
+                        /*
+                         * 预留接口：院方知识库运营（上传 / 列表 / 重建索引）。
+                         *
+                         * 用 hasRole("ADMIN") 而不是 authenticated()：
+                         * 知识库是**院方发布给患者看的内容**，写权限等同于「对所有患者说话」，
+                         * 不能开放给任何一个登录用户。
+                         *
+                         * 这里的表达式依赖 JwtAuthenticationFilter 的行为：
+                         * 它把 JWT 里的 role 声明拼成 "ROLE_" + role 放进 authorities，
+                         * 所以 hasRole("ADMIN") 实际匹配的是 ROLE_ADMIN。
+                         *
+                         * 现状：种子账号只有 PATIENT，故普通登录用户是 403、
+                         * 未登录是 401，真正返回 501 需要等实现阶段补一个管理员账号。
+                         * 不要为了「方便看到 501」把这条放宽成 authenticated()。
+                         */
+                        .requestMatchers("/api/admin/knowledge/**")
+                        .hasRole("ADMIN")
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",

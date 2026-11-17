@@ -44,6 +44,20 @@ public class BookingOrder {
 
     private String remark;
 
+    /**
+     * 患者自助签到的时间。
+     *
+     * <p><b>为什么单独一个字段而不是复用状态机</b>：
+     * 签到不是一个"状态" —— 签到之后单子仍然是 CONFIRMED，
+     * 它只是多了一个时间点。把签到塞进状态机（加个 CHECKED_IN 状态）
+     * 会让"能不能取消"的判定跟着变复杂，而我们并不想让签到影响取消规则。
+     *
+     * <p><b>它是"本地签到"</b>：只表示患者在自己手机上点了"我已到院"，
+     * 不代表院方系统里已经报到。界面上必须说清这一点，
+     * 否则患者以为点完就不用去自助机了。
+     */
+    private LocalDateTime checkinAt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

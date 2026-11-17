@@ -66,6 +66,22 @@
       <artifactId>spring-boot-starter-security</artifactId>
     </dependency>
 
+    <!--
+      Actuator：健康探针。
+      版本交给 parent 管，不写 version —— 和 Spring Boot 版本错配的表现是
+      启动时 NoSuchMethodError，而不是编译失败，很难查。
+
+      **optional 而不是 test scope**：它必须打进可运行的 jar（运维要探活），
+      但又不是业务代码的硬依赖 —— 代码里不 import 任何 actuator 的类，
+      去掉它业务照常启动，只是少一个 /actuator/health。
+      这就是"可选依赖，缺失时不能崩"的落地方式：靠不引用，不靠条件装配。
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+      <optional>true</optional>
+    </dependency>
+
     <!-- MyBatis-Plus：省赛用 H2 跑起来，国赛切 MySQL 只改配置 -->
     <dependency>
       <groupId>com.baomidou</groupId>

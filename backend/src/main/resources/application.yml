@@ -33,10 +33,12 @@ spring:
       # 注意不能把 data-locations 设成 "never" —— 那会被当资源路径，
       # 变成"找不到 classpath:never"而启动失败。所以关种子靠 mode。
       mode: ${APP_SEED_MODE:always}
-      # 拆成两个文件：主表结构 + HIS 接入相关表。
-      # 拆开是为了让"HIS 对接"这块能整块拿出/拿下，
+      # 拆成多个文件：主表结构 + HIS 接入相关表 + 院方调阅 + 问诊对话留痕。
+      # 拆开是为了让"HIS 对接"、"院方调阅"、"对话留痕"这几块能整块拿出/拿下，
       # 不影响主表的可读性。顺序有意义：主表先建。
-      schema-locations: classpath:schema.sql,classpath:schema-his.sql,classpath:schema-access.sql
+      # schema-chat.sql 放最后：它只依赖 schema.sql 里的约定（deleted 列、逻辑删除），
+      # 与 HIS / 调阅两块没有任何关系，放在末尾也不影响它们。
+      schema-locations: classpath:schema.sql,classpath:schema-his.sql,classpath:schema-access.sql,classpath:schema-chat.sql,classpath:schema-visit.sql
       data-locations: classpath:data.sql
 
   h2:
@@ -97,3 +99,32 @@ logging:
     com.zhidao: debug
     # 关掉 Security 的默认噪音
     org.springframework.security: warn
+  pattern:
+    # %X{requestId} 由 common/RequestIdFilter 写入 MDC，请求结束后清除。
+    # 放在方括号里：没有 requestId 时（如启动日志、@Scheduled 线程）
+    # 会渲染成字面量 ""，一行里仍能看出"这条不是某个请求产生的"，
+    # 比留空更好辨认。
+    #
+    # 折叠在这样一行里的好处：用户报错时截图/复制一行就够定位，
+    # 不用再去翻"这个 traceId 是哪个请求的"。
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [rid=%X{requestId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [rid=%X{requestId:-}] %logger{36} - %msg%n"
+
+# ---------------- Actuator 健康探针 ----------------
+# 只暴露 health / info / metrics 三个。
+# **不要用 include: "*"**：env、heapdump、threaddump 这类端点会吐出
+# 环境变量与内存快照，在医疗系统里等同于泄露基础设施信息。
+#
+# show-details: when-authorized —— 匿名只能看到 up/down，
+# 数据库、磁盘等组件的细节要登录后才给。
+# 这正好配合 SecurityConfig 里 /actuator/** 的 permitAll：
+# 探针（K8s livenessProbe / 负载均衡）拿不到 JWT 也必须能问"活着没"，
+# 而"活着没"本来就不是秘密。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized

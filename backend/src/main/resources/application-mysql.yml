@@ -24,8 +24,22 @@ spring:
 
   sql:
     init:
-      # 首次启动自动建表与灌种子数据；之后建议改成 never 并交给迁移工具
-      mode: always
+      # ⚠️ 这一行决定"重启会不会清库"，动之前先读完这段。
+      #
+      # schema-mysql.sql 开头是 DROP TABLE IF EXISTS（它不是增量迁移脚本），
+      # 而 mode=always 会在**每次启动**执行它 —— 也就是说：
+      #   · 演示期：每次启动都是干净数据，这是想要的效果
+      #   · 上线后：每次重启把真库清空重建，等于数据全丢
+      #
+      # 所以这里用 SEED_MODE 开关而不是写死，并给出两种明确用法：
+      #
+      #   演示（默认）：什么都不设 —— 启动即干净数据
+      #   上线：先手工执行一次 schema-mysql.sql + data.sql 建库灌种子，
+      #         然后 export APP_SEED_MODE=never，此后重启不再动表结构
+      #
+      # 上线后请配合 --spring.profiles.active=mysql,prod 一起用（见 application-prod.yml），
+      # 那个 profile 会把 init 彻底关掉。
+      mode: ${APP_SEED_MODE:always}
       schema-locations: classpath:schema-mysql.sql
       data-locations: classpath:data.sql
 

@@ -2,6 +2,7 @@ package com.zhidao.controller;
 
 import com.zhidao.adapter.HospitalAdapter;
 import com.zhidao.adapter.HospitalAdapterRegistry;
+import com.zhidao.adapter.HospitalIntegrationContract;
 import com.zhidao.common.ApiResult;
 import com.zhidao.dto.BookingRequest;
 import com.zhidao.entity.BookingOrder;
@@ -59,7 +60,7 @@ public class BookingController {
     }
 
     /**
-     * 院方接入清单。
+     * 院方接入清单（字段级）。
      *
      * <p>给医院信息科看：照着这份清单准备数据，接入就是实现一个
      * {@code HospitalAdapter} 类。刻意做成公开接口而不是写进内部文档 ——
@@ -68,6 +69,34 @@ public class BookingController {
     @GetMapping("/integration-contract")
     public ApiResult<List<Map<String, String>>> integrationContract() {
         return ApiResult.ok(HospitalAdapterRegistry.integrationRequirements());
+    }
+
+    /**
+     * 院方接入契约（接口级，完整版）。
+     *
+     * <p>与 {@code /integration-contract} 的区别：那个是"要实现哪些方法"，
+     * 这个是"每个端点长什么样"—— 路径、参数、响应结构、错误码、
+     * 以及一组联调自查请求。院方把它当接口文档读。
+     *
+     * <p>放在接口里而不是只写进 md：契约与
+     * {@link com.zhidao.adapter.HospitalIntegrationContract} 一起编译，
+     * 接口改了文档忘改这件事就不容易发生了。
+     */
+    @GetMapping("/integration-spec")
+    public ApiResult<Map<String, Object>> integrationSpec() {
+        return ApiResult.ok(HospitalIntegrationContract.describe());
+    }
+
+    /**
+     * 联调自查清单。
+     *
+     * <p>院方实现完 4 个端点后照着打一遍，能覆盖「有号 / 没号 / 号满 /
+     * 重复提交」四类最容易出错的情况。单独一个端点是因为它比契约本身
+     * 短得多，联调时反复看的只有它。
+     */
+    @GetMapping("/integration-smoke-tests")
+    public ApiResult<List<Map<String, Object>>> integrationSmokeTests() {
+        return ApiResult.ok(HospitalIntegrationContract.smokeTests());
     }
 
     @GetMapping("/slots")
@@ -155,10 +184,64 @@ public class BookingController {
         return ApiResult.ok(bookingService.changeStatus(CurrentUser.id(), id, BookingOrder.STATUS_CONFIRMED));
     }
 
-    /** 取消是幂等语义上的"结果一致"，但不允许把已取消的单再取消一次（会重复调院方） */
+    /**
+     * 患者自助签到："我已到院"。
+     *
+     * <p><b>必须说清它不是什么</b>：它只在我们自己的库里记一个时间点，
+     * 不调用院方系统，也不代表院方那里已经报到。真正的签到
+     * 还是要在自助机或分诊台完成。界面文案必须写明这一点 ——
+     * 让患者以为点一下就不用去机器上刷，是这里最容易造成的伤害。
+     *
+     * <p><b>幂等</b>：重复点击只记第一次的时间。
+     * 患者在大厅里等得无聊多点两下很常见，每次都刷新时间会让
+     * 排队估算来回跳。
+     *
+     * <p>为什么不限制必须临近就诊才允许签到：患者可能早到一小时，
+     * 也可能提前一天来问路。限制时间点只会制造"点了没反应"。
+     * 真正该限制的是取消，不是签到。
+     */
+    @PostMapping("/{id}/checkin")
+    public ApiResult<BookingOrder> checkin(@PathVariable long id) {
+        return ApiResult.ok(bookingService.checkIn(CurrentUser.id(), id));
+    }
+
+    /**
+     * 取消。
+     *
+     * <p><b>先过政策，再过状态机。</b>顺序有意义：
+     * 距就诊不足 24 小时的号不该退，这是业务规则；
+     * 而"能不能取消"是状态机管的另一件事。先问政策，
+     * 患者看到的是「需要到窗口办理」而不是一句冷冰冰的
+     * 「当前状态不能变成已取消」。
+     */
     @PostMapping("/{id}/cancel")
     public ApiResult<BookingOrder> cancel(@PathVariable long id) {
+        BookingOrder order = bookingService.get(CurrentUser.id(), id);
+
+        String blocked = com.zhidao.service.CancelPolicy.blockedReason(order, LocalDateTime.now());
+        if (blocked != null) {
+            throw new com.zhidao.common.BizException(40903, blocked);
+        }
+
         return ApiResult.ok(bookingService.changeStatus(CurrentUser.id(), id, BookingOrder.STATUS_CANCELLED));
+    }
+
+    /**
+     * 我还能不能退这个号。
+     *
+     * <p>单独一个查询接口而不是让前端自己算 24 小时：
+     * 规则一变（改成 12 小时、或某院特殊政策），前端就得跟着改一次。
+     * 规则只在后端有一份，前端只负责显示。
+     */
+    @GetMapping("/{id}/cancel-policy")
+    public ApiResult<Map<String, Object>> cancelPolicy(@PathVariable long id) {
+        BookingOrder order = bookingService.get(CurrentUser.id(), id);
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("canCancel", com.zhidao.service.CancelPolicy.blockedReason(order, now) == null);
+        data.put("reason", com.zhidao.service.CancelPolicy.blockedReason(order, now));
+        data.put("deadline", com.zhidao.service.CancelPolicy.deadlineOf(order));
+        return ApiResult.ok(data);
     }
 
     @PostMapping("/{id}/complete")

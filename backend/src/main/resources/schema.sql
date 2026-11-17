@@ -106,6 +106,9 @@ CREATE TABLE booking_order (
   status          VARCHAR(20)  NOT NULL DEFAULT 'CREATED',
   external_order_no VARCHAR(64)         COMMENT '对方系统的单号，Mock 阶段为空',
   remark          VARCHAR(500),
+  -- 患者自助签到的时间。NULL 表示还没签到。
+  -- 刻意不放进状态机：签到不改变"能不能取消"，只多一个时间点。
+  checkin_at      TIMESTAMP             COMMENT '本地签到时间；不代表院方侧已报到',
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted         TINYINT      NOT NULL DEFAULT 0

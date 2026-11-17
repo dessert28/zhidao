@@ -127,15 +127,33 @@ class ApiIntegrationTest {
         JsonNode data = json.readTree(body).path("data");
         assertThat(data.path("total").asInt()).isGreaterThanOrEqualTo(3);
         /*
-         * 核心卖点：跨院。种子病历分布在 MOCK-A 与 MOCK-B 两个院区编码下。
+         * 核心卖点：跨院。断言的是**分组这件事本身**，而不是具体的院区编码。
          *
-         * 注意这里与「预约」用的 Z2-JFL 不是同一组编码 ——
-         * 预约的演示院区已经收敛到 Z2-JFL 一家，但历史病历数据
-         * 仍保留多个院区编码，正是为了体现「病历跨院」这件事。
-         * 这两处编码不同是有意的，不要为了整齐把它们改成一样。
+         * 这里原先写死断言 MOCK-A / MOCK-B。院区编码后来统一收敛到 Z2-JFL，
+         * 种子病历也全部挂在这一个编码下，那条断言随之失效 —— 但它想验证的
+         * 「病历能按院区分组、且分组不丢记录」一点没变。
+         *
+         * ⚠️ 只断言"至少两个院区"是过不去的：当前种子数据只有一家院区。
+         *   那说明"跨院"目前落在**能力**上（数据结构、分组、适配器）而不是
+         *   演示数据上。要让评委看到两家院区的病历，得往 data.sql 里加
+         *   另一家院区的种子病历 —— 那是数据的事，不该靠改断言来"变绿"。
+         *   所以这里断言的性质是：分组非空，且各组合计等于 total。
          */
-        assertThat(data.path("byHospital").has("MOCK-A")).isTrue();
-        assertThat(data.path("byHospital").has("MOCK-B")).isTrue();
+        JsonNode byHospital = data.path("byHospital");
+        assertThat(byHospital.size())
+                .as("病历必须能按院区分组（至少一组），否则前端图例无从渲染")
+                .isGreaterThanOrEqualTo(1);
+
+        int grouped = 0;
+        for (JsonNode arr : byHospital) {
+            assertThat(arr.isArray())
+                    .as("byHospital 的值应是该院区的记录数组")
+                    .isTrue();
+            grouped += arr.size();
+        }
+        assertThat(grouped)
+                .as("各院区分组的记录数之和应等于 total，不能有记录在分组时丢掉")
+                .isEqualTo(data.path("total").asInt());
     }
 
     @Test
@@ -198,12 +216,50 @@ class ApiIntegrationTest {
     @DisplayName("院区有号源，且号源结构与容量符合约定")
     void hospitalHasSlots() throws Exception {
         /*
-         * 原来这条测的是「两家院区号源松紧不同」，靠对比体现换院区
-         * 才有意义。只剩一家院区后没法对比了，改为直接验证：
-         * 该院区该科室在明天确实排出了号源，且初始余量等于容量。
+         * ============ 这条断言改过一次，原因值得记下来 ============
+         *
+         * 上一版断言「内分泌科明天有号」（count > 0）。
+         * 它在单跑时是绿的，但整个测试类一起跑时**偶发失败** ——
+         * 因为前面的用例（尤其是 BookingConcurrencyTest）把同一个
+         * Mock 适配器的号占掉了，而适配器的 orders 是**进程内 Map**，
+         * 同一个 Spring 上下文里所有测试共用一份。
+         *
+         * 这类"单跑绿、全跑红"的测试是 CI 里最浪费时间的：
+         * 它看起来像随机失败，于是被 ignore 掉，然后就再也不保护任何东西。
+         *
+         * 现在改成断言**结构**而不是**数量**：
+         *   · 号源接口必须正常响应（这是真正的契约）
+         *   · 该科室在号表里有排班 —— 用"整个放号周期内任意一天有号"
+         *     来判断，而不是押在某一天
+         *   · 每个号源的字段完整（visitTime / remaining 不为 null）
+         *
+         * 不押日期还顺带修掉了另一个隐患：原来写死 '2026-11-16'，
+         * 过了那一天这条测试就会因为"全是过去时段被过滤"而恒红。
          */
-        int count = slotCount("Z2-JFL", "内分泌科");
-        assertThat(count).as("内分泌科应排出号源").isPositive();
+        boolean found = false;
+        for (int i = 0; i < 7 && !found; i++) {
+            String date = java.time.LocalDate.now().plusDays(i).toString();
+            String body = mvc.perform(get("/api/bookings/slots")
+                            .param("hospitalCode", "Z2-JFL")
+                            .param("department", "内分泌科")
+                            .param("date", date)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+            var data = json.readTree(body).path("data");
+            assertThat(data.isArray()).as("号源接口必须返回数组").isTrue();
+
+            for (var slot : data) {
+                // 字段完整性：缺任何一个前端都渲染不出来
+                assertThat(slot.path("visitTime").asText()).as("visitTime 不能为空").isNotEmpty();
+                assertThat(slot.has("remaining")).as("必须带 remaining（0 表示已满）").isTrue();
+                assertThat(slot.path("remaining").asInt()).as("remaining 不能为负").isGreaterThanOrEqualTo(0);
+            }
+            if (data.size() > 0) found = true;
+        }
+
+        assertThat(found).as("未来 7 天内内分泌科至少应排出一个时段（全部被约满时也算有排班）").isTrue();
     }
 
     private int slotCount(String code, String dept) throws Exception {
@@ -281,21 +337,54 @@ class ApiIntegrationTest {
     @DisplayName("下单后该时段余量减为 0，其他时段不受影响")
     void remainingDecreasesAfterBooking() throws Exception {
         String dept = "神经内科";
-        String date = "2026-11-16";
 
-        // 找一个还有号的时段
-        String before = mvc.perform(get("/api/bookings/slots")
-                        .param("hospitalCode", "Z2-JFL")
-                        .param("department", dept)
-                        .param("date", date)
-                        .header("Authorization", "Bearer " + token))
-                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        com.fasterxml.jackson.databind.JsonNode slots = json.readTree(before).path("data");
-        assertThat(slots.size()).as("前置条件：该科室当天应有号源").isGreaterThan(0);
+        /*
+         * ============ 找号源的方式改过一次 ============
+         *
+         * 原来写死 date = "2026-11-16" 取第一天的号源。两个问题：
+         *
+         * 1. **日期会过期**：过了那天之后所有时段都被过滤，测试恒红。
+         * 2. **号会被别的用例占满**：Mock 适配器的 orders 是进程内 Map，
+         *    同一个 Spring 上下文里所有测试共用一份。前面的用例（尤其
+         *    BookingConcurrencyTest 会打满一个时段）跑过之后，
+         *    这里可能拿到空数组，断言"前置条件有号源"直接失败。
+         *
+         * 这属于**测试之间互相污染**，不是产品缺陷。改成：
+         * 在接下来的 14 天里找**第一个有剩余号**的时段，
+         * 找不到才失败 —— 那时是真的有业务问题（号表全空）。
+         */
+        String visitTime = null;
+        String date = null;
+        int beforeRemaining = 0;
+        com.fasterxml.jackson.databind.JsonNode slots = null;
 
-        String visitTime = slots.get(0).path("visitTime").asText();
-        int beforeRemaining = slots.get(0).path("remaining").asInt();
-        assertThat(beforeRemaining).as("前置条件：该时段初始有余量").isGreaterThan(0);
+        java.time.LocalDate today = java.time.LocalDate.now();
+        for (int i = 0; i < 14 && visitTime == null; i++) {
+            String d = today.plusDays(i).toString();
+            String body = mvc.perform(get("/api/bookings/slots")
+                            .param("hospitalCode", "Z2-JFL")
+                            .param("department", dept)
+                            .param("date", d)
+                            .header("Authorization", "Bearer " + token))
+                    .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.JsonNode data = json.readTree(body).path("data");
+
+            for (com.fasterxml.jackson.databind.JsonNode s : data) {
+                int rem = s.path("remaining").asInt();
+                if (rem > 0) {
+                    visitTime = s.path("visitTime").asText();
+                    beforeRemaining = rem;
+                    date = d;
+                    slots = data;
+                    break;
+                }
+            }
+        }
+
+        assertThat(visitTime)
+                .as("未来 14 天内 " + dept + " 应有至少一个尚有余量的时段")
+                .isNotNull();
+
         /*
          * 同时记下"其他时段"的下单前余量。
          * 原来这里写死断言"其他时段 = 1"，那是把时段容量当成 1 的时代留下的。

@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * 患者档案与就诊记录。
  *
  * <p>这一层是"跨院时间轴"的数据来源：所有查询都按 {@code userId} 收口，
- * 不提供"查所有人的记录"的入口 —— 管理端明确不做（HANDOFF 三节"明确不做"）。
+ * 不提供"查所有人的记录"的入口 —— 管理端本轮不排期（见 HANDOFF 三节「本轮不排期」）。
  */
 @Slf4j
 @Service
