@@ -5,7 +5,7 @@
 > **省赛提交截止 2026-11-18**。
 > 这份文档的目标是：在新机器上 **30 分钟内**跑起来，并且知道下一步做什么。
 >
-> **当前状态一句话**：功能主线已实现，四层验证齐备（前端 717 + 后端 119 = 836 用例
+> **当前状态一句话**：功能主线已实现，四层验证齐备（前端 743 + 后端 119 = 862 用例
 > + E2E + 生产构建），`pnpm verify:all` 一条命令可确认健康。
 > **但工作区有一批未提交改动（见 `git status`），不要当成已推送。**
 > §三 列出的是继续深化的方向，以及待开发的项。
@@ -141,7 +141,7 @@ scripts/
 ```
 
 **测试**：
-- 前端 `cd frontend; pnpm exec vitest run` → **717 passed / 5 skipped（44 文件）**
+- 前端 `cd frontend; pnpm exec vitest run` → **743 passed / 5 skipped（48 文件）**
 - 后端 `cd backend; mvn test` → **119 用例**
 - 一键 `pnpm verify:all` → 六项全测（含 E2E 与生产构建）
 
@@ -211,7 +211,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | 适老模式 | 顶栏三档 + `useTextScale`，5 条测试 | ✅ 完整 |
 | 账号 | demo/demo1234 自动登录；`recovery_hash` 有字段，注册/恢复码流程待开发 | 🟡 演示态 |
 
-**测试总量**：前端 717 + 后端 119 = **836 用例**。
+**测试总量**：前端 743 + 后端 119 = **862 用例**。
 **端到端验证**：`pnpm verify:llm`（模型四关）+ `pnpm e2e:multiturn`（七场景）+ `pnpm e2e:regressions`（浏览器实测缺陷回归，9 项）+ `pnpm e2e:prod`（生产构建验证，13 项）。
 
 **一键全量**：`pnpm verify:all` —— 依次跑类型检查 / 前端单测 / 后端单测 / 多轮 E2E / 缺陷回归 / 生产构建，约 3.5 分钟。
@@ -480,7 +480,7 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
-pnpm exec vitest run                                       # 717 passed / 5 skipped
+pnpm exec vitest run                                       # 743 passed / 5 skipped
 pnpm exec vite build                                       # 生产构建
 
 cd ../backend

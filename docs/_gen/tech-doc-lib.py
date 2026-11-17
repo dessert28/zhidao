@@ -59,8 +59,8 @@ def set_run_font(run, name=CN_FONT, size=None, bold=None, color=None):
         run.font.color.rgb = color
 
 
-def add_par(doc, text="", size=10.5, bold=False, color=None, align=None,
-            space_before=0, space_after=6, indent=None, line=1.44, font=CN_FONT):
+def add_par(doc, text="", size=10.2, bold=False, color=None, align=None,
+            space_before=0, space_after=5, indent=None, line=1.36, font=CN_FONT):
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.space_before = Pt(space_before)
@@ -86,7 +86,7 @@ def add_par(doc, text="", size=10.5, bold=False, color=None, align=None,
 def add_heading(doc, text, level=1):
     """自定义标题：level 1 带品牌色与上间距，level 2 带左侧色条效果。"""
     if level == 1:
-        p = add_par(doc, "", space_before=16, space_after=8)
+        p = add_par(doc, "", space_before=13, space_after=6)
         run = p.add_run(text)
         set_run_font(run, CN_FONT, 16, True, BRAND)
         # 底部分隔线
@@ -108,7 +108,7 @@ def add_heading(doc, text, level=1):
         # 标题不能孤零零落在页底，必须与后文同页
         p.paragraph_format.keep_with_next = True
         return p
-    p = add_par(doc, "", space_before=9, space_after=4)
+    p = add_par(doc, "", space_before=7, space_after=3)
     run = p.add_run(text)
     set_run_font(run, CN_FONT, 11, True, GRAY)
     p.paragraph_format.keep_with_next = True
@@ -226,7 +226,7 @@ def _repeat_header(row):
     trPr.append(el)
 
 
-def add_table(doc, headers, rows, widths=None, size=9, header_bg="0F766E"):
+def add_table(doc, headers, rows, widths=None, size=8.6, header_bg="0F766E"):
     """三线感表格：深色表头 + 浅色分隔。"""
     tbl = doc.add_table(rows=1, cols=len(headers))
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER

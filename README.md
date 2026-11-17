@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-717%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2029%20pages-0f766e)](docs/智诊通-技术文档.pdf)
+[![tests](https://img.shields.io/badge/frontend%20tests-717%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2030%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
 ---
 
@@ -154,7 +154,7 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 717 passed | 5 skipped
+pnpm test          # 743 passed | 5 skipped
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
@@ -287,7 +287,7 @@ cd frontend && pnpm verify:all
 | 多实例部署 | ⚠️ 单实例 | 对话历史已落库（`chat_message`）；号源锁是进程内锁、限流是单实例内存，多实例需换 Redis / 分布式锁，并处理提醒引擎 `@Scheduled` 的重复扫描 |
 | 管理端/权限矩阵 | ⏳ 待开发 | 患者端是主线；管理端排在后续版本 |
 | MySQL profile 覆盖不全 | ⚠️ 仅基础表 | `schema-mysql.sql` 只建 7 张基础表；对话历史、到院进度、院方凭据、调阅审计共 7 张表**没有 MySQL 版本**。省赛默认 H2 不受影响，上线前需补 DDL（见 `docs/14` §4.3） |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 717 + 后端 119 = **836 用例**，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 743 + 后端 119 = **862 用例**，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
 
 > **逐项能力核对**（什么能用、什么不能用、按代码而非文档）见 [`HANDOFF.md` §二·五](HANDOFF.md)。
 
@@ -366,7 +366,7 @@ cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则�
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 717 passed | 5 skipped
+pnpm test                   # 743 passed | 5 skipped
 pnpm typecheck              # tsc -b --noEmit，strict
 
 # 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）
