@@ -1,13 +1,14 @@
 # 交接文档 · 换机器继续开发
 
-> 更新：2026-11-15 ｜ 适用：任何一台干净的电脑
+> 更新：2026-11-17 ｜ 适用：任何一台干净的电脑
 >
 > **省赛提交截止 2026-11-18**。
 > 这份文档的目标是：在新机器上 **30 分钟内**跑起来，并且知道下一步做什么。
 >
-> **当前状态一句话**：全部功能已实现并推送，四层验证齐备（461 单元测试
+> **当前状态一句话**：功能主线已实现，四层验证齐备（前端 717 + 后端 119 = 836 用例
 > + E2E + 生产构建），`pnpm verify:all` 一条命令可确认健康。
-> §三 列出的是继续深化的方向，不是未完成的任务。
+> **但工作区有一批未提交改动（见 `git status`），不要当成已推送。**
+> §三 列出的是继续深化的方向，以及待开发的项。
 
 ---
 
@@ -89,7 +90,7 @@ frontend/
       reviewer.ts        四维自评 + 安全规则表 + 熔断 + 用药/过敏交叉检查
       rules/red-flag.ts  五条红线规则（绕过 LLM，确定性短路）
       rules/injection.ts 提示词注入检测（5 类元指令，确定性）
-      tools/mcp-hospital.ts 院方工具层（MCP 签名形状，不做真握手）
+      tools/mcp-hospital.ts 院方工具层（MCP 签名形状，真握手待开发）
       safe-run.ts        超时/异常兜底，永不抛出
     rag/
       kb.ts              20 条知识库（含内容合规测试）
@@ -97,6 +98,8 @@ frontend/
       embed.ts           本地向量化（哈希 bigram，非神经网络）
       rrf.ts             RRF(k=60) 融合
       vector-store.ts    pgvector 存储（PGVECTOR_ENABLED=true 才启用）
+    limit.ts             单实例内存限流
+    metrics.ts           请求指标（/api/metrics，进程内计数）
     ocr/recognize.ts     VLM 读化验单（唯一让原图离开设备的路径）
     render/registry.tsx  6 类卡片的服务端渲染
     routes/chat.ts       SSE 主入口，串起整条链路
@@ -109,16 +112,24 @@ frontend/
     lib/db/upload.ts        上传链路：原文→脱敏→只发摘要
     lib/db/pdf.ts           文本型 PDF 提取（扫描件明确拒绝）
     lib/db/ocr.ts           图像识别客户端 + 隐私提示常量
-    lib/exam/duplicate.ts   跨院重复检查（7 项词典 + 时效窗口）
+    lib/exam/extract.ts     检验/检查单结构化抽取（上传校对草稿）
+    lib/exam/duplicate.ts   跨院重复检查（7 项词典 + 时效窗口 + 必须跨院）
+    lib/exam/normalize.ts   跨院实体归一（别名 + 模态/部位配对 + 修饰词剔除）
+    lib/exam/sequence.ts    检查顺序规划（空腹抽血优先、预约影像次之）
     lib/api.ts              后端 API 客户端（结构化失败）
     lib/utils.ts            cn()：shadcn 组件依赖
+    components/ExtractionReview.tsx  上传校对：回显草稿 → 可改 → 确认才落库
+    components/QueueEstimateCard.tsx 院内排队估算（低置信度只给原因不给数字）
     hooks/useEventStream.ts 手写 SSE 消费
     hooks/usePatientFacts.ts  过敏/慢病/用药 → SessionFacts
+    hooks/useTextScale.ts   适老模式（顶栏三档字号）
 backend/
-  entity/ 6 个实体  mapper/ 6 个 Mapper
+  entity/ 14 个实体  mapper/ 14 个 Mapper
   adapter/ HospitalAdapter 接口 + Mock 实现 + Registry（按 hospitalCode 分发）
-  service/  Auth / Patient / Booking / Reminder / ReminderEngine / Hospital
-  controller/ Auth / Patient / Booking / Reminder / Health 五组接口
+  service/  Auth / Patient / Booking / CancelPolicy / Reminder / ReminderEngine
+            Hospital / HospitalNav / QueueEstimate / Chat / VisitProgress
+  controller/ Auth / Patient / Booking / Reminder / Health / ChatHistory /
+              VisitProgress / Nav / DoctorBrief（501/50101）/ KnowledgeAdmin（501/50102）
   security/ JWT 签发校验 + 过滤器 + CurrentUser
   common/ 统一响应体 + 全局异常处理（按 code 段位映射 HTTP 状态）
 scripts/
@@ -130,8 +141,8 @@ scripts/
 ```
 
 **测试**：
-- 前端 `cd frontend; pnpm exec vitest run` → **432 用例**（+5 个 pgvector 集成在未开启时跳过）
-- 后端 `cd backend; mvn test` → **31 用例**（20 接口集成 + 11 提醒引擎）
+- 前端 `cd frontend; pnpm exec vitest run` → **717 passed / 5 skipped（44 文件）**
+- 后端 `cd backend; mvn test` → **119 用例**
 - 一键 `pnpm verify:all` → 六项全测（含 E2E 与生产构建）
 
 ### 实测通过的链路
@@ -173,7 +184,7 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 
 ---
 
-## 二·五、能力边界（2026-11-14 按代码核对，不是按文档）
+## 二·五、能力边界（2026-11-17 按代码核对，不是按文档）
 
 > 这一节回答一个评委必问、也最容易被自己骗的问题：**到底哪些是真的能用？**
 > 判据只有一条：**能在浏览器里点出来 / 能 curl 出来**。设计文档里写了但代码没有的，一律算"没做"。
@@ -184,17 +195,23 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 | --- | --- | --- |
 | 红线急症拦截 | 5 类急症正则，命中即短路、不经 LLM；25 条用例 | ✅ 完整 |
 | AI 分诊 | 真实模型；槽位采集、追问≤3 轮、科室+理由+置信度 | ✅ 完整 |
-| 多轮记忆 | 会话状态闭环（done 回传 → 前端 ref → 下轮带回），7 场景 19 断言全过 | ✅ 完整 |
+| 多轮记忆 | 会话状态闭环 + 对话历史落库（`chat_message`）；同账号换设备可续，7 场景 19 断言全过 | ✅ 完整 |
 | 循证检索 | BM25 + bigram + 接地检查 + 引用卡 | ✅ 可用（语料仅 10 条） |
 | 四维自审 | 安全/准确/完整/依据；低分 retry；连续 3 次熔断 | ✅ 完整 |
 | 端侧脱敏 | 7 类 PII 规则 + ONNX NER（129MB，浏览器内跑） | ✅ 完整 |
-| 语音输入 | Web Speech；识别结果进输入框，**不自动发送** | ✅ 完整 |
-| 语音播报 | speechSynthesis，可点朗读 | ✅ 完整 |
+| 语音输入 | Chrome/Edge 走云端识别，识别后**本地脱敏**；结果进输入框，不自动发送 | ✅ 完整 |
+| 语音播报 | speechSynthesis，端侧，可点朗读 | ✅ 完整 |
 | 生成式 UI | 6 类服务端 renderToString 卡片 | ✅ 完整 |
-| 后端接口 | 5 组 REST + JWT + 适配器注册表；17 集成用例 | ✅ 完整 |
-| 提醒引擎 | 3 条可解释规则 + dedupe 幂等 + `@Scheduled` | ✅ 完整 |
+| 后端接口 | 10 组 REST + JWT + 适配器注册表；119 后端用例 | ✅ 完整 |
+| 提醒引擎 | 3 条可解释规则 + dedupe 幂等 + `@Scheduled` 落库（应用内提醒） | ✅ 完整 |
+| 上传校对 | `prepareUpload` 回显草稿 → `ExtractionReview` 可改 → 确认才落库（2026-11-17） | ✅ 完整 |
+| 检查顺序规划 | `lib/exam/sequence.ts` 规则驱动：空腹抽血优先、预约影像次之、空腹未知需确认 | ✅ 完整（规则，不是医学判断） |
+| 跨院实体归一 | `lib/exam/normalize.ts` 别名 + 模态/部位配对 + 修饰词剔除 | ✅ 可用（覆盖常见检验/影像，非通用 NLP） |
+| 院内排队 | `QueueEstimateCard` + `QueueEstimateService` + `VisitPage` | ✅ 完整（低置信度只给原因不给数字） |
+| 适老模式 | 顶栏三档 + `useTextScale`，5 条测试 | ✅ 完整 |
+| 账号 | demo/demo1234 自动登录；`recovery_hash` 有字段，注册/恢复码流程待开发 | 🟡 演示态 |
 
-**测试总量**：前端 432 + 后端 29 = **461 用例**。
+**测试总量**：前端 717 + 后端 119 = **836 用例**。
 **端到端验证**：`pnpm verify:llm`（模型四关）+ `pnpm e2e:multiturn`（七场景）+ `pnpm e2e:regressions`（浏览器实测缺陷回归，9 项）+ `pnpm e2e:prod`（生产构建验证，13 项）。
 
 **一键全量**：`pnpm verify:all` —— 依次跑类型检查 / 前端单测 / 后端单测 / 多轮 E2E / 缺陷回归 / 生产构建，约 3.5 分钟。
@@ -207,47 +224,50 @@ POST /api/reminders/scan        → {"created":1}，再点一次 {"created":0}�
 > ```
 > 缺环境时会**标记为"跳过"而不是"通过"** —— 跳过不等于验证过，报告里会明确说明。
 
-### 未实现 —— 第一类：有占位，用户会看到"未开放"
+### 待开发 —— 第一类：有占位，用户会看到"未开放"
 
 | 功能 | 代码里的实际状态 | 用户看到什么 |
 | --- | --- | --- |
 | ~~号源查询与预约~~ | ✅ **2026-11-15 已实现**（`agents/scheduler.ts`） | 预览卡 + 确认按钮，下单写库 |
 | ~~就诊时间轴~~ | ✅ **2026-11-15 已实现** | 挂号后自动给四步时间线 |
 | ~~预约预览卡~~ | ✅ **2026-11-15 已实现** | 首个有真实副作用的客户端卡片 |
-| ~~病历上传~~ | ✅ **2026-11-15 已实现**（纯文本） | 原文存 IndexedDB + 本地脱敏 + 只发摘要。PDF/图片仍不支持 |
+| ~~病历上传~~ | ✅ **2026-11-15 已实现**（文本 / PDF / 图片） | 原文存 IndexedDB + 本地脱敏 + 只发摘要；图片识别是唯一原图出设备的路径 |
+| 医生端摘要 | 预留接口 `GET /api/doctor/brief/{token}` 恒返回 501/50101，不读 token | 没有医生端页面 |
+| 院方知识库 | 预留接口 `/api/admin/knowledge/**` 恒返回 501/50102 | 没有 B 端页面 |
 
-### 未实现 —— 第二类：连占位都没有
+### 待开发 —— 第二类：连占位都没有
 
 | 缺失 | 影响 | 说明 |
 | --- | --- | --- |
 | ~~前端不调后端~~ | ✅ **2026-11-15 已打通** | `server/routes/backend-proxy.ts` + `src/lib/api.ts`；病历页真读跨院记录与提醒，标记完成写回数据库 |
 | ~~用药冲突提示~~ | ✅ **2026-11-15 已打通** | 根因不是"函数没接"，是 `currentMedications` 永远为空：`patient_profile` 没有用药字段、前端从不传 facts。补了 `medication_json` 列 + `usePatientFacts` 后实测触发 |
-| ~~跨院重复检查提示~~ | ✅ **2026-11-15 已打通** | `src/lib/exam/duplicate.ts`：7 项检查词典 + 时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。17 用例，实测种子数据触发 |
-| ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。**按 docs/10 D3 不做真握手** |
+| ~~跨院重复检查提示~~ | ✅ **2026-11-15 已打通**，11-17 升级归一 | `src/lib/exam/normalize.ts` 规则归一（别名 + 模态/部位配对 + 修饰词剔除）+ `duplicate.ts` 时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。实测种子数据触发 |
+| ~~MCP 工具层~~ | ✅ **2026-11-15 已实现封装层** | `agents/tools/mcp-hospital.ts`：`list_slots` / `hold_slot` / `list_hospitals`，签名对齐 MCP schema。真握手待开发（docs/10 D3） |
 | ~~向量检索~~ | ✅ **2026-11-15 已实现并实测** | `rag/embed.ts` + `rrf.ts` + `vector-store.ts`；pgvector 0.8.7 真链路验证通过。默认关闭，`PGVECTOR_ENABLED=true` 开启 |
 | ~~PDF 文本提取~~ | ✅ **2026-11-15 已实现** | `src/lib/db/pdf.ts`；只处理文本型 PDF，扫描件明确拒绝 |
 | ~~图像 / 照片识别~~ | ✅ **2026-11-15 已实现并实测** | `server/ocr/recognize.ts` + `/api/ocr/report`。**唯一一条原图离开设备的路径**，界面上常驻隐私提示 |
 
 ### ✅ 前后端已打通（2026-11-15）
 
-后端有完整的预约、提醒、病历接口，但**前端一行都没调用**。这意味着：
+> 以下是打通**之前**的状态，留档说明为什么必须接后端；结论已不成立。
 
-- 5173 上看到的提醒、病历、预约，全部来自 AI 对话，**不是来自数据库**
-- README §2 承诺的三个差异化里，「跨院统一时间轴」与「跨院用药冲突」都依赖后端数据，**在演示里看不到**
+当时后端有完整的预约、提醒、病历接口，但**前端一行都没调用**：
 
-不接后端，项目在评委眼里就是一个"AI 聊天机器人"；接上之后才看得出"跨院健康管理"这个定位。
+- 5173 上看到的提醒、病历、预约全部来自 AI 对话，**不是来自数据库**
+- 「跨院统一时间轴」与「跨院用药冲突」都依赖后端数据，在演示里看不到
 
 ### 三段式 vs 实际交付
 
 README §1.3 说「去之前 / 在院内 / 回家后」三段都做：
 
-| 段落 | README 承诺 | 实际状态（2026-11-15） |
+| 段落 | README 承诺 | 实际状态（2026-11-17） |
 | --- | --- | --- |
 | 去之前 | 预问诊 + 科室推荐 + 就诊准备清单 | ✅ 真实模型分诊 + 科室卡（带推理）+ 追问上限；"准备清单"是文本形态 |
-| 在院内 | 号源查询、队列、检查顺序 | ✅ 号源查询与预约闭环（预览卡 + 下单 + 时间线）；**队列未做**（院方数据，Mock 无从模拟） |
+| 在院内 | 号源查询、队列、检查顺序 | ✅ 号源查询与预约闭环（预览卡 + 下单 + 时间线）；**队列已实现**（`QueueEstimateCard` + `VisitPage`，低置信度只给原因不给数字）；检查顺序由 `sequence.ts` 规则排序 |
 | 回家后 | 复查提醒、指标解释、跨院冲突 | ✅ 提醒引擎 + 前端接后端 + 用药冲突 + 跨院重复检查 |
 
-答辩时如果被问"三段都做了吗"，**"队列"是唯一没做的子项** —— 主动说出来比被追问强。
+答辩时如果被问"三段都做了吗"，**三段都有可点的实现**；需要如实补一句：
+队列是**估算**（低置信度只给原因），检查顺序是**规则排序**，都不是院方实时数据或医学判断。
 
 ### 补齐顺序（全部完成）
 
@@ -263,12 +283,14 @@ README §1.3 说「去之前 / 在院内 / 回家后」三段都做：
 
 ## 三、下一步做什么（按优先级，不是按顺序）
 
-> **2026-11-15 状态更新**：§二·五「能力边界」表里的**所有未实现项已全部关闭**。
-> 三段式（去之前 / 在院内 / 回家后）完整落地，四个补齐顺序项已全部完成
-> （前端接后端 → 用药冲突 → 跨院重复检查 → 排程闭环 → MCP 工具层 → 向量检索 → PDF → 图像）。
+> **2026-11-17 状态更新**：功能主线已完成，三段式（去之前 / 在院内 / 回家后）都可演示。
+> 剩下的不是"忘做了"，而是三类：
 >
-> 也就是说：**当前没有"该做而未做"的功能**。下面列的是继续深化的方向，
-> 以及交付前值得再确认的事。
+> - **只留了接口**：医生端 `GET /api/doctor/brief/{token}` → 501/50101；
+>   院方知识库 `/api/admin/knowledge/**` → 501/50102。路由在、功能不在，也没有 B 端页面。
+> - **待开发**：端到端加密（对话历史是脱敏文本明文落库 `chat_message`），
+>   PWA / Notification（应用内提醒 + `@Scheduled` 落库已够用）。
+> - **继续深化**：见下方「如果继续深化的方向」。
 
 ### 交付前建议再跑一遍
 
@@ -280,15 +302,17 @@ pnpm verify:all     # 类型检查 + 单测 + E2E + 生产构建，约 3.5 分�
 这条命令是最后一轮建立的一键入口。它测的是「从单个函数到生产部署」
 整条链，任何一层坏了都会定位到具体项。
 
-### 还剩什么（都是主动取舍，不是遗漏）
+### 还剩什么（待开发 / 预留）
 
-| 项 | 为什么没做 | 真要做的话 |
+| 项 | 为什么这一轮没排期 | 真要做的话 |
 | --- | --- | --- |
+| 医生端摘要（预留接口） | 涉及就诊授权模型与审计，省赛只做到路由：`GET /api/doctor/brief/{token}` 恒返回 501/50101 | 补授权校验、摘要渲染、访问留痕，再加医生端页面 |
+| 院方知识库（预留接口） | 无 B 端页面；`KnowledgeAdminController` 三个端点恒返回 501/50102 | 知识库表 + 上传/审核流程 + 院方后台页面 |
 | 真实医院对接 | 需要资质与商务流程 | 实现 `HospitalAdapter` 接口，注册表加一行 |
 | 向量层换真模型 | ModelScope 上三个候选仓库都缺 onnx 导出 | 只改 `rag/embed.ts` 的 `embed()`，但 `VECTOR_MIN_SIMILARITY` 要重新标定 |
 | 扫描件 PDF / 图片 OCR 之外的版式 | 需要任意版式的版面分析 | 当前 VLM 已能读常规化验单 |
-| 多实例部署 | 会话在内存 | 只改 `SessionStore` 一个接口 |
-| MCP 真握手 | docs/10 D3 明确不做 | 工具层签名已对齐，只换 transport |
+| 多实例部署 | 号源锁是进程内锁，限流是单实例内存（会话历史已落库） | 换 Redis / 分布式锁，限流改共享计数 |
+| MCP 真握手 | 待开发（docs/10 D3） | 工具层签名已对齐，只换 transport |
 
 ### 如果继续深化的方向
 
@@ -301,6 +325,8 @@ pnpm verify:all     # 类型检查 + 单测 + E2E + 生产构建，约 3.5 分�
    可以并发跑 Supervisor 之外的部分，或对简单输入短路。
 3. **数据补充**（几小时）—— 知识库 20 条，还能再补；
    但注意每条都要过 `kb.test.ts` 的内容合规检查。
+4. **医生端 / 院方知识库**（数天）—— 当前各只有一个 501 预留接口，
+   要变成真功能得先补授权模型与 B 端页面。
 
 ### 📜 历史记录（2026-11-14 那一轮，留档备查）
 
@@ -361,7 +387,7 @@ provider 填 `deepseek` 会拼成官方地址从而失败。
 
 | 位置 | 现状 | 要做 |
 | --- | --- | --- |
-| ~~`redact.ts` 的 `detectWithModel()`~~ | ✅ **已完成并在浏览器实测通过**。`ner.ts`（模型层）+ `merge.ts`（合并层，13 条测试）+ `server/routes/models.ts`（模型代理）。实测：`Mr. Zhang San went to the hospital.` → `Mr.［患者姓名］went to the hospital.`，标签「姓名」，模型状态「已就绪」 |
+| ~~`redact.ts` 的 `detectWithModel()`~~ | ✅ **已完成并在浏览器实测通过**。`ner.ts`（模型层）+ `merge.ts`（合并层，13 条测试）+ `server/routes/models.ts`（模型代理）。实测：模型能标出自由叙述里的机构名/地名并进入遮蔽结果，模型状态「已就绪」 |
 | ~~`speech` 事件的播放~~ | ~~只显示文字~~ | ✅ `cb56fba` 已完成 |
 
 **取舍建议**：如果只剩半天，做 **TTS**。`window.speechSynthesis` 是浏览器内置，
@@ -373,13 +399,15 @@ provider 填 `deepseek` 会拼成官方地址从而失败。
 - ~~`.archify/zhidao-v2.html` 旧版~~ ✅ 2026-11-14 重绘为 v3（`.archify/architecture-zhidao-v3-20261114-122500/`），finalize 四关全过
 - ~~`docs/12` §3.5「视觉基调未定」过时~~ ✅ 2026-11-14 已在 §3.5 标注已解决
 
-### 明确不做（不要临时加回来）
+### 本轮不排期（待开发，别临时加进来打乱节奏）
 
 - 管理后台、权限矩阵、菜单树
 - 报表导出 / Excel 打印
 - Redis、消息队列（docs/10 D6 已决定省赛不用）
-- 真实医院对接（只有 Mock，答辩时如实说）
-- 视频模态（`docs/08` 已写明理由）
+- 端到端加密（当前是脱敏文本明文落库；`sys_user.recovery_hash` 只是预留字段）
+- PWA / Notification（应用内提醒 + `@Scheduled` 落库已够用）
+- 真实医院对接（只有 Mock，具有资质后接入）
+- 视频模态（`docs/08` 已写明理由，后续版本再评估）
 
 ---
 
@@ -452,13 +480,13 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
-pnpm exec vitest run                                       # 432 用例
+pnpm exec vitest run                                       # 717 passed / 5 skipped
 pnpm exec vite build                                       # 生产构建
 
 cd ../backend
 $env:JAVA_HOME = "D:\tools\jdk17"
 D:\tools\maven\bin\mvn.cmd -q -B compile -DskipTests       # 编译
-D:\tools\maven\bin\mvn.cmd -B test                          # 31 用例
+D:\tools\maven\bin\mvn.cmd -B test                          # 119 用例
 ```
 
 ---
@@ -475,7 +503,7 @@ git push origin master
 ```
 
 提交信息要**如实**：做了一半就说做了一半，占了位就说明是占位。
-历史里现在有 19 个提交，每个都能对应到一件具体的事，保持这个粒度。
+历史里现在有 72 个提交，每个都能对应到一件具体的事，保持这个粒度。
 
 **远程仓库**：`git@github.com:dessert28/zhidao.git`（SSH），分支 `master`。
 新机器要先把 SSH key 配好，或者改成 HTTPS + token。
@@ -489,14 +517,13 @@ git push origin master
 
 | 日期 | 事项 |
 | --- | --- |
-| **2026-11-18** | 省赛提交截止（还剩 4 天） |
+| **2026-11-18** | 省赛提交截止（还剩 1 天） |
 | 2027-01 上旬 | 评审反馈 |
 | 2026-12-10 ~ 12-21 | 国赛报名 |
 | 2026-12-27 | 国赛提交 |
 
-省赛这 4 天的取舍：**用真 Key 验证一遍 > TTS > 端侧 ONNX > 文档收尾**。
-第一项决定「大模型集成质量 8%」这一档拿不拿得到，
-第二项决定演示视频有没有一个让人记住的镜头，第三项只影响印象分。
+最后 1 天的取舍：**文档口径校准 + 答辩材料 > 提交前全量验证 > 性能打磨**。
+真 Key 验证、TTS、端侧 ONNX 都已完成，不要再回头补这三项。
 
 ---
 

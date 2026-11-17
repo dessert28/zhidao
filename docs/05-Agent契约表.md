@@ -547,7 +547,7 @@ interface AgentOutput<T> {
 | 角色 | 负责 | 交付物 |
 | --- | --- | --- |
 | 前端 A | 页面骨架、生成式 UI 组件、事件流消费 | `frontend/src/pages/` + `frontend/src/components/chat/` + `frontend/server/` |
-| 前端 B | 端侧脱敏、IndexedDB、语音、PWA 提醒 | `frontend/src/lib/privacy/` + `frontend/src/lib/audio/` + `frontend/src/lib/db/` |
+| 前端 B | 端侧脱敏、IndexedDB、语音、站内提醒（PWA 推送待开发） | `frontend/src/lib/privacy/` + `frontend/src/lib/audio/` + `frontend/src/lib/db/` |
 | 后端 | Spring Boot 业务层、提醒引擎、MCP 适配器 | `backend/` |
 
 Agent 编排（**自研 TS 状态机**，见 `10-技术决策-补充.md` D1，非 LangGraph）由前端 A 主导，落在 `frontend/server/agents/`；后端配合提供工具接口。

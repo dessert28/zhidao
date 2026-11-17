@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-594%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-84%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2028%20pages-0f766e)](docs/智诊通-技术文档.pdf)
+[![tests](https://img.shields.io/badge/frontend%20tests-717%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2029%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
 ---
 
@@ -20,7 +20,7 @@
 | 4 | 本文件 §5 安全边界 | 医疗 AI 最容易被问"你敢让它下诊断吗"，我们的回答是**结构上不允许** | 2 分钟 |
 | 5 | 本文件 §7 取舍与已知不足 | 主动列出没做完的，比被问出来好 | 1 分钟 |
 
-想看更深的设计推导，进 [`docs/`](docs/README.md)；13 份文档有索引和阅读顺序。
+想看更深的设计推导，进 [`docs/`](docs/README.md)；目录里有完整的索引与阅读顺序。
 
 ---
 
@@ -48,11 +48,11 @@
         ↓
 原始数据留在浏览器 IndexedDB，永不上传  ← 隐私边界在这
         ↓
-端侧脱敏（姓名/身份证/手机号 → 占位符）
+端侧脱敏（身份证/手机号等 → 占位符）
         ↓
 只有脱敏后的文本进入 AI 层 → 跨院归一、时间轴、提醒、排程
         ↓
-需要给医生看时，患者主动出示（二维码/PDF）
+需要给医生看时，患者主动出示（打印 / 复制文字，或导出 PDF）
 ```
 
 **这条链路的关键在于：我们不需要医院授权，也能做到跨院。** 数据的所有权回到患者，医院互通不互通就不再是前提。
@@ -62,7 +62,7 @@
 | 段 | 患者要什么 | 我们给什么 |
 | --- | --- | --- |
 | **去之前** | 我该挂哪个科？要准备什么？ | AI 预问诊采集症状 → 推荐科室+理由 → 生成就诊准备清单（空腹？带旧片子？） |
-| **在院内** | 少跑腿、少排队 | 号源查询与预约预览、队列状态、检查顺序规划（先抽血还是先拍片） |
+| **在院内** | 少跑腿、少排队 | 号源查询与预约预览、队列状态、检查顺序规划（先抽血还是先拍片；按空腹 / 预约规则给出顺序与理由，已实现） |
 | **回家后** | 别忘了复查、看懂报告 | 自动抽取复查时间点 → 到点提醒 → 指标异常解释 → 跨院重复检查/用药冲突提示 |
 
 ---
@@ -71,8 +71,8 @@
 
 | 差异化 | 大厂产品为什么不做 | 我们为什么能做 |
 | --- | --- | --- |
-| **跨院统一时间轴** | 安诊儿（浙江）、穗小伊（广州）都是**单院或单城市**体系，跨院涉及数据确权，机构侧推不动 | 数据在患者手里，我们不碰医院数据库，**不需要任何一家医院点头** |
-| **跨院重复检查提示** | 同上——机构看不见别家的数据 | 患者上传后本地归一，`dedupe_key` 唯一索引天然就是检测引擎 |
+| **跨院统一时间轴** | 安诊儿（浙江）、穗小伊（广州）都是**单院或单城市**体系，跨院涉及数据确权，机构侧推不动 | 病历原文在患者手里，我们不碰医院数据库，**不需要任何一家医院点头** |
+| **跨院重复检查提示** | 同上——机构看不见别家的数据 | 患者上传后本地归一（`lib/exam/normalize.ts`：别名 + 模态/部位配对），按「归一名称 + 时效窗口 + 必须跨院」检测 |
 | **跨院用药冲突提示** | 有法务风险，且需要全域处方数据 | 我们**只提示不判断**："这两种药不同医院都开过，请让医生确认能否同服" |
 | **就诊摘要可带走** | 数据在平台侧，平台没有动力把数据还给患者 | 一键生成"给医生的一页纸"，打印或复制，在任何医院都成立 |
 
@@ -86,7 +86,7 @@
 ┌─ 浏览器（数据不出设备）────────────────────────────┐
 │  React 18 + Vite 6 SPA                             │
 │  ├ 端侧脱敏  Transformers.js + WebGPU (OpenMed)    │
-│  ├ 语音问诊  Web Speech API                        │
+│  ├ 语音问诊  Web Speech API（云端识别，本机脱敏）  │
 │  └ 病历原文  IndexedDB                             │
 └────────────────────┬───────────────────────────────┘
                      │ 只有脱敏文本
@@ -121,10 +121,10 @@
 | --- | --- | --- | --- |
 | 大模型集成质量 | 8% | `frontend/server/llm/client.ts` + `agents/llm-impl.ts` | 统一信封 + 四态 status；**三个 Agent 已用真实模型跑通**（见 §7 实测记录），坏输出/超时/无 Key 三级降级 |
 | Agent/工作流设计 | 8% | `frontend/server/agents/supervisor.ts` | 3 条降级阶梯：坏 JSON 重试→规则路由；超时→规则路由；冲突→固定串行 |
-| RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram（pgvector 待国赛） |
-| 多模态能力 | 5% | `src/hooks/{useSpeechInput,useTts}.ts` | 语音输入 + 语音播报已通（均端侧完成，不经过第三方）；图像仍缺 |
+| RAG 技术应用 | 6% | `frontend/server/agents/retrieval.ts` | 检索 → 充分性判定 → 改写重试 → 逐句接地检查；BM25 + bigram；`PGVECTOR_ENABLED=true` 时 BM25 + pgvector 双路 RRF(k=60) |
+| 多模态能力 | 5% | `src/hooks/{useSpeechInput,useTts}.ts` | 语音输入（Chrome/Edge 走云端识别，识别后本地脱敏）+ TTS 端侧播报；拍照识别已通 |
 | **AI 安全与可控性** | 4% | `frontend/server/agents/rules/red-flag.ts` | **5 类红线确定性规则表，命中即短路，全程不经 LLM** |
-| MCP/工具集成 | 4% | `frontend/server/agents/tools/`（规划） | 工具签名对齐 MCP schema（`name`+`inputSchema`+`handler`） |
+| MCP/工具集成 | 4% | `frontend/server/agents/tools/mcp-hospital.ts`（封装层已实现） | `list_slots`/`hold_slot`/`list_hospitals`，签名对齐 MCP schema（`name`+`description`+`inputSchema`+`handler`），真握手待开发 |
 | 交互模式创新 | 7% | `frontend/server/render/registry.tsx` | 生成式 UI：服务端渲染 React 组件字典 → 序列化下发（6 类卡片已上线） |
 | 前端性能优化 | 3% | `frontend/vite.config.ts` + `src/router.tsx` | 路由级 lazy + manualChunks + 端侧模型动态 import |
 | 端侧智能前瞻性 | — | `docs/04` §7 | 三个用途：PII 脱敏 / 症状槽位分类 / 离线兜底（**后两项未接**） |
@@ -154,13 +154,13 @@
 # 前端（含 Node BFF，同端口，无跨域）
 cd frontend
 pnpm install
-pnpm test          # 594 passed | 5 skipped
+pnpm test          # 717 passed | 5 skipped
 pnpm dev           # http://localhost:5173
 
 # 后端（Spring Boot + H2 内存库，免装 MySQL）
 cd backend
 mvn spring-boot:run      # http://localhost:8080，演示账号 demo / demo1234
-mvn test                 # 84 passed
+mvn test                 # 119 passed
 
 # 一键全量验证（类型 + 单测 + E2E + 生产构建，约 3.5 分钟）
 cd frontend && pnpm verify:all
@@ -242,8 +242,8 @@ cd frontend && pnpm verify:all
 | 病历原文 | 只存浏览器 IndexedDB | 服务端连原文的数据列都没有 |
 | 上传决策 | 患者主动上传 = 明示同意 | 不是默认勾选，是主动操作 |
 | 传输内容 | 只有脱敏后文本 | 接口字段名叫 `text` 不叫 `rawText` |
-| 账号体系 | 用户名 + 恢复码，**不收手机号/身份证** | `patient_auth` 表里没有这两列 |
-| 跨设备同步 | 聊天内容端到端加密，服务端解不开 | 密钥由恢复码 KDF 派生，只在设备侧 |
+| 账号体系 | 演示账号自动登录；`sys_user` 有 `recovery_hash` 字段，注册/恢复码找回流程待开发；**不收手机号/身份证** | `sys_user` 表里没有这两列 |
+| 跨设备同步 | **端到端加密待开发**；对话历史以脱敏文本明文落库（`chat_message`），同账号换设备可续 | 表里只有脱敏后文本，没有病历原文列 |
 
 > 答辩可用的一句话：「我们的账号体系里连手机号都没有。」
 
@@ -265,9 +265,9 @@ cd frontend && pnpm verify:all
 
 ---
 
-## 7. 取舍与已知不足
+## 7. 能力清单与待开发项
 
-主动列出来的，都是真的没做或做窄了的。
+下面如实列出已实现的能力、待开发的项，以及当前做窄了的地方。
 
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
@@ -276,17 +276,18 @@ cd frontend && pnpm verify:all
 | 用药冲突提示 | ✅ **2026-11-15 已打通** | 补了 `patient_profile.medication_json` + `usePatientFacts` 注入 SessionFacts；回答同时提到两种在用药时触发「请让医生确认能否同服」 |
 | 跨院重复检查提示 | ✅ **2026-11-15 已打通** | `src/lib/exam/duplicate.ts`：7 项检查词典 + 各自时效窗口（糖化 90 天/血糖 30 天…）+ 必须跨院。病历页琥珀色卡片展示出处与依据；17 用例 |
 | 号源查询与预约 | ✅ **2026-11-15 已实现** | `agents/scheduler.ts`：意图抽取 → 查号源 → 预览卡（确认按钮）→ 就诊时间线；下单写库并拿到院方单号 |
-| 真实医院对接 | ❌ 仅 Mock 适配器 | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
-| MCP 工具层 | ✅ 封装层已实现（`tools/mcp-hospital.ts`） | `list_slots`/`hold_slot`/`list_hospitals`，签名与 MCP tool schema 一致（`name`+`description`+`inputSchema`+`handler`）；**按 docs/10 D3 主动不做真握手** —— 评委看的是工具编排能力 |
+| 真实医院对接 | ⏳ 待接入（当前 Mock 适配器） | 接入真实医院需资质与商务流程，架构已预留 `HospitalAdapter`；`docs/08` §5 主动说明 |
+| MCP 工具层 | ✅ 封装层已实现（`tools/mcp-hospital.ts`） | `list_slots`/`hold_slot`/`list_hospitals`，签名与 MCP tool schema 一致（`name`+`description`+`inputSchema`+`handler`）；真握手待开发（docs/10 D3）—— 评委看的是工具编排能力 |
 | RAG 混合检索 | ✅ 双路 + RRF 已实现（**默认关闭**） | 默认走内存 BM25（零依赖，评委不用装 Docker）；`PGVECTOR_ENABLED=true` 时启用 BM25 + pgvector 双路 RRF(k=60) 融合。**向量层是哈希向量化，不是神经网络嵌入** —— 换真模型只改 `embed()`，阈值需重新标定 |
-| 多模态 | ✅ **四模态齐备** | 语音输入（Web Speech）+ TTS 播报 + 端侧 ONNX 脱敏，全部在浏览器内完成；病历支持纯文本 / 文本型 PDF / **拍照识别**——`/api/ocr/report` 会先判类型（化验 / X线 / CT / 磁共振 / 彩超 / 心电图 / 内镜 / 病理），再按类型抽取：化验单给「项目+数值+参考范围」，影像与心电给「所见」+「结论」+ 客观参数。唯一限制：扫描件 PDF 需先转图片，当前明确拒绝而非假装成功 |
+| 多模态 | ✅ **四模态齐备** | 语音输入（Web Speech；Chrome/Edge 由浏览器云端识别，识别后的文字在本机脱敏）+ TTS 端侧播报 + 端侧 ONNX 脱敏；病历支持纯文本 / 文本型 PDF / **拍照识别**——`/api/ocr/report` 会先判类型（化验 / X线 / CT / 磁共振 / 彩超 / 心电图 / 内镜 / 病理），再按类型抽取：化验单给「项目+数值+参考范围」，影像与心电给「所见」+「结论」+ 客观参数。唯一限制：扫描件 PDF 需先转图片，当前明确拒绝而非假装成功 |
 | 端侧 AI 的用途 | ⚠️ **只做了 PII 脱敏一项** | 设计文档写了"端侧智能三件套"（脱敏 / 槽位分类 / 离线兜底），实际只落地第 1 项。槽位分类仍走云端 LLM，无 Service Worker 离线能力。官方对这条是"鼓励探索"而非硬要求，但**答辩别说成三件套都做了** |
-| 适老模式（字号一键切） | ❌ 未实现 | 语音输入与 TTS 播报已经覆盖"老年人不用打字"的核心场景，但 18px/1.9 的字号切换控件没做。设计里写过，代码里没有 |
+| 适老模式（字号一键切） | ✅ **已实现** | 顶栏「标准 / 大 / 特大」三档，`useTextScale` 统一换算字号，5 条测试覆盖 |
 | 出错态 / 并发态 UI | ⚠️ 部分 | 后端已给出 409 语义（重复下单、状态冲突），前端预约卡有对应提示；但**按钮连点防护、断网重连、版本不一致**这几类没有专门设计 |
-| 视频模态 | ❌ 不做 | 导诊场景边际价值低于图像+语音，成本显著更高；主动写明理由 |
-| 多实例部署 | ⚠️ 单实例，但**会话本身无状态** | 分诊槽位由前端每轮通过 `knownSlots` / `round` 带回（`done` 事件里返回），服务端不存会话状态。所以横向扩容**不改代码就能上**；真正需要处理的是提醒引擎的 `@Scheduled` 去重（多实例会重复扫描） |
-| 管理端/权限矩阵 | ❌ 不做 | 患者端是主线，管理端不加分 |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 432 + 后端 31 = **463 用例**，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
+| 视频模态 | ⏳ 待开发 | 导诊场景边际价值低于图像+语音，成本显著更高，排在后续版本 |
+| 多实例部署 | ⚠️ 单实例 | 对话历史已落库（`chat_message`）；号源锁是进程内锁、限流是单实例内存，多实例需换 Redis / 分布式锁，并处理提醒引擎 `@Scheduled` 的重复扫描 |
+| 管理端/权限矩阵 | ⏳ 待开发 | 患者端是主线；管理端排在后续版本 |
+| MySQL profile 覆盖不全 | ⚠️ 仅基础表 | `schema-mysql.sql` 只建 7 张基础表；对话历史、到院进度、院方凭据、调阅审计共 7 张表**没有 MySQL 版本**。省赛默认 H2 不受影响，上线前需补 DDL（见 `docs/14` §4.3） |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 717 + 后端 119 = **836 用例**，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
 
 > **逐项能力核对**（什么能用、什么不能用、按代码而非文档）见 [`HANDOFF.md` §二·五](HANDOFF.md)。
 
@@ -297,13 +298,13 @@ cd frontend && pnpm verify:all
 | # | 项 | 状态 |
 | --- | --- | --- |
 | 1 | Agent 状态机 + Supervisor + Triage | ✅ 完成（含 Reviewer / Retrieval 两个额外 Agent） |
-| 2 | 端侧脱敏 | ✅ 规则引擎（7 类 PII）+ ONNX NER 模型（浏览器内实测通过） |
+| 2 | 端侧脱敏 | ✅ 规则引擎 + ONNX NER 模型（浏览器内实测通过） |
 | 3 | 红线规则引擎（纯规则表） | ✅ 完成，25 条用例保护 |
 | 4 | 生成式 UI 组件字典 + 4-5 种事件 | ✅ 6 类卡片；14 种事件类型契约中实装 6 类 |
 | 5 | RAG「检索 + 引用展示」 | ✅ 完成（BM25 + 接地检查 + 引用卡） |
 | — | 后端接口层 + 提醒引擎 | ✅ **额外完成**（原计划国赛，提前落地） |
 
-砍掉的记入「后续演进」，国赛再补。**这个取舍是主动做的，不是没做完。**
+本轮未覆盖的记入「后续演进」，按国赛排期继续开发。
 
 ---
 
@@ -349,7 +350,7 @@ zhidao/
 │           ├── schema.sql        # H2（默认，省赛免装数据库）
 │           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
 │           └── application-mysql.yml  # 切 MySQL 的 profile
-├── docs/                     # 14 份（含 HIS 接入说明），见 docs/README.md
+├── docs/                     # 16 份（含 HIS 接入、院区契约、部署运维），见 docs/README.md
 └── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
 
@@ -365,13 +366,13 @@ cp .env.example .env        # 填入 LLM_API_KEY；不填也能跑（走规则�
 pnpm dev                    # http://localhost:5173
 
 # 验证
-pnpm test                   # 432 passed
+pnpm test                   # 717 passed | 5 skipped
 pnpm typecheck              # tsc -b --noEmit，strict
 
 # 后端（H2 内存库，免装 MySQL；建表与种子数据启动时自动执行）
 cd ../backend
 mvn spring-boot:run         # http://localhost:8080
-mvn test                    # 29 passed
+mvn test                    # 119 passed
 ```
 
 > **所需环境**：Node ≥18 + pnpm 9；JDK 17 + Maven 3.9（只前端可跳过）。
@@ -405,7 +406,7 @@ mvn test                    # 29 passed
 | 文档 | 内容 |
 | --- | --- |
 | [`HANDOFF.md`](HANDOFF.md) | 开发交接：环境搭建、当前进度、下一步优先级、踩过的坑 |
-| [`docs/README.md`](docs/README.md) | 13 份文档的索引与阅读顺序 |
+| [`docs/README.md`](docs/README.md) | 全部设计文档的索引与阅读顺序 |
 | [`docs/03`](docs/03-整体架构.md) | 架构图、三条链路、边界划分 |
 | [`docs/05`](docs/05-Agent契约表.md) | 五智能体的输入输出、工具、五张降级矩阵 |
 | [`docs/08`](docs/08-风险与合规.md) | 医疗合规边界、隐私架构、比赛红线 |
