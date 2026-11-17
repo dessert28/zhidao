@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:stop": "node scripts/dev-stop.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "start": "tsx server/standalone.ts",
@@ -30,9 +31,9 @@
     "@tanstack/react-query": "^5.62.0",
     "ai": "^4.0.0",
     "clsx": "^2.1.1",
-    "framer-motion": "^11.15.0",
     "hono": "^4.6.14",
     "idb": "^8.0.0",
+    "lucide-react": "^1.74.0",
     "pdfjs-dist": "^6.5.438",
     "pg": "^8.23.1",
     "react": "^18.3.1",

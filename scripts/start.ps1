@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  智诊通 · 一键启动（Windows / PowerShell）
 #
 #  设计原则：不硬编码任何本机路径，全部运行时探测。
@@ -231,7 +231,9 @@ echo.
 echo 后端已停止。按任意键关闭本窗口。
 pause >nul
 "@
-    Set-Content -Path $batPath -Value $batBody -Encoding ASCII
+    # 用 Default（= 中文 Windows 的 GBK/936）而不是 ASCII，
+    # 否则下面 bat 里的中文提示会被写成问号。
+    Set-Content -Path $batPath -Value $batBody -Encoding Default
 
     Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "`"$batPath`"" -WindowStyle Normal | Out-Null
     Ok '后端已在新窗口启动（关闭那个窗口即停止后端）'
