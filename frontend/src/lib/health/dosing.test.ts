@@ -208,6 +208,16 @@ describe('摘要', () => {
   it('空列表给中性描述', () => {
     expect(summarizeDay([])).toContain('没有需要按时服用');
   });
+
+  it('同一种药一天吃几次只算一种', () => {
+    /*
+     * 一天 3 次的药会出现在 3 个时间点里。早先这里把每档的药数相加，
+     * 于是"1 种药"被说成"3 种药" —— 患者拿这个数字去核对药盒会对不上。
+     */
+    const { slots } = buildDosePlan([med({ frequency: '每天 3 次' })]);
+    expect(slots.length).toBe(3);
+    expect(summarizeDay(slots)).toContain('涉及 1 种药');
+  });
 });
 
 describe('模糊时间的三态', () => {

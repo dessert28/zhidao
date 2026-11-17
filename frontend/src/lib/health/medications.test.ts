@@ -35,6 +35,21 @@ describe('用药抽取', () => {
     expect(extractMedications('辛伐他汀片 20mg 每晚1次 睡前')[0]!.timing).toBe('睡前');
   });
 
+  it('检查项目不会被当成药', () => {
+    /*
+     * 「胸部正位片」同样以「片」结尾，曾被抽成一条药。
+     * 这条错得比漏抽更严重：摘要页是打印给医生看的，
+     * 医生会以为患者真的在吃「胸部正位片」。
+     */
+    expect(extractMedications('胸部正位片 2026-10-08')).toHaveLength(0);
+    expect(extractMedications('腹部彩超 空腹')).toHaveLength(0);
+    expect(extractMedications('头颅磁共振平扫')).toHaveLength(0);
+
+    // 但不能误杀真药：钙拮抗剂全是「xx 地平片」
+    expect(extractMedications('氨氯地平片 5mg qd')[0]!.name).toBe('氨氯地平片');
+    expect(extractMedications('硝苯地平缓释片 30mg')[0]!.name).toBe('硝苯地平缓释片');
+  });
+
   it('一行多种药时按行拆分，不会张冠李戴', () => {
     /*
      * 这是最关键的一条：如果整段一起匹配，

@@ -4,54 +4,34 @@
  * 这个功能"看起来"很难测（要改 DOM 的 font-size、要读 localStorage），
  * 但它恰恰是最该测的：一个人设了"特大"，下次打开变回"标准"，
  * 他不会来报 bug，他会直接不用了。这种静默失效只能靠测试兜住。
+ *
+ * 断言从"行内 font-size"改成 data-scale：字号数值现在写在 index.css 里，
+ * 由 html[data-scale=…] 规则提供，jsdom 不会计算样式表，
+ * 断言属性是这个架构下最稳的验证点。
  * ------------------------------------------------------------------ */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { applyTextScale, TEXT_SCALE_OPTIONS } from './useTextScale';
 
 describe('applyTextScale', () => {
   beforeEach(() => {
-    document.documentElement.style.fontSize = '';
-    document.documentElement.style.lineHeight = '';
+    delete document.documentElement.dataset.scale;
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('标准档把根字号设回 100%', () => {
+  it('标准档不挂 data-scale（默认态在 DOM 上可见）', () => {
     applyTextScale('normal');
-    expect(document.documentElement.style.fontSize).toBe('100%');
+    expect(document.documentElement.dataset.scale).toBeUndefined();
   });
 
-  it('特大档放大到 132%', () => {
+  it('特大档挂上 xlarge', () => {
     applyTextScale('xlarge');
-    expect(document.documentElement.style.fontSize).toBe('132%');
+    expect(document.documentElement.dataset.scale).toBe('xlarge');
   });
 
-  it('字号与行距一起放大', () => {
-    /*
-     * 只放字号不放行距，中文会挤在一起反而更难读。
-     * 这条断言防止有人"优化"掉行距那一行。
-     */
+  it('从特大切回标准会清掉属性', () => {
+    applyTextScale('xlarge');
     applyTextScale('normal');
-    const normalLh = parseFloat(document.documentElement.style.lineHeight);
-
-    applyTextScale('xlarge');
-    const xlargeLh = parseFloat(document.documentElement.style.lineHeight);
-
-    expect(xlargeLh).toBeGreaterThan(normalLh);
-  });
-
-  it('尺寸是递增的', () => {
-    const seen: number[] = [];
-    for (const o of TEXT_SCALE_OPTIONS) {
-      applyTextScale(o.value);
-      seen.push(parseFloat(document.documentElement.style.fontSize));
-    }
-    // 三档必须严格递增，否则"特大"却比"大"还小
-    expect(seen).toEqual([...seen].sort((a, b) => a - b));
-    expect(new Set(seen).size).toBe(3);
+    expect(document.documentElement.dataset.scale).toBeUndefined();
   });
 });
 
@@ -63,5 +43,15 @@ describe('TEXT_SCALE_OPTIONS', () => {
       // 按钮很窄，标签超过 3 个字就会把顶栏挤变形
       expect(o.label.length).toBeLessThanOrEqual(3);
     }
+  });
+
+  it('档位值与 index.css 的 data-scale 取值对齐', () => {
+    /*
+     * 这条是"两处值必须一致"的守卫：
+     * applyTextScale 写的是 dataset.scale = o.value，
+     * 而 index.css 里只认 data-scale='large' / 'xlarge'。
+     * 谁改了枚举值却没改样式，界面就再也不缩放了 —— 而且是静默的。
+     */
+    expect(TEXT_SCALE_OPTIONS.map((o) => o.value)).toEqual(['normal', 'large', 'xlarge']);
   });
 });
