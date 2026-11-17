@@ -3,13 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <link rel="icon" href="/favicon.ico" />
+    <!-- SVG 放前面：现代浏览器优先用矢量图标，.ico 只做老浏览器兜底 -->
+    <link rel="icon" type="image/svg+xml" href="/logo-mark.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>智诊通 · 患者端智能导诊</title>
     <meta
       name="description"
       content="把一次就诊拆成「去之前—在院内—回家后」三段，做成一生连续的跨院管理。病历留在你的设备上，我们只做整理、提醒与风险提示。"
     />
-    <meta name="theme-color" content="#0f766e" />
+    <!-- 地址栏配色跟随主题，避免深色页面上方顶一条亮青边 -->
+    <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161d26" media="(prefers-color-scheme: dark)" />
     <!-- 中文字体栈：优先系统字体，保证首屏零字体请求 -->
     <style>
       :root {
@@ -32,7 +37,50 @@
       #root:not(:empty) ~ #boot {
         display: none;
       }
+      /* 主题在脚本里已确定，这里同步兜住骨架屏，避免深色下白闪一帧 */
+      html.dark #boot {
+        background: #161d26;
+        color: #5eead4;
+      }
     </style>
+    <!--
+      主题与字号必须在首帧之前定下来。
+
+      放在 useEffect 里做的代价是：页面先按浅色/标准字号画一遍，
+      再跳成深色/特大 —— 深色下会白闪一下，适老用户每次打开都要看一次跳变。
+      这段脚本只读 localStorage 与 matchMedia，不发请求，微秒级。
+
+      用 var 而不是 const：这段不走 babel，直接进浏览器，
+      保留最保守的语法以防构建目标被下调。
+    -->
+    <script>
+      (function () {
+        var d = document.documentElement;
+        try {
+          var theme = localStorage.getItem('zhidao:theme'); // null = 跟随系统
+          var sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var dark = theme === 'dark' || (theme !== 'light' && sysDark);
+          /*
+            演示与截图用：?theme=light / ?theme=dark 强制某一档。
+            只影响这一次渲染，不写 localStorage —— 否则截完图回来，
+            用户会发现自己的设置被改了。
+          */
+          var forced = new URLSearchParams(location.search).get('theme');
+          if (forced === 'light' || forced === 'dark') dark = forced === 'dark';
+          if (dark) d.classList.add('dark');
+
+          var scale = localStorage.getItem('zhidao:text-scale');
+          /* 同上，?scale=large / ?scale=xlarge 供演示与截图使用 */
+          var forcedScale = new URLSearchParams(location.search).get('scale');
+          if (forcedScale === 'large' || forcedScale === 'xlarge') scale = forcedScale;
+          if (scale === 'large' || scale === 'xlarge') {
+            d.dataset.scale = scale;
+          }
+        } catch (e) {
+          /* 隐私模式下 localStorage 可能抛异常，按默认值继续 */
+        }
+      })();
+    </script>
   </head>
   <body class="bg-gray-50 text-gray-900 antialiased">
     <div id="root"></div>

@@ -2,10 +2,248 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==================================================================
+ * 调色板变量
+ *
+ * 浅色值 = 改版前的 hex（Tailwind 原生值），所以浅色下像素级不变。
+ * 深色值统一放在 @media screen 里 —— 打印时不会命中，等于自动"退回浅色"，
+ * 不需要在 @media print 里再抄一遍所有变量。
+ *
+ * 变量一律是 "R G B" 三元组：bg-brand-50/40 这类透明度修饰要靠 <alpha-value>。
+ * ================================================================== */
 @layer base {
+  :root {
+    /* 中性色阶：承担页底、卡片面、描边、正文 */
+    --gray-50: 249 250 251;
+    --gray-100: 243 244 246;
+    --gray-200: 229 231 235;
+    --gray-300: 209 213 219;
+    --gray-400: 156 163 175;
+    --gray-500: 107 114 128;
+    --gray-600: 75 85 99;
+    --gray-700: 55 65 81;
+    --gray-800: 31 41 55;
+    --gray-900: 17 24 39;
+
+    /* 品牌青绿 */
+    --brand-50: 240 253 250;
+    --brand-100: 204 251 241;
+    --brand-200: 153 246 228;
+    --brand-300: 94 234 212;
+    --brand-400: 45 212 191;
+    --brand-500: 20 184 166;
+    --brand-600: 13 148 136;
+    --brand-700: 15 118 110;
+    --brand-800: 17 94 89;
+    --brand-900: 19 78 74;
+
+    /* 提醒琥珀 */
+    --amber-50: 255 251 235;
+    --amber-100: 254 243 199;
+    --amber-200: 253 230 138;
+    --amber-300: 252 211 77;
+    --amber-400: 251 191 36;
+    --amber-500: 245 158 11;
+    --amber-600: 217 119 6;
+    --amber-700: 180 83 9;
+    --amber-800: 146 64 14;
+    --amber-900: 120 53 15;
+
+    /* 急症红 */
+    --red-50: 254 242 242;
+    --red-200: 254 202 202;
+    --red-500: 239 68 68;
+    --red-600: 220 38 38;
+    --red-700: 185 28 28;
+    --red-900: 127 29 29;
+
+    /* 完成绿 */
+    --green-50: 240 253 244;
+    --green-100: 220 252 231;
+    --green-200: 187 247 208;
+    --green-500: 34 197 94;
+    --green-700: 21 128 61;
+    --green-800: 22 101 52;
+
+    /* 脱敏命中（隐私域专用，不进患者医疗语义） */
+    --rose-50: 255 241 242;
+    --rose-100: 255 228 230;
+    --rose-500: 244 63 94;
+    --rose-600: 225 29 72;
+    --rose-700: 190 18 60;
+
+    --orange-100: 255 237 213;
+    --orange-700: 194 65 12;
+
+    /* 卡片面：替代 bg-white。
+       不能把 white 本身变量化 —— 那样 38 处按钮上的 text-white 会一起翻转 */
+    --surface: 255 255 255;
+    /* 主按钮底：恒定深青绿，白字 5.5:1 */
+    --action: 15 118 110;
+    --action-hover: 17 94 89;
+    /* 深色实心标签的底（原 bg-gray-800） */
+    --ink-strong: 31 41 55;
+
+    /* 语义色 —— 一套一件事，见 tailwind.config.js 的注释 */
+    --appt-soft: 239 246 255;
+    --appt-line: 191 219 254;
+    --appt: 29 78 216;
+    --appt-solid: 37 99 235;
+
+    --alert-soft: 255 251 235;
+    --alert-line: 253 230 138;
+    --alert: 146 64 14;
+    --alert-solid: 180 83 9;
+
+    --clinical-soft: 245 243 255;
+    --clinical-line: 221 214 254;
+    --clinical: 109 40 217;
+    --clinical-solid: 124 58 237;
+
+    --critical-soft: 254 242 242;
+    --critical-line: 254 202 202;
+    --critical: 185 28 28;
+    --critical-solid: 220 38 38;
+
+    --done-soft: 240 253 244;
+    --done-line: 187 247 208;
+    --done: 21 128 61;
+    --done-solid: 22 163 74;
+
+    --neutral-soft: 248 250 252;
+    --neutral-line: 229 231 235;
+    --neutral: 71 85 105;
+
+    color-scheme: light;
+  }
+
+  /* ------------------------------------------------------------------
+   * 深色 —— 刻意不用纯黑。
+   *
+   * 页面底 #161d26 / 卡片面 #1d2530 之间只差约 3% 亮度：
+   * 靠层次而不是靠阴影区分卡片，长时间看也不压眼。
+   * 深色下辅助文字反而更合规（#93a3b3 on #1d2530 ≈ 6:1，
+   * 而它在浅色下只有 2.5:1）。
+   * ------------------------------------------------------------------ */
+  @media screen {
+    html.dark {
+      --gray-50: 22 29 38;
+      --gray-100: 31 40 51;
+      --gray-200: 46 58 72;
+      --gray-300: 60 74 90;
+      --gray-400: 147 163 179;
+      --gray-500: 168 183 196;
+      --gray-600: 182 194 206;
+      --gray-700: 207 216 225;
+      --gray-800: 226 232 239;
+      --gray-900: 233 238 244;
+
+      --brand-50: 15 47 44;
+      --brand-100: 18 63 58;
+      --brand-200: 20 84 77;
+      --brand-300: 31 90 84;
+      --brand-400: 45 212 191;
+      --brand-500: 45 212 191;
+      --brand-600: 13 148 136;
+      --brand-700: 94 234 212;
+      --brand-800: 153 246 228;
+      --brand-900: 204 251 241;
+
+      --amber-50: 42 33 19;
+      --amber-100: 51 40 18;
+      --amber-200: 74 58 28;
+      --amber-300: 92 72 32;
+      --amber-400: 169 122 36;
+      --amber-500: 245 158 11;
+      --amber-600: 217 119 6;
+      --amber-700: 252 211 77;
+      --amber-800: 253 230 138;
+      --amber-900: 254 243 199;
+
+      --red-50: 42 22 24;
+      --red-200: 87 35 38;
+      --red-500: 248 113 113;
+      --red-600: 239 68 68;
+      --red-700: 252 165 165;
+      --red-900: 254 202 202;
+
+      --green-50: 18 36 26;
+      --green-100: 22 50 31;
+      --green-200: 31 66 48;
+      --green-500: 34 197 94;
+      --green-700: 134 239 172;
+      --green-800: 187 247 208;
+
+      --rose-50: 42 22 26;
+      --rose-100: 58 28 34;
+      --rose-500: 244 63 94;
+      --rose-600: 251 113 133;
+      --rose-700: 253 164 175;
+
+      --orange-100: 51 34 15;
+      --orange-700: 253 186 116;
+
+      --surface: 29 37 48;
+      --action: 15 118 110;
+      --action-hover: 17 94 89;
+      --ink-strong: 15 22 32;
+
+      --appt-soft: 19 35 56;
+      --appt-line: 30 58 95;
+      --appt: 147 197 253;
+      --appt-solid: 37 99 235;
+
+      --alert-soft: 42 33 19;
+      --alert-line: 74 58 28;
+      --alert: 252 211 77;
+      --alert-solid: 180 83 9;
+
+      --clinical-soft: 35 26 51;
+      --clinical-line: 59 45 85;
+      --clinical: 196 181 253;
+      --clinical-solid: 124 58 237;
+
+      --critical-soft: 42 22 24;
+      --critical-line: 87 35 38;
+      --critical: 252 165 165;
+      --critical-solid: 220 38 38;
+
+      --done-soft: 18 36 26;
+      --done-line: 31 66 48;
+      --done: 134 239 172;
+      --done-solid: 22 163 74;
+
+      --neutral-soft: 27 37 49;
+      --neutral-line: 47 61 77;
+      --neutral: 168 183 196;
+
+      color-scheme: dark;
+    }
+
+    /* 焦点环的 offset 默认是白色，深色下会印出一圈白边 */
+    html.dark *,
+    html.dark *::before,
+    html.dark *::after {
+      --tw-ring-offset-color: #1d2530;
+    }
+  }
+
   html {
     /* 防止 iOS 横屏时字号被放大 */
     -webkit-text-size-adjust: 100%;
+    /* 适老字号：值只定义在这里，useTextScale 只负责切 data-scale，
+       避免"JS 算一套、CSS 写一套"两边对不上 */
+  }
+
+  /* 字号三档。改的是根字号，Tailwind 的 text-* 都是 rem，会等比放大 */
+  html[data-scale='large'] {
+    font-size: 115%;
+    line-height: 1.65;
+  }
+
+  html[data-scale='xlarge'] {
+    font-size: 132%;
+    line-height: 1.8;
   }
 
   body {
@@ -30,12 +268,36 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
       transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
     }
   }
 }
 
 @layer utilities {
+  /*
+   * 页面底纹。
+   *
+   * 只做两件事：顶部正中一团极淡的薄荷光，下面一段很短的同色渐变收干净。
+   * 不铺满整页 —— 整页渐变会让卡片的白色边缘显出一道"分界线"，
+   * 看起来像渲染坏了；而且要保证长页面（病历、摘要）往下滚时
+   * 底色保持稳定，不能越滚越绿。
+   *
+   * 深浅两套主题共用同一组变量：深色下 --brand-50/100 本身就是暗青绿，
+   * 叠出来的是一层几乎看不出的洗色，正好是夜里该有的强度。
+   */
+  .page-bg {
+    background-image:
+      radial-gradient(
+        760px 340px at 50% -120px,
+        rgb(var(--brand-100) / 0.75) 0%,
+        transparent 62%
+      ),
+      linear-gradient(180deg, rgb(var(--brand-50) / 0.55) 0%, transparent 460px);
+    background-repeat: no-repeat;
+  }
+
   /* 流式输出时的光标，让"正在打字"这件事可见 */
   .caret::after {
     content: '';
@@ -53,6 +315,47 @@
       opacity: 0;
     }
   }
+
+  /*
+   * 首页英雄区的背景光晕。
+   *
+   * 只用一团径向渐变画在右上角，不铺满整卡 —— 标题区保持纯 surface 底，
+   * 对比度才稳定。大面积的渐变+白字是老人最难读的组合。
+   *
+   * 两个细节决定它像"光"还是像"脏斑"：
+   *   · 渐变必须在盒子边缘之前就衰减到全透明（78% 处），否则盒子的直角会露出来
+   *   · blur 要够大（24px），小模糊只会把硬边磨成毛边
+   */
+  .hero-glow::before {
+    content: '';
+    position: absolute;
+    top: -38%;
+    right: -8%;
+    width: 360px;
+    height: 320px;
+    pointer-events: none;
+    background: radial-gradient(
+      closest-side,
+      rgb(var(--brand-300) / 0.26) 0%,
+      rgb(var(--brand-200) / 0.14) 46%,
+      transparent 78%
+    );
+    filter: blur(30px);
+  }
+
+  /*
+   * 首页清单错峰入场。只用前三条，再多就是"整屏在动"，
+   * 反而没有重点（也更容易让人晕）。
+   */
+  .stagger-1 > *:nth-child(1) {
+    animation: fade-up 220ms ease-out both;
+  }
+  .stagger-1 > *:nth-child(2) {
+    animation: fade-up 220ms ease-out 45ms both;
+  }
+  .stagger-1 > *:nth-child(3) {
+    animation: fade-up 220ms ease-out 90ms both;
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -66,6 +369,8 @@
  *     过敏史的红色底色会消失，"强调"就没了
  *   · @page 设 margin —— 不设的话浏览器默认留 1 英寸以上白边，
  *     一页装不下内容
+ *   · 深色变量只在 @media screen 里生效，所以打印天然回到浅色，
+ *     不需要再覆盖一遍变量
  * ------------------------------------------------------------------ */
 @media print {
   @page {
@@ -90,6 +395,7 @@
 
   body {
     background: #fff !important;
+    color-scheme: light;
   }
 
   /* 摘要卡：去掉描边与圆角，避免打印出多余线条 */
@@ -110,5 +416,20 @@
   .print-sheet section,
   li {
     break-inside: avoid;
+  }
+
+  /*
+   * 折叠内容在纸上必须全部露出来。
+   *
+   * 摘要在打印前会把 state 里的折叠全打开（见 SummaryPage 的 printAll），
+   * 这里再兜一层：万一哪天漏了某处、或者用户按的是浏览器菜单打印，
+   * 纸上也不该出现"还有 8 次，展开"这种点不动的按钮。
+   *
+   * ::details-content 是 Chrome 131+ 的新伪元素，内容靠 content-visibility
+   * 隐藏，作者样式能盖住；老浏览器走上面的 JS 兜底。
+   */
+  details::details-content {
+    content-visibility: visible !important;
+    display: block !important;
   }
 }
