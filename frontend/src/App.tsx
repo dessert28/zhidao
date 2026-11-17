@@ -7,10 +7,22 @@
 
 import { Suspense } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { TEXT_SCALE_OPTIONS, useTextScale } from './hooks/useTextScale';
 
 const NAV = [
   { to: '/', label: '今日' },
   { to: '/chat', label: '问诊' },
+  /*
+   * 「挂号」紧跟在问诊后面 —— 这两条路通向同一件事。
+   * 挂在前面的理由：患者来医院最常做的事就是约号。
+   */
+  { to: '/booking', label: '挂号' },
+  /*
+   * 顺序按患者的时间线排：今天要做什么 → 不舒服先问问 → 要挂号
+   * → **人到医院了** → 长期管理 → 看历史。
+   * 到院那一格不放在最后，因为它是"站在楼里最需要"的页面。
+   */
+  { to: '/visit', label: '到院' },
   { to: '/health', label: '健康管家' },
   { to: '/records', label: '我的病历' },
   { to: '/summary', label: '就诊摘要' },
@@ -18,19 +30,31 @@ const NAV = [
 
 export default function App() {
   const { pathname } = useLocation();
+  const { scale, setScale } = useTextScale();
 
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-2xl items-center gap-4 px-4">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-700 text-sm font-semibold text-white">
+          <Link to="/" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-sm font-semibold text-white">
               智
             </span>
-            <span className="text-sm font-medium tracking-wide text-gray-800">智诊通</span>
+            <span className="hidden text-sm font-medium tracking-wide text-gray-800 sm:inline">
+              智诊通
+            </span>
           </Link>
 
-          <nav className="ml-auto flex items-center gap-1">
+          {/*
+            导航可横向滚动，不换行。
+            7 个入口 + 字号切换在 672px 宽里本来就紧，开了"特大"
+            （132%）之后必然放不下 —— 第一版就是被挤成一字一行。
+            宁可让用户横滑，也不能让"挂号"竖着排成两行。
+          */}
+          <nav
+            className="ml-auto flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="主导航"
+          >
             {NAV.map((n) => {
               const active = pathname === n.to;
               return (
@@ -38,7 +62,7 @@ export default function App() {
                   key={n.to}
                   to={n.to}
                   className={
-                    'rounded-md px-3 py-1.5 text-sm transition-colors ' +
+                    'shrink-0 rounded-md px-3 py-1.5 text-sm transition-colors ' +
                     (active
                       ? 'bg-brand-50 text-brand-700'
                       : 'text-gray-500 hover:text-gray-800')
@@ -50,6 +74,56 @@ export default function App() {
               );
             })}
           </nav>
+
+          {/*
+            字号切换。放在顶栏最右而不是"设置页"里：
+            需要它的人不会去翻设置，而翻不到就等于没有。
+          */}
+          <div
+            className="flex shrink-0 items-center rounded-md border border-gray-200 bg-white p-0.5"
+            role="group"
+            aria-label="字号"
+          >
+            {TEXT_SCALE_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setScale(o.value)}
+                aria-pressed={scale === o.value}
+                title={`字号：${o.label}`}
+                className={
+                  'whitespace-nowrap rounded px-1.5 py-1 text-xs transition-colors ' +
+                  (scale === o.value
+                    ? 'bg-brand-700 text-white'
+                    : 'text-gray-500 hover:text-gray-800')
+                }
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          {/*
+            设置入口单独一个图标，不放进主导航。
+            理由：主导航已经有 7 项，在 672px 宽里放不下、要横滑；
+            「设置」排在最后会被挤出去 —— 而评审现场要现场填 Key 时，
+            找不到它等于这个功能不存在。
+            图标 + aria-label 保证它无论窗口多窄都在。
+          */}
+          <Link
+            to="/settings"
+            aria-label="模型设置"
+            title="模型设置（填 API Key）"
+            aria-current={pathname === '/settings' ? 'page' : undefined}
+            className={
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors ' +
+              (pathname === '/settings'
+                ? 'border-brand-300 bg-brand-50 text-brand-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:text-gray-800')
+            }
+          >
+            <GearIcon />
+          </Link>
         </div>
       </header>
 
@@ -82,5 +156,30 @@ export default function App() {
         </footer>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 齿轮图标。
+ *
+ * <p>与 MicIcon 同一个理由：手写 SVG 而不引图标库 ——
+ * 整个项目只用到两个图标，为它们拉一个库会让首屏多一个 chunk。
+ */
+function GearIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   );
 }

@@ -39,10 +39,13 @@ import {
   type ReminderTask,
 } from '../lib/api';
 import { QueueEstimateCard } from '../components/QueueEstimateCard';
+import { CancelBookingButton } from '../components/CancelBookingButton';
 import { ReportSection } from '../components/ReportSection';
 import { PrivacySection } from '../components/PrivacySection';
 import { detectDuplicateExams } from '../lib/exam/duplicate';
-import { uploadRecord } from '../lib/db/upload';
+import type { ExtractionDraft } from '../lib/exam/extract';
+import { confirmUpload, prepareUpload } from '../lib/db/upload';
+import { ExtractionReview } from '../components/ExtractionReview';
 import { IMAGE_PRIVACY_NOTICE } from '../lib/db/ocr';
 
 /** 院区配色。同一个 code 永远同一个颜色，跨页面一致 */
@@ -175,13 +178,33 @@ function Skeleton() {
  * 原文存 IndexedDB → 本地脱敏 → 只发脱敏结果。
  * 顺序写在 `lib/db/upload.ts` 里，这里只负责收集参数与展示状态。
  *
+ * <p>点「上传」只做第一阶段（读取 + 脱敏 + 抽草稿），
+ * 草稿在下方展开给患者核对；点「确认保存」才真正落库并提交。
+ * 抽取结果会驱动到院路线，不能让患者没看过就生效。
+ *
  * <p>为什么把"原文留本地"写在按钮旁边而不是藏在说明里：
  * 用户在上传的那一刻最关心"这个文件会被传到哪"，
  * 那一刻给出的答案才有人读。
  */
 function UploadSection({ onUploaded }: { onUploaded: () => void }) {
   const [file, setFile] = useState<File | null>(null);
+  /**
+   * 待确认的抽取草稿。
+   *
+   * <p>它存在只说明"第一阶段完成了"：此时既没写 IndexedDB，也没调后端。
+   * 取消直接置空即可，不需要回滚任何持久化数据 —— 这正是两阶段的目的。
+   */
+  const [draft, setDraft] = useState<ExtractionDraft | null>(null);
   const [visitDate, setVisitDate] = useState(() => new Date().toLocaleDateString('sv-SE'));
+
+  /**
+   * 上传的是既往病历，还是医生刚开的检查单。
+   *
+   * <p>两者走同一条隐私链路（存本地 → 脱敏 → 只发脱敏文本），
+   * 区别只在**用途**：病历进时间轴，检查单要去驱动到院指引。
+   * 默认 `record` —— 绝大多数上传是病历，不该让用户每次都选。
+   */
+  const [kind, setKind] = useState<'record' | 'examOrder'>('record');
   /**
    * 院区选项来自后端目录，不在这里硬编码。
    *
@@ -208,31 +231,134 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
     };
   }, []);
 
-  const submit = async () => {
+  /**
+   * 第一阶段：读取 + 脱敏 + 抽草稿。
+   *
+   * <p>这一步不落库、不提交。患者没点「确认保存」之前，
+   * 检查项目就不该影响到院路线 —— 那等于替他做了决定。
+   */
+  const startReview = async () => {
+    if (!file || draft) return;
+    setBusy(true);
+    setMsg(null);
+
+    const r = await prepareUpload({
+      file,
+      visitDate,
+      hospitalCode,
+      department: department.trim(),
+      kind,
+    });
+
+    setBusy(false);
+    if (r.ok) {
+      setDraft(r.draft);
+    } else {
+      setMsg({ tone: 'err', text: r.message });
+    }
+  };
+
+  /** 第二阶段：按患者校对后的草稿真正落库并提交 */
+  const save = async (edited: ExtractionDraft) => {
     if (!file) return;
     setBusy(true);
     setMsg(null);
 
-    const r = await uploadRecord({ file, visitDate, hospitalCode, department: department.trim() });
+    const r = await confirmUpload(
+      {
+        file,
+        visitDate,
+        hospitalCode,
+        department: department.trim(),
+        kind,
+      },
+      edited,
+    );
 
     setBusy(false);
     if (r.ok) {
+      // 成功文案沿用原来的逻辑：患者最关心"原文去哪了、提交了多少"
       setMsg({
         tone: 'ok',
-        text: `已保存。原文留在本机，提交给服务器的是脱敏后的 ${r.redactedLength} 字（遮蔽 ${r.maskedCount} 处）。`,
+        text:
+          kind === 'examOrder'
+            ? '检查单已保存。到院页的指引已按这上面开的项目重算。'
+            : `已保存。原文留在本机，提交给服务器的是脱敏后的 ${r.redactedLength} 字（遮蔽 ${r.maskedCount} 处）。`,
       });
       setFile(null);
+      setDraft(null);
       onUploaded();
     } else {
       setMsg({ tone: r.stage === 'backend' ? 'warn' : 'err', text: r.message });
     }
   };
 
+  /**
+   * 取消：只丢草稿。
+   *
+   * <p>保留已选的文件，患者可以改完日期/类型再重新解析 ——
+   * 清掉文件会逼他重新找一遍，而取消往往只是想改个参数。
+   */
+  const cancelReview = () => {
+    setDraft(null);
+    setMsg(null);
+  };
+
   return (
     <section>
-      <SectionTitle>上传病历</SectionTitle>
+      <SectionTitle>上传病历或检查单</SectionTitle>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4">
+        {/*
+          类型选择放最上面。
+          它是这份材料"要不要驱动到院指引"的分叉点，
+          放下面会被忽略 —— 而选错的表现是"上传了但指引没变"，
+          用户根本不知道问题出在哪。
+        */}
+        <div className="mb-3">
+          <div className="text-xs text-gray-500">这是什么</div>
+          <div className="mt-1 flex gap-2">
+            {(
+              [
+                { v: 'record', label: '既往病历', hint: '化验单、出院小结等' },
+                { v: 'examOrder', label: '医生开的检查单', hint: '会上传到院指引' },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => {
+                  if (o.v === kind) return;
+                  setKind(o.v);
+                  /*
+                   * 草稿是按旧类型抽的。类型一变就必须重新解析：
+                   * 否则检查单的项目会被带进一份病历，或者病历
+                   * 被当成检查单去重算到院路线。
+                   */
+                  setDraft(null);
+                  setMsg(null);
+                }}
+                aria-pressed={kind === o.v}
+                className={
+                  'flex-1 rounded-lg border px-3 py-2 text-left transition-colors ' +
+                  (kind === o.v
+                    ? 'border-brand-400 bg-brand-50/60'
+                    : 'border-gray-200 bg-white hover:border-gray-300')
+                }
+              >
+                <div className="text-sm font-medium text-gray-900">{o.label}</div>
+                <div className="mt-0.5 text-[11px] text-gray-500">{o.hint}</div>
+              </button>
+            ))}
+          </div>
+          {kind === 'examOrder' ? (
+            <p className="mt-1.5 rounded bg-brand-50 px-2 py-1 text-[11px] leading-relaxed text-brand-800">
+              上传后，到院页的「现在去哪」会按检查单上的项目重算 ——
+              要拍片还是直接抽血、要不要空腹，都会跟着变。
+            </p>
+          ) : null}
+        </div>
+
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="text-xs text-gray-500">
             就诊日期
@@ -290,33 +416,33 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
             accept=".txt,.md,.pdf,text/plain,application/pdf,image/png,image/jpeg,image/webp"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
+              // 换了文件，旧草稿就作废了 —— 继续展示会让患者校对的是上一份材料
+              setDraft(null);
               setMsg(null);
             }}
             className="text-xs text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:text-gray-700"
           />
           <button
             type="button"
-            onClick={submit}
-            disabled={!file || busy}
+            onClick={startReview}
+            // 草稿打开时禁用：必须先「确认保存」或「取消」，避免重复解析
+            disabled={!file || busy || draft !== null}
             className="h-9 rounded-lg bg-brand-700 px-4 text-sm font-medium text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
-            {busy ? '处理中…' : '上传'}
+            {busy ? '处理中…' : draft ? '待确认' : '上传'}
           </button>
         </div>
 
-        <p className="mt-2 text-xs leading-relaxed text-gray-400">
-          支持纯文本（.txt / .md）、文本型 PDF，以及拍照上传的
-          <b className="font-medium text-gray-600">化验单、X 线、CT、磁共振、彩超、心电图、内镜报告</b>
-          （PNG / JPG / WebP）。扫描件 PDF 暂不支持，会明确提示。
-        </p>
-
-        {/*
-          图像路径的隐私提示必须显眼且常驻。
-          这是唯一一条原图会离开设备的路径 —— 藏起来说不过去。
-        */}
-        <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-          {IMAGE_PRIVACY_NOTICE}
-        </p>
+        {draft ? (
+          <div className="mt-3">
+            <ExtractionReview
+              draft={draft}
+              busy={busy}
+              onConfirm={save}
+              onCancel={cancelReview}
+            />
+          </div>
+        ) : null}
 
         {msg ? (
           <p
@@ -332,6 +458,20 @@ function UploadSection({ onUploaded }: { onUploaded: () => void }) {
             {msg.text}
           </p>
         ) : null}
+
+        <p className="mt-2 text-xs leading-relaxed text-gray-400">
+          支持纯文本（.txt / .md）、文本型 PDF，以及拍照上传的
+          <b className="font-medium text-gray-600">化验单、X 线、CT、磁共振、彩超、心电图、内镜报告</b>
+          （PNG / JPG / WebP）。扫描件 PDF 暂不支持，会明确提示。
+        </p>
+
+        {/*
+          图像路径的隐私提示必须显眼且常驻。
+          这是唯一一条原图会离开设备的路径 —— 藏起来说不过去。
+        */}
+        <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+          {IMAGE_PRIVACY_NOTICE}
+        </p>
       </div>
     </section>
   );
@@ -409,13 +549,21 @@ function AppointmentsSection() {
   const [orders, setOrders] = useState<BookingOrder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  /**
+   * 抽成 useCallback 是为了给退号按钮用。
+   *
+   * <p>退号成功后必须重新拉一次：不刷新的话，用户会看到一条
+   * 已经失效的记录还挂在那里，点排队估算还会算出"前面还有 N 人"。
+   * 那比没有这条记录更让人困惑。
+   */
+  const reload = useCallback(() => {
     void (async () => {
       const r = await getBookings();
       if (r.ok) {
         setOrders(
           r.data.filter((o) => o.status === 'CREATED' || o.status === 'CONFIRMED'),
         );
+        setError(null);
       } else {
         setError(
           r.failure.kind === 'unreachable'
@@ -428,6 +576,10 @@ function AppointmentsSection() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   if (orders === null) {
     return (
@@ -476,6 +628,9 @@ function AppointmentsSection() {
             <div className="mt-2">
               <QueueEstimateCard orderId={o.id} />
             </div>
+
+            {/* 退号：能不能退由后端政策决定，前端只负责展示与确认 */}
+            <CancelBookingButton orderId={o.id} onCancelled={reload} />
           </div>
         ))}
       </div>

@@ -47,28 +47,24 @@ describe('手机号', () => {
   });
 });
 
-describe('姓名', () => {
-  it('「我叫张三」只遮蔽姓名，保留标签', () => {
-    const r = redact('我叫张三，今年45岁');
-    expect(r.text).toContain('我叫');
-    expect(r.text).not.toContain('张三');
-    expect(r.text).toContain('［患者姓名］');
+/*
+ * ============ 不误伤：症状描述必须原样保留 ============
+ *
+ * 医疗文本里到处都是"像地名、像地址"的普通词。规则一旦多咬一口，
+ * 用户看到的就是一句读不通的话 —— 而且会因此不再相信整个预览。
+ * 这一组用例不管具体规则怎么改，都必须一直是绿的。
+ */
+describe('不误伤日常用语', () => {
+  it('症状描述原样保留', () => {
+    expect(redact('白天肚子疼').text).toBe('白天肚子疼');
+    expect(redact('肚子疼，最近没胃口').text).toBe('肚子疼，最近没胃口');
+    expect(redact('我叫不上来哪里疼').text).toBe('我叫不上来哪里疼');
   });
 
-  it('「患者：李四五」能识别', () => {
-    const r = redact('患者：李四五 主诉头痛');
-    expect(r.text).not.toContain('李四五');
-  });
-
-  it('不是姓氏的字不误伤', () => {
-    const r = redact('我叫不上来哪里疼');
-    expect(r.text).toContain('我叫不上来');
-  });
-
-  it('三字姓名能完整遮蔽，不残留末字', () => {
-    const r = redact('我叫王小明');
-    expect(r.text).not.toContain('王');
-    expect(r.text).not.toContain('小明');
+  it('带号码的句子只动号码', () => {
+    const r = redact('患者，手机 13812345678，身份证 330102195003071234');
+    expect(r.text).toContain('138****5678');
+    expect(r.text).not.toContain('330102195003071234');
   });
 });
 
@@ -116,13 +112,13 @@ describe('不误伤医疗文本', () => {
 
 describe('组合场景', () => {
   it('一段话里的多种 PII 全部遮蔽', () => {
-    const raw = '我叫张三，手机 13812345678，住北京市朝阳区建国路88号';
+    const raw = '手机 13812345678，住北京市朝阳区建国路88号，身份证 330102195003071234';
     const r = redact(raw);
 
-    expect(r.text).not.toContain('张三');
     expect(r.text).not.toContain('13812345678');
     expect(r.text).not.toContain('建国路88号');
-    expect(r.hits.length).toBeGreaterThanOrEqual(3);
+    expect(r.text).not.toContain('330102195003071234');
+    expect(r.hits.map((h) => h.type)).toEqual(['phone', 'address', 'id_card']);
   });
 
   it('倒序替换保证位置不漂移', () => {

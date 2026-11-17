@@ -13,13 +13,6 @@ import { composeOutbound, prepareOutbound } from './outbound';
 import { redact } from './redact';
 import type { ModelEntityLike } from './merge';
 
-const person = (text: string, start: number, end: number): ModelEntityLike => ({
-  type: 'name',
-  text,
-  start,
-  end,
-});
-
 const place = (text: string, start: number, end: number): ModelEntityLike => ({
   type: 'address',
   text,
@@ -28,21 +21,22 @@ const place = (text: string, start: number, end: number): ModelEntityLike => ({
 });
 
 describe('composeOutbound：模型命中必须真的进到出站文本里', () => {
-  it('自由叙述里的人名被遮蔽（回归：之前只发规则结果）', () => {
-    const raw = '老王让我带他上次的片子';
-    const out = composeOutbound(raw, [], [person('老王', 0, 2)]);
+  it('自由叙述里的地名被遮蔽（回归：之前只发规则结果）', () => {
+    const raw = '我住梧桐里社区那边，最近头晕';
+    const out = composeOutbound(raw, [], [place('梧桐里', 2, 5)]);
 
-    expect(out.text).not.toContain('老王');
-    expect(out.text.startsWith('［患者姓名］')).toBe(true);
+    expect(out.text).not.toContain('梧桐里');
+    expect(out.text.startsWith('我住［住址已遮蔽］')).toBe(true);
     expect(out.modelUsed).toBe(true);
     expect(out.hits).toHaveLength(1);
   });
 
-  it('地名同理，且原文其余部分一字不动', () => {
-    const raw = '我住梧桐里社区那边，最近头晕';
-    const out = composeOutbound(raw, [], [place('梧桐里', 2, 5)]);
+  it('模型标出的地名与规则命中互不干扰，其余文字一字不动', () => {
+    const raw = '我住梧桐里社区那边，电话 13812345678';
+    const rule = redact(raw);
+    const out = composeOutbound(raw, rule.hits, [place('梧桐里', 2, 5)]);
 
-    expect(out.text).toBe('我住［住址已遮蔽］社区那边，最近头晕');
+    expect(out.text).toBe('我住［住址已遮蔽］社区那边，电话 138****5678');
   });
 });
 
@@ -75,9 +69,10 @@ describe('composeOutbound：模型不可用时必须如实降级', () => {
 
 describe('composeOutbound：文本与 hit 列表必须一致', () => {
   it('hits 升序，且能按顺序重组回出站文本', () => {
-    const raw = '张伟 13812345678 住在朝阳区';
+    const raw = '我住梧桐里社区那边 13812345678';
     const rule = redact(raw);
-    const out = composeOutbound(raw, rule.hits, [person('张伟', 0, 2)]);
+    const hit = place('梧桐里', raw.indexOf('梧桐里'), raw.indexOf('梧桐里') + 3);
+    const out = composeOutbound(raw, rule.hits, [hit]);
 
     const starts = out.hits.map((h) => h.start);
     expect(starts).toEqual([...starts].sort((a, b) => a - b));
@@ -93,13 +88,13 @@ describe('composeOutbound：文本与 hit 列表必须一致', () => {
   });
 
   it('规则与模型重叠时按规则结果走，不会重复遮蔽出两段占位符', () => {
-    const raw = '张伟 13812345678';
+    const raw = '住梧桐里社区，电话 13812345678';
     const rule = redact(raw);
-    const out = composeOutbound(raw, rule.hits, [person('张伟', 0, 2)]);
+    const s = raw.indexOf('梧桐里');
+    const out = composeOutbound(raw, rule.hits, [place('梧桐里', s, s + 3)]);
 
-    expect(out.hits.filter((h) => h.type === 'name')).toHaveLength(1);
-    expect(out.text.match(/［患者姓名］/g)).toHaveLength(1);
-    expect(out.text).not.toContain('张伟');
+    expect(out.text.match(/［住址已遮蔽］/g)).toHaveLength(1);
+    expect(out.text).toContain('138****5678');
   });
 });
 

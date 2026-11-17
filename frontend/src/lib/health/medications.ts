@@ -35,6 +35,14 @@ export interface MedicationInstruction {
   frequency: string | null;
   /** 时间点，如「饭后」「睡前」 */
   timing: string | null;
+  /**
+   * 病历上写明的具体服用时刻，如「08:00」。
+   *
+   * <p>只有病历里真的写了钟点才有值（「每日1次 早上8点」）。
+   * 为 null 表示病历只写了频次与时机 —— 时刻由 dosing.ts 按作息推出来，
+   * 那是**建议**而非医嘱，界面上必须让这两者一眼可辨。
+   */
+  atTime: string | null;
   /** 疗程，如「7天」 */
   duration: string | null;
   /** 原始文本片段，供患者核对 */
@@ -64,13 +72,32 @@ const FREQUENCY_ALIASES: Array<[RegExp, string]> = [
   [/^(qw|每周1次|每周一次)$/i, '每周 1 次'],
 ];
 
-/** 给药时机 → 通俗说法 */
+/** 时机 → 通俗说法。顺序有意义：第一个命中的生效 */
 const TIMING_ALIASES: Array<[RegExp, string]> = [
-  [/餐前|饭前|空腹/, '餐前'],
+  /*
+   * 带具体餐次的说法必须排在裸「餐前/餐后」前面。
+   * 否则「早饭后」只被读成「餐后」，丢掉"哪一餐"这个信息，
+   * 时间表就没法落到「早饭后」那一段，只能退回按频次的 08:30。
+   */
+  [/早饭前|早餐前/, '早饭前'],
+  [/早饭后|早餐后/, '早饭后'],
+  [/午饭前|中饭前/, '中饭前'],
+  [/午饭后|中饭后/, '中饭后'],
+  [/晚饭前/, '晚饭前'],
+  [/晚饭后/, '晚饭后'],
+  [/餐前|饭前/, '餐前'],
   [/餐后|饭后|进食后/, '餐后'],
   [/睡前|临睡/, '睡前'],
   [/晨起|清晨|早上|早晨/, '晨起'],
   [/随餐|与食物同服/, '随餐'],
+  /*
+   * 空腹必须排在「餐前/晨起」之后、且只匹配真正的空腹写法。
+   *
+   * 「空腹血糖 6.1」是检查项名，不是吃药时机 —— 把它读成「空腹服用」，
+   * 患者会拿到一条凭空出现的服药提醒。宁可漏认，不能认错。
+   * 前置断言排除「空腹」后面紧跟「血糖 / 抽血 / 检查」的情况。
+   */
+  [/(?<!空腹)(?:空腹(?!血糖|抽血|检查|化验))/, '空腹'],
 ];
 
 /**
@@ -120,6 +147,7 @@ export function extractMedications(
       dose: findDose(line),
       frequency: findFrequency(line),
       timing: findTiming(line),
+      atTime: findAtTime(line),
       duration: findDuration(line),
       source: line,
       hospitalCode,
@@ -200,6 +228,64 @@ function findTiming(line: string): string | null {
   return null;
 }
 
+/**
+ * 病历上写明的具体钟点：「每日1次 早上8点」「08:00 服用」「晚 8 点半」。
+ *
+ * <p>只在**写成钟点**时返回，不做任何推断：
+ *   · 有冒号：「8:30」「20：30」→ 直接取
+ *   · 中文时间词 + 数字 + 点/时：「早上8点」「晚上八点半」「中午12时」
+ *   · 「早上」「晚上」这类**时段词**不算：它不指向一个时刻，
+ *     真有这个信息的是 timing，交给 dosing.ts 排进作息里
+ *
+ * <p>为什么这么克制：钟点一旦猜错，患者会照着错的时间吃药。
+ * 「早上8点」写得很明确，「早上」则不是 —— 这两者必须区别对待。
+ */
+export function findAtTime(line: string): string | null {
+  /*
+   * 冒号写法优先。前面的前置断言排除「血糖 6.1:8」这类被拆开的数字，
+   * 后面的断言排除「8:30-9:00」这类区间 —— 区间不是服药时刻，猜一个端点等于编。
+   */
+  const colon = line.match(/(?<!\d)([01]?\d|2[0-3])\s*[:：]\s*([0-5]\d)(?!\s*[-~～至到])/);
+  if (colon) return toHhmm(colon[1]!, colon[2]!);
+
+  // 「早上8点」「晚上八点半」「中午12时30分」
+  const cn = line.match(
+    /(?:早上|早晨|清晨|上午|中午|下午|傍晚|晚上|晚间|睡前|临睡|晨起)?\s*([零一二三四五六七八九十两\d]{1,3})\s*[点时]\s*(半|[零一二三四五六七八九十\d]{1,2}\s*分)?/,
+  );
+  if (cn) {
+    let h = cnNumToNum(cn[1]!);
+    if (h === null || h < 0 || h > 23) return null;
+    const mm = cn[2] ? (cn[2].trim() === '半' ? 30 : cnNumToNum(cn[2]!)) : 0;
+    if (mm === null || mm < 0 || mm > 59) return null;
+
+    // 「晚上8点」是 20:00 —— 只有 1~11 点的晚场才需要加 12，
+    // 12 点的「中午12点」本来就是 12:00
+    const isPm = /下午|傍晚|晚上|晚间/.test(line);
+    if (isPm && h >= 1 && h <= 11) h += 12;
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+/** 中文/阿拉伯数字 → 数字。认不出返回 null —— 认不出就不排，不猜 */
+function cnNumToNum(s: string): number | null {
+  const map: Record<string, number> = {
+    零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4,
+    五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+  };
+  if (/^\d+$/.test(s)) return Number(s);
+  if (s.length === 1) return map[s] ?? null;
+  // 「十一」「十二」这类两位数
+  if (s.startsWith('十')) return 10 + (map[s[1]!] ?? 0);
+  if (s[1] === '十') return (map[s[0]!] ?? 0) * 10 + (s[2] ? (map[s[2]] ?? 0) : 0);
+  return null;
+}
+
+function toHhmm(h: string, m: string): string {
+  return `${String(Number(h)).padStart(2, '0')}:${m}`;
+}
+
 /** 疗程：7天 / 2周 / 1个月 */
 function findDuration(line: string): string | null {
   const m = line.match(/(\d+)\s*(天|日|周|个?月)\s*(?:疗程)?/);
@@ -219,6 +305,11 @@ export function describeMedication(m: MedicationInstruction): string {
   if (m.dose) parts.push(m.dose);
   if (m.frequency) parts.push(m.frequency);
   if (m.timing) parts.push(m.timing);
+  /*
+   * 钟点排在时机后面，并带上「每日」二字：「每日 08:00」。
+   * 不带「每日」的裸时刻会被读成"某一天的一次"，而这是长期医嘱。
+   */
+  if (m.atTime) parts.push(`每日 ${m.atTime}`);
   if (m.duration) parts.push(`共 ${m.duration}`);
 
   if (parts.length === 0) {

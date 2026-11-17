@@ -14,7 +14,7 @@
  *
  *   2. **模型结果只增不删。**
  *      模型多标一个词，用户最多看到多一处高亮；
- *      模型少标一个，姓名就发出去了。所以宁可多标。
+ *      模型少标一个，信息就发出去了。所以宁可多标。
  *
  *   3. **合并后必须重新排序。**
  *      调用方（Highlighted）按 start 升序切原文，
@@ -42,7 +42,6 @@ export interface ModelEntityLike {
 
 /** 模型实体的占位符。和规则引擎的写法保持一致，UI 上一眼能看出是同一种遮蔽 */
 const MODEL_PLACEHOLDER: Record<PiiType, string> = {
-  name: '［患者姓名］',
   address: '［住址已遮蔽］',
   phone: '［手机号已遮蔽］',
   id_card: '［证件号已遮蔽］',

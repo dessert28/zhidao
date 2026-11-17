@@ -10,11 +10,18 @@
 
 import { createBrowserRouter } from 'react-router-dom';
 import App from './App';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <App />,
+    /*
+     * 错误边界挂在根路由上而不是每个子路由：
+     * 用户崩溃后仍然需要顶栏与导航（能自己走到别的页面），
+     * 挂在子路由就等于连顶栏一起没了。
+     */
+    ErrorBoundary: RouteErrorBoundary,
     children: [
       {
         /*
@@ -36,6 +43,32 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { default: ChatPage } = await import('./pages/ChatPage');
           return { Component: ChatPage };
+        },
+      },
+      {
+        /*
+         * 挂号。与对话里的预约卡并行，不是替代：
+         * 对话那条路是"AI 帮你判断该挂哪个科，顺手给个号"，
+         * 这一页是"我已经知道要挂什么，自己挑时段"。
+         * 后者是高频动作，不该每次先讲一遍症状。
+         */
+        path: 'booking',
+        lazy: async () => {
+          const { default: BookingPage } = await import('./pages/BookingPage');
+          return { Component: BookingPage };
+        },
+      },
+      {
+        /*
+         * 到院。单独一页而不是挂在病历页下面：
+         * 它的场景是「人已经站在门诊楼里」—— 要的是"现在去哪、
+         * 还要等多久、药在哪拿"，和病历时间轴完全是两个时刻。
+         * 埋进病历页意味着患者要滚很久才能看到最急的那条信息。
+         */
+        path: 'visit',
+        lazy: async () => {
+          const { default: VisitPage } = await import('./pages/VisitPage');
+          return { Component: VisitPage };
         },
       },
       {
@@ -69,6 +102,18 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { default: SummaryPage } = await import('./pages/SummaryPage');
           return { Component: SummaryPage };
+        },
+      },
+      {
+        /*
+         * 模型设置。单独一页而不是塞进某个设置弹窗：
+         * 评审现场大概率要现场填一次 Key，这一页要能被直接打开、
+         * 能被写进文档、能截图。弹窗做不到后两点。
+         */
+        path: 'settings',
+        lazy: async () => {
+          const { default: SettingsPage } = await import('./pages/SettingsPage');
+          return { Component: SettingsPage };
         },
       },
       {

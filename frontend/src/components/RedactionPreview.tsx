@@ -24,7 +24,6 @@ import { useModelState } from '../hooks/useModelState';
 const TYPE_LABEL: Record<PiiType, string> = {
   id_card: '身份证号',
   phone: '手机号',
-  name: '姓名',
   address: '住址',
   email: '邮箱',
   bank_card: '银行卡号',
@@ -91,11 +90,13 @@ function Highlighted({ raw, hits }: { raw: string; hits: RedactionHitLike[] }) {
  * 模型状态必须如实显示。三种情况不能写成同一句话：
  * · 还没结论 → 「正在检查」，因为结果还没齐
  * · 不可用   → 「只做了规则检查」，否则"未检测到"是一句误导
- * · 检查过   → 才可以确认自由叙述里的姓名地名也已覆盖
+ * · 检查过   → 才可以确认模型这一层也跑过
  *
  * 为什么这段不能省：用户看到"未检测到个人信息"时，
  * 如果其实模型没加载，那是一个**错误的安全感**。
  * 隐私产品里，这种错误的安全感比明确说"我能力有限"更危险。
+ *
+ * <p>措辞只讲"做了什么"，不承诺"全都遮住了" —— 后者一旦被追问就站不住。
  */
 function ModelStatus({ model }: { model: ModelPhase }) {
   const state = useModelState();
@@ -103,7 +104,7 @@ function ModelStatus({ model }: { model: ModelPhase }) {
   if (model.phase === 'done') {
     return (
       <p className="text-xs leading-relaxed text-gray-400">
-        本地模型已检查：除证件号手机号外，自由叙述里的人名与地名也已覆盖。
+        本地模型已检查：除证件号手机号外，机构名与地名也已覆盖。
       </p>
     );
   }
@@ -120,8 +121,7 @@ function ModelStatus({ model }: { model: ModelPhase }) {
   if (model.phase === 'unavailable') {
     return (
       <p className="text-xs leading-relaxed text-amber-600">
-        本地模型未加载，当前只做规则遮蔽（证件号、手机号、带标签的地址等）。
-        自由叙述里的人名可能未被识别，发送前请自行检查。
+        本地模型未加载，当前只做规则遮蔽（证件号、手机号、带标签的地址等）。发送前请自行检查。
       </p>
     );
   }
@@ -143,11 +143,11 @@ export function RedactionPreview({
 
   /**
    * 顶栏文案跟着 model 走，而不是跟着"命中数"走：
-   * 0 命中时，模型跑完了才可以放心说"未检测到"。
+   * 0 命中时，模型跑完了才可以说"未检测到"。
    */
   const summary = (() => {
     if (count > 0) return `将遮蔽 ${count} 处个人信息`;
-    if (model.phase === 'done') return '未检测到个人身份信息';
+    if (model.phase === 'done') return '未检测到证件号、手机号等信息';
     if (model.phase === 'pending') return '正在检查（本地模型加载中）';
     if (model.phase === 'unavailable') return '规则检查未命中（本地模型不可用）';
     return '未检测到个人身份信息';

@@ -14,9 +14,12 @@
  *
  * ============ 一条边界 ============
  *
- * 我们不记录「吃了没」。没有真实服药数据时，把已过时间点标灰是
- * 提示「这一档时间过了」，不是断言「你忘了吃药」。
- * 界面上用词必须区分这两件事 —— 前者是信息，后者是指责。
+ * 「吃了没」由**患者自己**记：每档有「已服用 / 已跳过」两个动作，
+ * 记录只落在本机（见 lib/health/dose-log.ts）。
+ *
+ * 我们仍然不知道他到底吃没吃 —— 记的是"患者点了什么"，不是"患者做了什么"。
+ * 所以界面上一律不出现「漏服」「未服药」：没点记录只是没点记录，
+ * 不是证据。用词必须守住这条线 —— 前者是信息，后者是指责。
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -34,7 +37,17 @@ import {
   type PatientProfile,
   type ReminderTask,
 } from '../lib/api';
-import { buildDosePlan, isPast, summarizeDay, type DoseSlot } from '../lib/health/dosing';
+import { buildDosePlan, slotTemporal, summarizeDay, type DoseSlot } from '../lib/health/dosing';
+import {
+  getDayStatus,
+  readDoseLog,
+  setDoseStatus,
+  summarizeProgress,
+  todayStr,
+  writeDoseLog,
+  type DoseLog,
+  type DoseStatus,
+} from '../lib/health/dose-log';
 import { dedupeByLatest, extractMedications } from '../lib/health/medications';
 
 interface State {
@@ -58,6 +71,12 @@ const EMPTY: State = {
 export default function TodayPage() {
   const [state, setState] = useState<State>(EMPTY);
   const [now, setNow] = useState(() => new Date());
+  /*
+   * 服药记录从 localStorage 读一次，之后由点击维护。
+   * 不放在 state 的 EMPTY 里：那是后端数据的容器，这份是纯本地的，
+   * 后端挂了也该照常显示（患者最需要它的时刻，往往正是别的都不响的时刻）。
+   */
+  const [doseLog, setDoseLog] = useState<DoseLog>(() => readDoseLog());
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, failure: null }));
@@ -113,6 +132,30 @@ export default function TodayPage() {
     );
     return buildDosePlan(dedupeByLatest(all));
   }, [state.records]);
+
+  const today = todayStr(now);
+  const todayStatus = getDayStatus(doseLog, today);
+  const progress = summarizeProgress(
+    plan.slots.map((s) => s.id),
+    todayStatus,
+  );
+
+  /**
+   * 记录一档的状态。
+   *
+   * <p>点同一个状态 = 取消（见 dose-log.ts）。写盘失败不抛给界面 ——
+   * "这次没记住"比"整页报错"轻得多。
+   */
+  const markSlot = useCallback(
+    (slotId: string, next: DoseStatus | null) => {
+      setDoseLog((prev) => {
+        const updated = setDoseStatus(prev, todayStr(new Date()), slotId, next);
+        writeDoseLog(updated);
+        return updated;
+      });
+    },
+    [],
+  );
 
   /** 今天与明天要处理的事项 */
   const agenda = useMemo(() => {
@@ -181,7 +224,13 @@ export default function TodayPage() {
           b.status === 'CREATED' ? '（待确认，到院请在自助机取号）' : ''
         }`,
         kind: b.status === 'CREATED' ? 'warn' : 'booking',
-        href: '/records',
+        /*
+         * 指向「到院」而不是「我的病历」。
+         *
+         * 原来跳病历页，那里只有一行预约记录 —— 患者真正想知道的
+         * "今天去哪、还要等多久"一个都没有。「到院」页就是为这一刻做的。
+         */
+        href: '/visit',
       };
       if (d === today) todayItems.push(item);
       else soonItems.push(item);
@@ -257,7 +306,15 @@ export default function TodayPage() {
       ) : null}
 
       {/* 今天的药 */}
-      {plan.slots.length > 0 ? <DoseSection slots={plan.slots} now={now} /> : null}
+      {plan.slots.length > 0 ? (
+        <DoseSection
+          slots={plan.slots}
+          now={now}
+          status={todayStatus}
+          onMark={markSlot}
+          progressText={progress.text}
+        />
+      ) : null}
 
       {/* 用法未记录的药：单独列出，不猜 */}
       {plan.unscheduled.length > 0 ? (
@@ -301,8 +358,9 @@ export default function TodayPage() {
       </div>
 
       <p className="text-xs leading-relaxed text-gray-400">
-        服药时间由病历上的频次推算，可自行调整；具体以医嘱和药盒说明为准。
-        我们不记录你是否服药，这里只提醒「什么时候该吃」。
+        服药时间来自病历上的频次与时机。病历只写「饭后」「睡前」时，这里给的是一段时间
+        （如早饭后），不是某个钟点 —— 按你那天实际的吃饭时间把握即可。
+        「已服用」只是你的自记，留在本机，不会上传，也不代替医嘱。
       </p>
     </div>
   );
@@ -310,7 +368,32 @@ export default function TodayPage() {
 
 /* ============================ 服药时间表 ============================ */
 
-function DoseSection({ slots, now }: { slots: DoseSlot[]; now: Date }) {
+/**
+ * 今天的药。
+ *
+ * <p>每一档有两个动作：**已服用 / 已跳过**。
+ * 原来这里只有一句「时间已过」—— 患者想知道的是"我吃了没"，
+ * 而界面只回答"时间过了"，等于让他凭记忆。
+ *
+ * <p>三档视觉对应三种现实：
+ *   · 已服用  → 灰掉并打勾，不再占注意力
+ *   · 已跳过  → 灰掉并标「已跳过」，同样不再催
+ *   · 待服    → 有色块。模糊时间显示「早饭后 · 约 07:30–09:00」，
+ *               精确时间显示「08:30」，并且**不把模糊档印成钟点**
+ */
+function DoseSection({
+  slots,
+  now,
+  status,
+  onMark,
+  progressText,
+}: {
+  slots: DoseSlot[];
+  now: Date;
+  status: Record<string, DoseStatus>;
+  onMark: (slotId: string, next: DoseStatus | null) => void;
+  progressText: string;
+}) {
   return (
     <section>
       <SectionTitle>
@@ -318,42 +401,120 @@ function DoseSection({ slots, now }: { slots: DoseSlot[]; now: Date }) {
         <span className="ml-2 text-xs font-normal text-gray-400">{summarizeDay(slots)}</span>
       </SectionTitle>
 
+      {progressText ? (
+        <p className="mb-2 text-xs text-gray-500">{progressText}</p>
+      ) : null}
+
       <div className="space-y-2">
         {slots.map((slot) => {
-          const past = isPast(slot.time, now);
-          return (
-            <div
-              key={slot.time}
-              className={`flex gap-3 rounded-xl border p-3 ${
-                past ? 'border-gray-200 bg-gray-50' : 'border-brand-200 bg-brand-50/40'
-              }`}
-            >
-              <div className="w-14 shrink-0">
-                <div
-                  className={`text-base font-semibold tabular-nums ${
-                    past ? 'text-gray-400' : 'text-brand-800'
-                  }`}
-                >
-                  {slot.time}
-                </div>
-                <div className="text-[10px] text-gray-400">
-                  {/* 用词刻意区分：时间过了 ≠ 你没吃 */}
-                  {past ? '时间已过' : '待服'}
-                </div>
-              </div>
+          const state = status[slot.id];
+          const temporal = slotTemporal(slot, now);
+          const done = state === 'taken' || state === 'skipped';
 
-              <div className="min-w-0 flex-1">
-                {slot.meds.map((m) => (
-                  <div key={m.name} className="text-sm leading-relaxed">
-                    <span className={`font-medium ${past ? 'text-gray-500' : 'text-gray-900'}`}>
-                      {m.name}
-                    </span>
-                    {m.dose ? <span className="ml-1 text-xs text-gray-500">{m.dose}</span> : null}
-                    {m.timing ? (
-                      <span className="ml-1 text-xs text-gray-400">（{m.timing}）</span>
-                    ) : null}
+          /*
+           * 三种底色的含义，不能混用：
+           *   done        → 灰（已处理，别再吸引注意力）
+           *   now         → 蓝（就是现在这一段，最该看）
+           *   passed/未来 → 中性
+           * 只有"正在这一段"用强色：一直在闪的东西等于一直在喊，
+           * 喊久了没人听。
+           */
+          const box = done
+            ? 'border-gray-200 bg-gray-50'
+            : temporal === 'now'
+              ? 'border-brand-300 bg-brand-50'
+              : 'border-gray-200 bg-white';
+
+          return (
+            <div key={slot.id} className={`rounded-xl border p-3 ${box}`}>
+              <div className="flex gap-3">
+                <div className="w-16 shrink-0">
+                  {slot.kind === 'exact' ? (
+                    <div
+                      className={`text-base font-semibold tabular-nums ${
+                        done ? 'text-gray-400' : 'text-brand-800'
+                      }`}
+                    >
+                      {slot.label}
+                    </div>
+                  ) : (
+                    /*
+                     * 模糊档：大字是「早饭后」，小字才是窗口。
+                     * 反过来写（大字印 08:00）就是在替医生下医嘱。
+                     */
+                    <div
+                      className={`text-sm font-semibold leading-snug ${
+                        done ? 'text-gray-400' : 'text-brand-800'
+                      }`}
+                    >
+                      {slot.label}
+                    </div>
+                  )}
+                  <div className="mt-0.5 text-[10px] text-gray-400">
+                    {state === 'taken'
+                      ? '已服用'
+                      : state === 'skipped'
+                        ? '已跳过'
+                        : slot.kind === 'fuzzy'
+                          ? temporal === 'now'
+                            ? '就是现在'
+                            : temporal === 'passed'
+                              ? '这一段已过'
+                              : '还没到'
+                          : temporal === 'passed'
+                            ? '时间已过'
+                            : '待服'}
                   </div>
-                ))}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  {slot.kind === 'fuzzy' && slot.hint ? (
+                    <p className="mb-1 text-[11px] text-gray-400">{slot.hint}</p>
+                  ) : null}
+                  {slot.meds.map((m) => (
+                    <div key={m.name} className="text-sm leading-relaxed">
+                      <span className={`font-medium ${done ? 'text-gray-500' : 'text-gray-900'}`}>
+                        {m.name}
+                      </span>
+                      {m.dose ? <span className="ml-1 text-xs text-gray-500">{m.dose}</span> : null}
+                      {m.timing ? (
+                        <span className="ml-1 text-xs text-gray-400">（{m.timing}）</span>
+                      ) : null}
+                    </div>
+                  ))}
+
+                  <div className="mt-1.5 flex gap-1.5">
+                    {/*
+                      两个动作始终都在，不随时间变化。
+                      按时间显隐按钮的话，"早上忘了点、晚上想起来"就再也补记不了 ——
+                      而补记恰恰是最常见的真实情况。
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => onMark(slot.id, state === 'taken' ? null : 'taken')}
+                      aria-pressed={state === 'taken'}
+                      className={`rounded-lg border px-2 py-0.5 text-xs ${
+                        state === 'taken'
+                          ? 'border-brand-600 bg-brand-600 text-white'
+                          : 'border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700'
+                      }`}
+                    >
+                      已服用
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMark(slot.id, state === 'skipped' ? null : 'skipped')}
+                      aria-pressed={state === 'skipped'}
+                      className={`rounded-lg border px-2 py-0.5 text-xs ${
+                        state === 'skipped'
+                          ? 'border-gray-400 bg-gray-200 text-gray-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-400'
+                      }`}
+                    >
+                      跳过
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           );

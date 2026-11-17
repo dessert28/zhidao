@@ -46,6 +46,33 @@ export interface LocalRecord {
   hospitalCode: string;
   /** 科室（可选） */
   department: string;
+
+  /**
+   * 这是什么类型的材料。
+   *
+   * <p>加这个字段的原因：医生开的**检查单**和既往**病历**用途完全不同 ——
+   * 病历是"发生过的事"，检查单是"接下来要做的事"。
+   * 前者进时间轴，后者要驱动到院指引。混成一种，
+   * 时间轴上会出现一条"今天开的检查单"看起来像一次就诊记录。
+   *
+   * <p>缺省视为 `record`：这个字段是后加的，老数据里没有，
+   * 把它们当成普通病历是安全的默认值。
+   */
+  kind?: 'record' | 'examOrder';
+
+  /**
+   * 检查单解析出的项目（仅 kind === 'examOrder' 时有值）。
+   *
+   * <p>存本地而不是只存原文：到院页每次渲染都要用它决定"去哪几站"，
+   * 每次都重新解析一遍既慢又会因为词典更新而前后不一致。
+   * 解析结果的类型是 `ParsedExam[]`，这里用宽类型避免 db 层依赖 exam 模块。
+   */
+  examItems?: Array<{
+    name: string;
+    placeType: string;
+    fasting: boolean | null;
+    evidence: string;
+  }>;
 }
 
 interface ZhidaoDB extends DBSchema {
@@ -106,6 +133,25 @@ export async function listRecords(): Promise<LocalRecord[]> {
 export async function getRecord(id: string): Promise<LocalRecord | undefined> {
   const db = await getDB();
   return db?.get(STORE, id);
+}
+
+/**
+ * 取「最近一张检查单」。
+ *
+ * <p>到院页用它决定接下来去哪几站。只取一张而不是全部：
+ * 医生这次开的检查单才是当前有效的，翻出上个月的那张
+ * 会让指引混进已经做完的项目。
+ *
+ * @param hospitalCode 可选，限定院区。不同院区的检查单不该互相干扰
+ * @returns 没有检查单时返回 undefined
+ */
+export async function latestExamOrder(
+  hospitalCode?: string,
+): Promise<LocalRecord | undefined> {
+  const all = await listRecords();
+  return all.find(
+    (r) => r.kind === 'examOrder' && (!hospitalCode || r.hospitalCode === hospitalCode),
+  );
 }
 
 /** 删除 */

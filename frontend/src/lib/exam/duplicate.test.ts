@@ -171,6 +171,41 @@ describe('排序与多组', () => {
   });
 });
 
+describe('归一后跨院命中（叫法/语序不同也算同一项）', () => {
+  it('「胸部CT平扫」与「CT胸部平扫」跨院命中', () => {
+    const out = detectDuplicateExams([
+      rec(1, 'MOCK-A', '2026-09-01', '胸部CT平扫：未见明显异常'),
+      rec(2, 'MOCK-B', '2026-10-01', 'CT胸部平扫复查'),
+    ]);
+    expect(out).toHaveLength(1);
+    // 输出用标准名，不是某一家医院的原文写法
+    expect(out[0]!.item).toBe('胸部CT');
+    expect(out[0]!.gapDays).toBe(30);
+  });
+
+  it('「腹部彩超」与「腹部B超」跨院命中，item 用标准名', () => {
+    const out = detectDuplicateExams([
+      rec(1, 'MOCK-A', '2026-09-01', '腹部彩超：脂肪肝'),
+      rec(2, 'MOCK-B', '2026-11-01', '腹部B超复查'),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.item).toBe('腹部超声');
+  });
+
+  it('同一份记录里两种写法只算一次，不会自己和自己成组', () => {
+    const out = detectDuplicateExams([rec(1, 'MOCK-A', '2026-09-01', '胸部CT平扫；CT胸部平扫')]);
+    expect(out).toHaveLength(0);
+  });
+
+  it('增强与平扫视为同一项（取舍见 normalize.ts 文件头）', () => {
+    const out = detectDuplicateExams([
+      rec(1, 'MOCK-A', '2026-09-01', '胸部增强CT'),
+      rec(2, 'MOCK-B', '2026-10-01', '胸部CT平扫'),
+    ]);
+    expect(out.map((f) => f.item)).toContain('胸部CT');
+  });
+});
+
 describe('词典覆盖', () => {
   it('覆盖了常见且有复查周期的项目', () => {
     for (const name of ['糖化血红蛋白', '空腹血糖', '血脂', '肝功能', '肾功能']) {

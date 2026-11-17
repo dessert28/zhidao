@@ -17,7 +17,7 @@ import type { BackendFailure } from '../api';
 /** 界面必须展示的隐私说明。写成常量是为了保证"每处都显示同一句话" */
 export const IMAGE_PRIVACY_NOTICE =
   '图片会发送给模型服务商用于识别，这是唯一一条原图离开设备的路径。' +
-  '建议上传前先遮住姓名、就诊卡号等手写内容。';
+  '建议上传前先遮住就诊卡号等手写内容。';
 
 export interface RecognizedItem {
   name: string;

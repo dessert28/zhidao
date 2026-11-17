@@ -73,7 +73,7 @@ describe('上传：隐私边界', () => {
     expect(stored[0]!.rawText).toBe(RAW);
   });
 
-  it('**网络请求里不含原文的任何个人信息**', async () => {
+  it('**网络请求里不含原文的证件号与手机号**', async () => {
     const { uploadRecord } = await import('./upload');
     await uploadRecord({
       file: makeFile(RAW),
@@ -89,8 +89,7 @@ describe('上传：隐私边界', () => {
     expect(bodies).toHaveLength(1);
     const body = bodies[0]!;
 
-    // 这三样是敏感信息，一个都不能出现在请求体里
-    expect(body, '姓名泄漏').not.toContain('张伟');
+    // 这两样一个都不能出现在请求体里
     expect(body, '身份证泄漏').not.toContain('110101199003071234');
     expect(body, '手机号泄漏').not.toContain('13812345678');
 
@@ -226,5 +225,202 @@ describe('上传：后端失败时不丢数据', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.stage).toBe('backend');
     expect(memStore.size).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------
+ * 两阶段上传：患者先校对，再提交
+ *
+ * 最关键的一组断言是"prepare 阶段零副作用"：
+ * 患者还没点确认时，既不能落库，也不能发请求。
+ * 否则「取消」就变成了"以为取消了，其实已经传了"。
+ * ------------------------------------------------------------------ */
+
+/** 取出所有 POST 请求体 */
+function sentBodies(spy: ReturnType<typeof vi.fn>): string[] {
+  return spy.mock.calls
+    .map((c) => (c[1] as RequestInit | undefined)?.body)
+    .filter((b): b is string => typeof b === 'string');
+}
+
+describe('两阶段上传：prepare 只出草稿', () => {
+  it('不落库、不调用后端，摘要已经脱敏', async () => {
+    const { prepareUpload } = await import('./upload');
+    const r = await prepareUpload({
+      file: makeFile(RAW),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.draft.diagnosisBrief).toContain('血糖');
+      expect(r.draft.diagnosisBrief).not.toContain('110101199003071234');
+      expect(r.draft.diagnosisBrief).not.toContain('13812345678');
+    }
+
+    // 零副作用
+    expect(memStore.size).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('检查单的草稿带出可编辑的检查项目', async () => {
+    const { prepareUpload } = await import('./upload');
+    const r = await prepareUpload({
+      file: makeFile('检查项目：\n胸部 CT 平扫\n血常规'),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+      kind: 'examOrder',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // 词典命中返回标准名（「胸部 CT 平扫」→「胸部CT」），原文仍在 evidence
+      expect(r.draft.examItems.map((i) => i.name)).toEqual(
+        expect.arrayContaining(['胸部CT', '血常规']),
+      );
+    }
+    expect(memStore.size).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('不支持的格式在 prepare 阶段就拒绝，且没有副作用', async () => {
+    const { prepareUpload } = await import('./upload');
+    const r = await prepareUpload({
+      file: new File(['PK'], 'record.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.stage).toBe('unsupported');
+    expect(memStore.size).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('两阶段上传：confirm 才落库并提交', () => {
+  it('原文完整存本地，请求体用编辑后的摘要且不含 PII', async () => {
+    const { prepareUpload, confirmUpload } = await import('./upload');
+    const input = {
+      file: makeFile(RAW),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    };
+
+    const p = await prepareUpload(input);
+    expect(p.ok).toBe(true);
+    if (!p.ok) return;
+
+    const r = await confirmUpload(input, {
+      ...p.draft,
+      diagnosisBrief: '复查血糖，按期复诊',
+    });
+    expect(r.ok).toBe(true);
+
+    // ① 原文仍然完整留在本地
+    const stored = [...memStore.values()] as Array<{ rawText: string }>;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.rawText).toBe(RAW);
+
+    // ③ 只发一次，且发出去的是脱敏文本
+    const bodies = sentBodies(fetchSpy);
+    expect(bodies).toHaveLength(1);
+    const body = bodies[0]!;
+    expect(body).toContain('复查血糖');
+    // ocrText 仍来自原文，而不是患者改过的摘要
+    expect(body).toContain('血糖控制不佳');
+    expect(body, '身份证泄漏').not.toContain('110101199003071234');
+    expect(body, '手机号泄漏').not.toContain('13812345678');
+  });
+
+  it('检查项目保存的是患者改过/删过的版本', async () => {
+    const { prepareUpload, confirmUpload } = await import('./upload');
+    const input = {
+      file: makeFile('检查项目：\n胸部 CT 平扫\n血常规'),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+      kind: 'examOrder' as const,
+    };
+
+    const p = await prepareUpload(input);
+    expect(p.ok).toBe(true);
+    if (!p.ok) return;
+
+    // 患者把 CT 改了名，并删掉了血常规
+    const r = await confirmUpload(input, {
+      ...p.draft,
+      examItems: [
+        {
+          name: '胸部 CT（平扫）',
+          placeType: 'EXAM',
+          fasting: null,
+          evidence: '胸部 CT 平扫',
+        },
+      ],
+    });
+    expect(r.ok).toBe(true);
+
+    const stored = [...memStore.values()] as Array<{
+      examItems?: Array<{ name: string }>;
+    }>;
+    expect(stored[0]!.examItems?.map((i) => i.name)).toEqual(['胸部 CT（平扫）']);
+  });
+
+  it('患者把摘要清空时如实提交空摘要，不偷偷塞回原文', async () => {
+    const { prepareUpload, confirmUpload } = await import('./upload');
+    const input = {
+      file: makeFile(RAW),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    };
+
+    const p = await prepareUpload(input);
+    if (!p.ok) return;
+
+    const r = await confirmUpload(input, { ...p.draft, diagnosisBrief: '' });
+    expect(r.ok).toBe(true);
+
+    const body = sentBodies(fetchSpy)[0]!;
+    const payload = JSON.parse(body) as { diagnosisBrief: string };
+    expect(payload.diagnosisBrief).toBe('');
+  });
+});
+
+describe('两阶段上传：取消路径', () => {
+  it('只 prepare 不 confirm —— 没有任何落库或提交', async () => {
+    const { prepareUpload } = await import('./upload');
+    const r = await prepareUpload({
+      file: makeFile(RAW),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+    expect(r.ok).toBe(true);
+
+    // 用户点了「取消」：后面什么都不调用
+    expect(memStore.size).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('两阶段上传：uploadRecord 兼容', () => {
+  it('仍是 prepare + confirm 的组合，结果结构不变', async () => {
+    const { uploadRecord } = await import('./upload');
+    const r = await uploadRecord({
+      file: makeFile(RAW),
+      visitDate: '2026-11-01',
+      hospitalCode: 'MOCK-A',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(typeof r.localId).toBe('string');
+      expect(r.redactedLength).toBeGreaterThan(0);
+      expect(r.maskedCount).toBeGreaterThan(0);
+    }
+    expect(memStore.size).toBe(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

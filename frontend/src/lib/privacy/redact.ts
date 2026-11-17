@@ -14,7 +14,7 @@
  *   ONNX 小模型作为增量加在同一个接口后面 —— 见 detectWithModel。
  *
  * 设计原则：
- *   宁可多遮蔽，不可漏遮蔽。姓名认错了，最多是文本读起来别扭；
+ *   宁可多遮蔽，不可漏遮蔽。多遮一个词的代价是文本读起来别扭；
  *   手机号漏了，是真的泄漏。
  * ------------------------------------------------------------------ */
 
@@ -40,7 +40,6 @@ export interface RedactionHit {
 export type PiiType =
   | 'id_card'
   | 'phone'
-  | 'name'
   | 'address'
   | 'email'
   | 'bank_card'
@@ -49,13 +48,25 @@ export type PiiType =
 /**
  * 规则表。顺序很重要：**先匹配长的、结构唯一的，再匹配模糊的**。
  * 身份证必须先于手机号（11 位数字是身份证的子串）。
- * 姓名必须最后（"张"可能是姓也可能是量词）。
  */
 interface PiiRule {
   type: PiiType;
   pattern: RegExp;
   /** 保留首尾几位，中间打码；用于手机号这类可校验的 */
   mask: (m: string) => string;
+  /**
+   * 要遮蔽的那一段来自哪个捕获组名。
+   *
+   * <p>**用命名组而不是靠下标猜位置**。之前的实现是
+   * "从匹配串尾部反推"（`m.index + m[0].length - target.length`），
+   * 它假设目标永远是匹配串的最后一段 —— 一旦规则里有可空的
+   * 前置分组（`^(\s*)` 这种），这个假设就崩了，
+   * 实测表现为「田典肚子疼」里遮掉的是"肚子"而不是"田典"。
+   *
+   * <p>用 `d` 标志提供的 match.indices 直接取真实位置，
+   * 位置计算不再依赖任何假设。不写 group 就遮整个匹配。
+   */
+  group?: string;
 }
 
 const RULES: PiiRule[] = [
@@ -74,14 +85,44 @@ const RULES: PiiRule[] = [
   {
     type: 'phone',
     // 大陆手机号
-    pattern: /\b1[3-9]\d{9}\b/g,
+    pattern: /(?<!\d)1[3-9]\d{9}(?!\d)/g,
     mask: (m) => `${m.slice(0, 3)}****${m.slice(-4)}`,
   },
   {
+    /**
+     * ============ 已经被部分遮住的号码，原来完全识别不到 ============
+     *
+     * 实测：用户输入 `1238********2222`，**一个字都没遮**。
+     * 这类输入有两个来源：
+     *   1. 用户从别处复制来的、别人已经遮过的号码
+     *   2. 用户自己想遮一半，但只遮了中间
+     *
+     * 为什么必须处理：它不是"已经安全了"。前 4 位 + 后 4 位对一个
+     * 手机号来说已经足以在社工库里定位到具体的人 ——
+     * 后 4 位是号段与归属的关键部分，而星号本身没有保护作用。
+     *
+     * 匹配形态：数字开头、中间是 3 个以上的 * / ● / x、数字结尾。
+     *
+     * 用前后否定环视而不是 \b：`*` 不是单词字符，`\b` 在它与数字之间
+     * 不成立 —— 第一版用 \b 导致整条匹配失败，正则退回从中间重新匹配，
+     * 遮出来一个错位的乱码。
+     */
+    type: 'phone',
+    pattern: /(?<!\d)(?<n>\d{3,4}[*＊●·]{3,}\d{4})(?!\d)/dg,
+    mask: (m) => {
+      const head = m.slice(0, 3);
+      const tail = m.slice(-4);
+      return `${head}****${tail}`;
+    },
+    // 整个号码就是目标（命名组只为取真实位置）
+    group: 'n',
+  },
+  {
     type: 'medical_record_no',
-    // 就诊卡号/病历号：常见前缀 + 数字
-    pattern: /(?:病历号|就诊卡号?|住院号|门诊号)[：:\s]*([A-Za-z0-9]{4,20})/g,
+    // 就诊卡号/病历号：常见前缀 + 数字。只遮号码，保留「病历号：」标签
+    pattern: /(?:病历号|就诊卡号?|住院号|门诊号)[：:\s]*(?<n>[A-Za-z0-9]{4,20})/dg,
     mask: () => '［病历号已遮蔽］',
+    group: 'n',
   },
   {
     type: 'email',
@@ -99,19 +140,55 @@ const RULES: PiiRule[] = [
       /(?:[\u4e00-\u9fa5]{2,8}(?:省|市|自治区))?[\u4e00-\u9fa5]{2,8}(?:区|县|镇)[\u4e00-\u9fa5]{0,12}(?:路|街|道|巷)[\u4e00-\u9fa5\d]{0,12}(?:号|弄|栋|单元|室)?/g,
     mask: () => '［住址已遮蔽］',
   },
-  {
-    type: 'name',
-    // 中文姓名：常见姓氏 + 1-2 字名，前面常跟"我是/叫/患者"
-    pattern:
-      /(?:(?:我叫|我是|患者|姓名|病人)[：:\s]*)([\u4e00-\u9fa5]{2,4})(?=[，,。\s、的]|$)/g,
-    mask: () => '［患者姓名］',
-  },
 ];
 
-/** 姓名正则的常见姓氏白名单 —— 降低误报（"我叫不上来"不该被遮蔽） */
-const SURNAMES = new Set(
-  '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫'.split(''),
-);
+/**
+ * 从正则匹配结果里取出「真正要遮蔽的那一段」。
+ *
+ * <p>用 `d` 标志提供的 `match.indices` 取**真实位置**。
+ * 之前的实现是"从匹配串尾部反推"：
+ * <pre>start = m.index + (m[0].length - target.length)</pre>
+ * 它假设目标永远是匹配串的最后一段 —— 只要规则里有可空的前置分组
+ * （例如 `^\s*` 匹配到 0 个空白），这个假设就崩了。
+ * 实测表现：遮掉的是几个无关的字，而不是号码本身；
+ * 「1238********2222」被遮成一段乱码。遮错位置比不遮更危险，
+ * 因为预览看起来"确实在工作"，用户反而不会再去检查。
+ *
+ * <p>现在位置直接来自正则引擎，不依赖任何假设。
+ */
+function pickTarget(
+  rule: PiiRule,
+  m: RegExpExecArray,
+): { target: string; start: number; end: number } | null {
+  /*
+   * 没有指定 group 的规则遮蔽**整个匹配**，这种情况根本不需要
+   * indices —— 直接用 m[0] 和 m.index。这类规则占了大多数
+   * （手机号、身份证、邮箱…），它们不带 `d` 标志，
+   * 访问 m.indices 会是 undefined。
+   *
+   * 第一版在这里先 if (!m.indices) return null，结果所有
+   * 不带 d 标志的规则全部失效 —— 手机号、身份证一个都没遮。
+   */
+  if (!rule.group) {
+    if (!m[0]) return null;
+    return { target: m[0], start: m.index, end: m.index + m[0].length };
+  }
+
+  // 指定了 group：必须靠 indices 拿到那一组的真实区间
+  const indices = m.indices;
+  if (!indices) return null;
+
+  const range = indices.groups?.[rule.group];
+  if (!range) return null;
+
+  const [start, end] = range;
+  if (end <= start) return null;
+
+  const target = m[0].slice(start - m.index, end - m.index);
+  if (!target) return null;
+
+  return { target, start, end };
+}
 
 /**
  * 执行脱敏。
@@ -134,15 +211,21 @@ export function redact(raw: string): RedactionResult {
     let m: RegExpExecArray | null;
 
     while ((m = rule.pattern.exec(raw)) !== null) {
-      // 有捕获组的规则（姓名/病历号）只替换捕获段，保留前面的标签
-      const target = m[1] ?? m[0];
-      const start = m.index + (m[0].length - target.length);
-      const end = start + target.length;
+      /*
+       * 取要遮蔽的那一段。
+       *
+       * 有捕获组的规则只替换目标段、保留前后文：
+       * 例如「病历号：A1234567」只遮号码，前面的标签原样留下。
+       *
+       * 这里必须显式写出哪条规则用哪个组。第一版统一取 m[1]，
+       * 结果取到的是前缀而不是号码 —— 全错位。
+       * 用一个函数收敛，比在每个规则里复述一遍安全。
+       */
+      const picked = pickTarget(rule, m);
+      if (!picked) continue;
+      const { target, start, end } = picked;
 
       if (overlaps(start, end)) continue;
-
-      // 姓名额外用姓氏白名单过滤，压误报
-      if (rule.type === 'name' && !SURNAMES.has(target.charAt(0))) continue;
 
       taken.push([start, end]);
       hits.push({ type: rule.type, start, end, placeholder: rule.mask(target) });
@@ -174,8 +257,8 @@ export function hasPii(raw: string): boolean {
  * <ul>
  *   <li>{@link redact} 管结构化 PII：身份证、手机号、银行卡、邮箱、带标签的地址。
  *       确定性、零延迟、可单测</li>
- *   <li>这个函数管**没有固定形状**的：「老王让我带他上次的片子」
- *       「我住梧桐里社区那边」。这部分只能靠 NER 模型</li>
+ *   <li>这个函数管**没有固定形状**的：「我住梧桐里社区那边」「上次开的药吃完了」。
+ *       这部分只能靠 NER 模型</li>
  * </ul>
  *
  * <p>返回 {@code null} 表示模型不可用（未下载 / 加载失败 / 推理异常），
@@ -201,7 +284,6 @@ export async function detectWithModel(
 const TYPE_LABEL: Record<PiiType, string> = {
   id_card: '身份证号',
   phone: '手机号',
-  name: '姓名',
   address: '住址',
   email: '邮箱',
   bank_card: '银行卡号',

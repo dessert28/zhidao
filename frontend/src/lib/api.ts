@@ -121,6 +121,13 @@ export interface BookingOrder {
   status: string;
   externalOrderNo: string | null;
   remark: string | null;
+  /**
+   * 自助签到时间（ISO）。null 表示还没签到。
+   *
+   * <p>注意它是**本地签到**：只表示患者在自己手机上点了"我已到院"，
+   * 不代表院方系统里已经报到。改名成 checkedIn 会丢掉这层语义。
+   */
+  checkinAt?: string | null;
 }
 
 /* ============================ Token ============================ */
@@ -308,6 +315,51 @@ export function markReminder(id: number, action: 'done' | 'skip') {
   return request<ReminderTask>(`/api/reminders/${id}/${action}`, { method: 'POST' });
 }
 
+/* ============================ 问诊会话历史 ============================ */
+
+/**
+ * 一条持久化的问诊消息。
+ *
+ * <p>字段名与后端 `ChatHistoryItem` 逐字对齐，这里不改名：
+ * 改名就要再维护一层映射，而映射写错的代价是「历史还原顺序乱了」——
+ * 这种 bug 在本地永远复现不了（要刷新一次才看得见）。
+ *
+ * <p>`createdAt` 不参与还原逻辑，只留给未来「按日期分组」用：
+ * 顺序以后端返回的数组为准（约定是时间正序），而不是前端再排一次。
+ */
+export interface ChatHistoryItem {
+  id: number | string;
+  role: 'user' | 'assistant';
+  content: string;
+  /** 同一轮问答的用户消息与回复共享这个 id，还原时靠它配对 */
+  turnId: string;
+  createdAt: string;
+}
+
+/**
+ * 拉一次会话历史。不传 `sessionId` 时后端返回「该用户最近一次会话」。
+ *
+ * <p><b>调用方必须容忍失败</b>：后端没启动时这里是 `ok: false`，
+ * 而问诊对话本身走的是 `/api/chat`（另一条链路），不该被历史接口拖垮。
+ * 见 useEventStream 里的静默降级。
+ */
+export function getChatHistory(sessionId?: string) {
+  const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+  return request<ChatHistoryItem[]>(`/api/chat-history${q}`);
+}
+
+/**
+ * 清空某个会话的后端历史。
+ *
+ * <p>只在用户主动点「重来」时调用 —— 它删的是服务端数据，
+ * 不该由任何自动流程触发。
+ */
+export function clearChatHistory(sessionId: string) {
+  return request<null>(`/api/chat-history/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+}
+
 /* ============================ 院内导航 ============================ */
 
 /** 一个院内地点（后端 hospital_place 的投影） */
@@ -329,8 +381,15 @@ export interface NavStep {
   stage: string;
   stageLabel: string;
   place: NavPlace;
-  /** DONE 已完成 / CURRENT 现在去 / UPCOMING 待办 */
-  status: 'DONE' | 'CURRENT' | 'UPCOMING';
+  /**
+   * 状态。
+   *
+   * <p>DONE / CURRENT / UPCOMING 由后端按时间推算；
+   * **SKIPPED 只可能来自患者手动标记**（"这一步我不需要做"）。
+   * 界面必须把两者分开显示 —— 把 SKIPPED 显示成"已完成"
+   * 会让患者回看时以为那项检查做过。
+   */
+  status: 'DONE' | 'SKIPPED' | 'CURRENT' | 'UPCOMING';
   note: string;
 }
 
@@ -357,6 +416,13 @@ export function getNavRoute(input: {
   department: string;
   needsFasting?: boolean;
   visitTime: string;
+  /**
+   * 带上它，后端会把该单的手动进度叠加到时间推算上。
+   *
+   * <p>不带就是纯时间推算 —— 匿名访问依然可用，这也是这个接口
+   * 不需要登录的原因：拿不到任何人的进度。
+   */
+  bookingId?: number;
 }) {
   const q = new URLSearchParams({
     hospitalCode: input.hospitalCode,
@@ -364,6 +430,7 @@ export function getNavRoute(input: {
     needsFasting: String(input.needsFasting ?? false),
     visitTime: input.visitTime,
   });
+  if (input.bookingId != null) q.set('bookingId', String(input.bookingId));
   return request<NavRoute>(`/api/nav/route?${q.toString()}`);
 }
 
@@ -470,6 +537,131 @@ export function setAutoGrant(enabled: boolean) {
 
 export function getBookings() {
   return request<BookingOrder[]>('/api/bookings');
+}
+
+/* ============================ 退号 ============================ */
+
+/** 退号政策查询结果 */
+export interface CancelPolicy {
+  canCancel: boolean;
+  /** 不能退时给患者看的原因；能退时为 null */
+  reason: string | null;
+  /** 自助退号的截止时间点 */
+  deadline: string | null;
+}
+
+/**
+ * 问后端"这个号还能不能退"。
+ *
+ * <p>为什么不让前端自己算 24 小时：规则一变前端就得跟着改。
+ * 而且不同院区政策不同，前端没有那份知识 ——
+ * 它只负责把后端的话显示出来。
+ */
+export function getCancelPolicy(orderId: number) {
+  return request<CancelPolicy>(`/api/bookings/${orderId}/cancel-policy`);
+}
+
+/**
+ * 退号。
+ *
+ * <p>失败时后端会给出具体原因（"距就诊不足 24 小时，请到窗口办理"），
+ * 已经透传在 {@code failure.message} 里 —— 前端不要再包装成
+ * "取消失败"这种没有信息量的话。
+ */
+export function cancelBooking(orderId: number) {
+  return request<BookingOrder>(`/api/bookings/${orderId}/cancel`, { method: 'POST' });
+}
+
+/* ============================ 签到 ============================ */
+
+/**
+ * 自助签到「我已到院」。
+ *
+ * <p><b>它只在我们自己的库里记一个时间点</b>，不调用院方系统，
+ * 也不代表院方那边已经报到 —— 真正的签到仍要在自助机或分诊台完成。
+ * 界面上必须把这句写出来，否则患者会以为点一下就不用去机器上刷，
+ * 到诊室才发现没报到。
+ *
+ * <p>后端幂等：重复调用只记第一次的时间。
+ */
+export function checkInBooking(orderId: number) {
+  return request<BookingOrder>(`/api/bookings/${orderId}/checkin`, { method: 'POST' });
+}
+
+/* ============================ 流程进度 ============================ */
+
+/** 某一步的状态：患者标记的 DONE / SKIPPED，或路线原生的 CURRENT / UPCOMING */
+export type StepState = 'DONE' | 'SKIPPED' | 'CURRENT' | 'UPCOMING';
+
+/**
+ * 读某张预约单的手动进度。
+ *
+ * @returns navKey → state。没标的步骤不在这个 map 里，
+ *          前端按路线原生的状态显示。
+ */
+export function getVisitProgress(bookingId: number) {
+  return request<Record<string, StepState>>(`/api/bookings/${bookingId}/progress`);
+}
+
+/**
+ * 标记某一步。
+ *
+ * <p>state 传空串表示**清除**这一步的标记 —— 患者发现自己标错了，
+ * 或者想回到系统的默认推算。刻意不设单独的"取消"接口：
+ * 同一个动作的正反两向放在一个方法里，前后端都不会漏掉一条路径。
+ */
+export function markVisitStep(bookingId: number, navKey: string, state: StepState | '') {
+  return request<{ progress: Record<string, StepState>; bookingId: number }>(
+    `/api/bookings/${bookingId}/progress`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ navKey, state }),
+    },
+  );
+}
+
+/**
+ * 生成步骤的稳定标识。
+ *
+ * <p><b>必须与后端 NavController.navKeyOf 完全一致</b>：
+ * 有科室的用 `阶段:科室`，没科室的只用阶段编码。
+ * 两边规则不一致的话，患者标记了却不生效 —— 而这个 bug
+ * 表现成"点了没反应"，极难查。
+ */
+export function navKeyOf(step: { stage: string; place: { department?: string | null } }): string {
+  const dept = step.place.department;
+  return dept && dept.trim() ? `${step.stage}:${dept}` : step.stage;
+}
+
+/* ============================ 号源查询 ============================ */
+
+/** 一个可预约时段 */
+export interface SlotItem {
+  /** ISO 时间，如 2026-11-17T08:30:00 */
+  visitTime: string;
+  doctorName: string;
+  /** 剩余号数。后端已扣掉本地已预约的数量，0 表示满了 */
+  remaining: number;
+}
+
+/**
+ * 查某院区某科室某天的号源。日期格式 YYYY-MM-DD。
+ *
+ * <p><b>不需要登录</b>：号源是公开信息，大厅屏上就挂着。
+ * 挂号页因此能在未登录时就把"有没有号"显示出来，
+ * 点确认时才要求身份 —— 让患者先看到号，再决定要不要登录。
+ */
+export function getSlots(input: {
+  hospitalCode: string;
+  department: string;
+  date: string;
+}) {
+  const q = new URLSearchParams({
+    hospitalCode: input.hospitalCode,
+    department: input.department,
+    date: input.date,
+  });
+  return request<SlotItem[]>(`/api/bookings/slots?${q.toString()}`);
 }
 
 /**

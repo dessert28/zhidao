@@ -12,9 +12,11 @@
 import type { StreamEvent } from '../hooks/useEventStream';
 import { useTts } from '../hooks/useTts';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { BookingPreview } from '@shared/types/contract';
 import { createBooking, ensureLogin } from '../lib/api';
 import { HospitalNav } from './HospitalNav';
+import { WaitingIndicator } from './WaitingIndicator';
 
 /** 服务端渲染的卡片：直接注入 HTML */
 function ServerCard({ html }: { html: string }) {
@@ -167,10 +169,24 @@ function BookingPreviewCard({ preorder }: { preorder: BookingPreview }) {
           <>
             <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">{message}</p>
             {/*
-              预约成功后立刻给出"怎么走"。
-              患者约完号最想知道的下一件事就是"我到时候去哪"，
-              让他再去别处找一遍等于白问。
+              预约成功后给一个**能回去的入口**，而不是把导航直接铺在对话里。
+
+              对话里的卡片刷新就没了 —— 而患者真正的使用时刻是
+              "明天早上站在门诊楼里"，那时对话早就不在了。
+              所以这一步把人引到独立的「到院」页，那里同样的信息
+              常驻、可刷新、手机上还有 tab。
+
+              保留一小段导航摘要是因为"约完马上走"也有意义：
+              当天来的人此刻就需要知道去哪个楼。
             */}
+            <div className="mt-3">
+              <Link
+                to="/visit"
+                className="inline-flex items-center gap-1 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-medium text-white"
+              >
+                到院后看怎么走 →
+              </Link>
+            </div>
             <div className="mt-4 border-t border-brand-100 pt-4">
               <HospitalNav
                 hospitalCode={preorder.hospitalCode}
@@ -320,10 +336,7 @@ export function TurnView({
         ))}
 
         {status === 'streaming' && !text ? (
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
-            正在思考…
-          </div>
+          <WaitingIndicator events={events} />
         ) : null}
       </div>
     </div>

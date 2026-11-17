@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDosePlan,
   isPast,
+  normalizeClock,
   parseFrequencyCount,
+  parsePeriod,
+  periodState,
+  slotTemporal,
   summarizeDay,
+  type DoseSlot,
   type MedInput,
 } from './dosing';
 
@@ -85,32 +90,68 @@ describe('服药时间表', () => {
     expect(times).toContain('18:30');
   });
 
-  it('睡前服用挪到 21:00', () => {
+  it('睡前服用落成「睡前」这一段，不给假钟点', () => {
     const { slots } = buildDosePlan([med({ frequency: '每天 1 次', timing: '睡前' })]);
-    expect(slots[0]!.time).toBe('21:00');
+    expect(slots[0]!.kind).toBe('fuzzy');
+    expect(slots[0]!.label).toBe('睡前');
+    /*
+     * 关键断言：time 必须是 null。
+     * 病历只说「睡前」，印一个 21:00 出去，等于替医生下了医嘱。
+     */
+    expect(slots[0]!.time).toBeNull();
   });
 
-  it('晨起服用挪到 07:30', () => {
+  it('晨起服用落成「晨起」这一段', () => {
     const { slots } = buildDosePlan([med({ frequency: '每天 1 次', timing: '晨起' })]);
-    expect(slots[0]!.time).toBe('07:30');
+    expect(slots[0]!.label).toBe('晨起');
+    expect(slots[0]!.time).toBeNull();
   });
 
   it('餐后服用顺延到饭后半小时', () => {
     const { slots } = buildDosePlan([med({ frequency: '每天 2 次', timing: '餐后' })]);
-    expect(slots.map((s) => s.time)).toEqual(['08:30', '20:30']);
+    expect(slots.map((s) => s.label)).toEqual(['早饭后', '晚饭后']);
   });
 
-  it('餐前三餐排到饭前', () => {
+  it('中饭后 / 晚饭前 这类说法能落到具体时段', () => {
+    expect(parsePeriod('中饭后')!.key).toBe('lunch-after');
+    expect(parsePeriod('晚饭前')!.key).toBe('dinner-before');
+
+    const { slots } = buildDosePlan([med({ frequency: '每天 1 次', timing: '晚饭前' })]);
+    expect(slots[0]!.label).toBe('晚饭前');
+    expect(slots[0]!.kind).toBe('fuzzy');
+  });
+
+  it('餐前三餐排到饭前那三段', () => {
     const { slots } = buildDosePlan([med({ frequency: '每天 3 次', timing: '餐前' })]);
-    expect(slots.map((s) => s.time)).toEqual(['07:30', '12:00', '18:00']);
+    expect(slots.map((s) => s.label)).toEqual(['早饭前', '中饭前', '晚饭前']);
   });
 
-  it('时间按升序排列', () => {
+  it('时间按一天时序排列，模糊档不和精确档错位', () => {
     const { slots } = buildDosePlan([
       med({ name: '晚', frequency: '每天 1 次', timing: '睡前' }),
       med({ name: '早', frequency: '每天 1 次', timing: '晨起' }),
+      med({ name: '定点', frequency: '每天 1 次', atTime: '10:00' }),
     ]);
-    expect(slots[0]!.time < slots[slots.length - 1]!.time).toBe(true);
+    const labels = slots.map((s) => s.label);
+    expect(labels.indexOf('晨起')).toBeLessThan(labels.indexOf('10:00'));
+    expect(labels.indexOf('10:00')).toBeLessThan(labels.indexOf('睡前'));
+  });
+
+  it('病历写了钟点就用钟点 —— 医嘱优先于模板', () => {
+    const { slots } = buildDosePlan([
+      med({ frequency: '每天 1 次', timing: '晨起', atTime: '06:15' }),
+    ]);
+    expect(slots[0]!.kind).toBe('exact');
+    expect(slots[0]!.label).toBe('06:15');
+  });
+
+  it('钟点写法可解析：8:30 / 八点半 / 晚上八点', () => {
+    expect(normalizeClock('8:30')).toBe('08:30');
+    expect(normalizeClock('20：30')).toBe('20:30');
+    expect(normalizeClock('八点半')).toBe('08:30');
+    expect(normalizeClock('8点')).toBe('08:00');
+    expect(normalizeClock('晚上八点')).toBe('20:00');
+    expect(normalizeClock('随便')).toBeNull();
   });
 
   it('频次无法解析的药进 unscheduled，不进时间表', () => {
@@ -159,7 +200,39 @@ describe('摘要', () => {
     expect(summarizeDay(slots)).toContain('2 个服药时间点');
   });
 
+  it('模糊档在摘要里说清楚"按饭前饭后把握"', () => {
+    const { slots } = buildDosePlan([med({ frequency: '每天 1 次', timing: '睡前' })]);
+    expect(summarizeDay(slots)).toContain('饭前');
+  });
+
   it('空列表给中性描述', () => {
     expect(summarizeDay([])).toContain('没有需要按时服用');
+  });
+});
+
+describe('模糊时间的三态', () => {
+  const fuzzy = (label: string): DoseSlot =>
+    buildDosePlan([med({ frequency: '每天 1 次', timing: label })]).slots[0]!;
+
+  it('还没到这一段', () => {
+    const now = new Date('2026-11-16T05:00:00');
+    expect(periodState(fuzzy('晚饭前'), now)).toBe('upcoming');
+  });
+
+  it('正卡在这一段 —— 这才是模糊时间真正有用的时候', () => {
+    const now = new Date('2026-11-16T17:30:00');
+    expect(periodState(fuzzy('晚饭前'), now)).toBe('now');
+  });
+
+  it('这一段已经过去了', () => {
+    const now = new Date('2026-11-16T16:00:00');
+    expect(periodState(fuzzy('早饭后'), now)).toBe('passed');
+  });
+
+  it('slotTemporal 走精确档时沿用 isPast', () => {
+    const { slots } = buildDosePlan([med({ frequency: '每天 2 次' })]);
+    const now = new Date('2026-11-16T09:00:00');
+    expect(slotTemporal(slots[0]!, now)).toBe('passed');
+    expect(slotTemporal(slots[1]!, now)).toBe('upcoming');
   });
 });

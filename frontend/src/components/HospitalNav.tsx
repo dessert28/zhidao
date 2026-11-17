@@ -50,6 +50,17 @@ const STATUS_META: Record<
     text: 'text-gray-400',
     ring: 'border-gray-200 bg-white',
   },
+  /*
+   * SKIPPED 与 DONE 视觉上要区分开。
+   * 把"医生说这项不用查"显示成"已完成"，患者回看时会以为自己
+   * 做过那项检查 —— 这是医疗场景里不能含糊的一处。
+   */
+  SKIPPED: {
+    label: '已跳过',
+    dot: 'bg-gray-200',
+    text: 'text-gray-400 line-through',
+    ring: 'border-gray-100 bg-gray-50',
+  },
   CURRENT: {
     label: '现在去这里',
     dot: 'bg-brand-700 ring-4 ring-brand-100',

@@ -1,19 +1,22 @@
 /* ------------------------------------------------------------------
  * 病历上传处理 —— 隐私边界在这条链路上真正跑起来
  *
- * ============ 数据流（这一步的顺序不能改） ============
+ * ============ 数据流（两阶段，①→②→③ 的顺序不能改） ============
  *
  *   选文件
  *     ↓
- *   读成文本（.txt/.md 直接读；文本型 PDF 用 pdfjs 提取文字）
+ *   prepareUpload：读成文本 → 本地 redact() → 抽草稿
+ *     ↓                         ↑ 不写 IndexedDB、不调后端
+ *   患者校对 / 手改草稿
  *     ↓
- *   ① 原文存 IndexedDB          ← 永不离开设备
- *     ↓
- *   ② 本地 redact() 脱敏
- *     ↓
- *   ③ 只把脱敏后的摘要 POST 给后端
+ *   confirmUpload：① 原文存 IndexedDB   ← 永不离开设备
+ *                  ② 本地 redact() 脱敏
+ *                  ③ 只把脱敏文本 POST 给后端
  *
- * ①②③ 的顺序是硬约束：
+ * 为什么拆成两阶段：抽取结果会驱动到院导航，错一项就把人指错楼层。
+ * 患者必须在提交前看到"系统从我的文件里读出了什么"，并能改。
+ *
+ * ①②③ 的顺序仍是硬约束：
  *   先脱敏再存原文的话，本地只剩脱敏版，患者看不到自己上传的到底是什么；
  *   先上传再脱敏的话，原文已经出去了 —— 整个隐私架构作废。
  *
@@ -31,6 +34,8 @@
 
 import { saveRecord, listRecords, type LocalRecord } from './records';
 import { redact } from '../privacy/redact';
+import { extractDraft, BRIEF_LIMIT, type ExtractionDraft } from '../exam/extract';
+import type { ParsedExam } from '../exam/order-parse';
 import { createRecord, type BackendFailure } from '../api';
 
 export interface UploadInput {
@@ -40,6 +45,18 @@ export interface UploadInput {
   /** 院区编码 */
   hospitalCode: string;
   department?: string;
+  /**
+   * 这份材料是什么。
+   *
+   * <p>默认 `record`（既往病历）。选 `examOrder` 时，
+   * 除了照常走隐私链路，还会把文本解析成检查项目存到本地 ——
+   * 到院页据此重算"接下来去哪几站"。
+   *
+   * <p>为什么解析在**本地**做：检查单里可能有门诊号等手写标注。
+   * 解析只为了算路线，没必要把结构化结果传到服务端；
+   * 上传给后端的仍然只有脱敏文本。
+   */
+  kind?: 'record' | 'examOrder';
 }
 
 export type UploadResult =
@@ -117,21 +134,99 @@ async function readAsText(
   };
 }
 
-export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
-  const { file, visitDate, hospitalCode, department } = input;
+/**
+ * 第一阶段的结果 —— 只有草稿，没有任何副作用。
+ *
+ * <p>失败只可能发生在"读/格式"两步：这一阶段不碰 IndexedDB，也不调后端。
+ */
+export type PrepareResult =
+  | { ok: true; draft: ExtractionDraft }
+  | { ok: false; stage: 'read' | 'unsupported'; message: string };
+
+/**
+ * 第一阶段：读文件、脱敏、抽草稿。
+ *
+ * <p><b>不写 IndexedDB，不调后端。</b>
+ * 患者还没点「确认保存」时，任何持久化或上传都等于替他做了决定 ——
+ * 尤其检查项目会改到院路线，不能先存了再让他取消。
+ *
+ * <p>图片走 OCR 时这里会调用识别服务（见 {@link readAsText}）。
+ * 那是"把图变成文字"的必要步骤，不是病历上传；
+ * 纯文本与 PDF 在这一阶段完全零网络。
+ */
+export async function prepareUpload(input: UploadInput): Promise<PrepareResult> {
+  const { file, kind = 'record' } = input;
 
   /* ---- 1. 读取文本 ---- */
   const read = await readAsText(file);
-  if (!read.ok) {
-    return { ok: false, stage: read.stage, message: read.message };
-  }
-  const rawText = read.text;
+  if (!read.ok) return read;
 
+  const rawText = read.text;
   if (!rawText.trim()) {
     return { ok: false, stage: 'read', message: '这个文件里没有可用的文字内容。' };
   }
 
-  /* ---- 2. 原文存本地（永不上传） ---- */
+  /*
+   * 先脱敏再抽摘要。
+   *
+   * <p>顺序不能反：摘要会展示给患者、也会成为提交内容，
+   * 从原文截取会把身份证号、手机号一起带进草稿。
+   * 这里算出的 safeText 也交给 extractDraft 复用，
+   * 避免对大文件重复扫一遍脱敏规则。
+   */
+  const { text: safeText } = redact(rawText);
+  const draft = extractDraft(rawText, { kind, redactedText: safeText });
+
+  return { ok: true, draft };
+}
+
+/**
+ * 第二阶段：按患者确认后的草稿真正落库并提交。
+ *
+ * <p>这里会**重新读一次文件**，而不是把原文挂在草稿里传过来。原因：
+ * <ol>
+ *   <li>草稿会进 React state，可能被调试工具、日志序列化，原文不该跟着走；</li>
+ *   <li>`ocrText` 必须由原文重新脱敏生成，不能拿用户改过的摘要冒充原文；</li>
+ *   <li>上传与确认之间文件可能已被替换/删除，重新读能如实报错。</li>
+ * </ol>
+ *
+ * <p>代价是图片会再走一次 OCR。这是当前实现里唯一可感知的重复开销，
+ * 换的是"原文不进入任何 UI 状态"这条更重要的边界。
+ */
+export async function confirmUpload(
+  input: UploadInput,
+  draft: ExtractionDraft,
+): Promise<UploadResult> {
+  const { file, visitDate, hospitalCode, department } = input;
+
+  /*
+   * 类型以 input 为准，但只在该类型下使用 examItems。
+   * 两者不一致说明界面漏了重置（比如切了类型却没重新解析）——
+   * 此时宁可丢掉项目，也不能把检查单的项目塞进一份普通病历。
+   */
+  const kind = input.kind ?? draft.kind;
+
+  const read = await readAsText(file);
+  if (!read.ok) return read;
+
+  const rawText = read.text;
+  if (!rawText.trim()) {
+    return { ok: false, stage: 'read', message: '这个文件里没有可用的文字内容。' };
+  }
+
+  /*
+   * 检查项目用**患者编辑后的版本**：改名、删除、新增都以界面为准。
+   * 空名字的行是用户新增后没填完的，直接丢弃 ——
+   * 存一个空项目会让到院页多出一站没有名字的检查。
+   */
+  const examItems: ParsedExam[] | undefined =
+    kind === 'examOrder'
+      ? draft.examItems
+          .map((it) => ({ ...it, name: it.name.trim() }))
+          .filter((it) => it.name.length > 0)
+      : undefined;
+
+  /* ---- ① 原文存本地（永不上传） ---- */
   const localId = await saveRecord({
     fileName: file.name,
     fileSize: file.size,
@@ -140,6 +235,9 @@ export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
     visitDate,
     hospitalCode,
     department: department ?? '',
+    kind,
+    // 空数组也保留：用户确认"这一单没有识别出项目"本身是有信息量的
+    ...(examItems ? { examItems } : {}),
   });
   if (!localId) {
     return {
@@ -149,8 +247,18 @@ export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
     };
   }
 
-  /* ---- 3. 本地脱敏，只把结果发出去 ---- */
+  /* ---- ② 本地脱敏，只把结果发出去 ---- */
   const { text: safeText, hits } = redact(rawText);
+
+  /*
+   * 摘要用编辑后的版本，但仍然过一次 redact：
+   * 患者可能把手机号粘进摘要框，而这个字段是作为独立字段发出去的，
+   * 不经过 ocrText 的脱敏。
+   *
+   * <p>注意 ocrText 必须来自上面的**原文**脱敏 ——
+   * 绝不能拿编辑后的摘要当原文去脱敏，那样文件里其余 PII 全会漏掉。
+   */
+  const safeBrief = redact(draft.diagnosisBrief.trim()).text.slice(0, BRIEF_LIMIT);
 
   /*
    * 发出去的字段名叫 `ocrText`（后端 schema 的列名），
@@ -161,7 +269,7 @@ export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
     hospitalCode,
     visitDate,
     department: department ?? null,
-    diagnosisBrief: safeText.slice(0, 200),
+    diagnosisBrief: safeBrief,
     ocrText: safeText,
     fileName: file.name,
     fileSize: file.size,
@@ -180,6 +288,18 @@ export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
   }
 
   return { ok: true, localId, redactedLength: safeText.length, maskedCount: hits.length };
+}
+
+/**
+ * 兼容入口：老调用方（以及现有测试）只想要"一步上传"。
+ *
+ * <p>内部就是 prepare + 直接确认，没有任何校对。
+ * 新界面请分开调用，否则患者又失去了核对的机会。
+ */
+export async function uploadRecord(input: UploadInput): Promise<UploadResult> {
+  const prepared = await prepareUpload(input);
+  if (!prepared.ok) return prepared;
+  return confirmUpload(input, prepared.draft);
 }
 
 /** 列本地原文（给"我上传过什么"用） */
