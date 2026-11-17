@@ -25,7 +25,18 @@ import type { AgentEvent } from '@shared/types/events';
 import { recheckAnswer } from './rules/red-flag.js';
 import { emptyOutput, safeRun } from './safe-run.js';
 
-export const REVIEW_TIMEOUT_MS = 8000;
+/**
+ * 自检（Reviewer）的超时预算。
+ *
+ * <p>从 8000 调到 30000，理由同 supervisor / triage。
+ *
+ * <p>Reviewer 超时的后果和别处不一样，值得单独说清楚：
+ * 它负责四维打分（安全/准确/完整/依据）与改写。<b>超时不会让回答消失</b>
+ * （答案已经在前面发出去了），而是让那次自检变成"没审过就放行"。
+ * 所以界面上看不到错误，但质量保障少了一道 ——
+ * 这类静默降级必须有足够余量，否则等于自检形同虚设。
+ */
+export const REVIEW_TIMEOUT_MS = 30_000;
 
 /** 四维默认阈值，可被 input 覆盖 */
 export const DEFAULT_THRESHOLDS: ReviewScores = {

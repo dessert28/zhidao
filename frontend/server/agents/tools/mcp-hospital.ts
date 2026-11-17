@@ -5,7 +5,7 @@
  *
  * 做：把"查号源 / 锁号"封装成**签名与 MCP tool 一致**的函数
  *     （`name` + `description` + `inputSchema` + `handler`）。
- * 不做：启动独立 MCP server 进程、引入 MCP SDK 做真握手。
+ * 待开发：启动独立 MCP server 进程、引入 MCP SDK 做真握手。
  *
  * 依据 docs/10 D3 的定论：
  *   「评委看 MCP 4% 看的是工具编排能力，不是握手协议实现。」

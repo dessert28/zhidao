@@ -46,6 +46,56 @@ export interface LlmConfig {
 }
 
 /**
+ * 运行时覆盖配置 —— 由前端设置页提交。
+ *
+ * ============ 它和环境变量的关系 ============
+ *
+ * 优先级：**运行时覆盖 > 环境变量**。
+ *
+ * 理由：设置页的存在意义就是"让用户不重启也能换模型"。
+ * 如果环境变量优先，用户在界面上填了却没生效 ——
+ * 那是这个功能最不该出现的行为。
+ *
+ * ============ 为什么存在内存里 ============
+ *
+ * 用户的选择是"Key 存浏览器 localStorage"。那么服务端这一侧
+ * 就只需要**临时持有**：每次请求由前端把配置带上来，
+ * 服务端用完即弃。这份内存副本只用于"请求没带配置时"的兜底，
+ * 进程重启即清空，不落盘、不写日志。
+ *
+ * ============ 不记录 Key ============
+ *
+ * 这个模块的任何日志、任何返回给前端的字段都不含 apiKey。
+ * `describeConfig()` 只报 provider 和 model，这是刻意的 ——
+ * 见它的注释。
+ */
+let runtimeOverride: LlmConfig | null = null;
+
+/**
+ * 设置运行时配置。
+ *
+ * @param cfg 传 null 表示清除覆盖，回到环境变量。
+ *            apiKey 为空时同样视为清除 —— 空 key 不是一种合法配置。
+ */
+export function setRuntimeConfig(cfg: LlmConfig | null): void {
+  if (!cfg || !cfg.apiKey.trim()) {
+    runtimeOverride = null;
+    return;
+  }
+  runtimeOverride = {
+    apiKey: cfg.apiKey.trim(),
+    provider: (cfg.provider || 'deepseek').trim().toLowerCase(),
+    baseURL: (cfg.baseURL || '').trim(),
+    model: (cfg.model || '').trim(),
+  };
+}
+
+/** 当前是否有运行时覆盖（给健康检查用，不暴露内容） */
+export function hasRuntimeConfig(): boolean {
+  return runtimeOverride !== null;
+}
+
+/**
  * 读取配置。返回 null 表示"未配置，走规则路由"。
  *
  * <p>注意 `LLM_API_KEY` 为空字符串与未定义 **同等对待** ——
@@ -53,6 +103,21 @@ export interface LlmConfig {
  * 如果不判空串，就会被当成"已配置"，然后带着空 key 去请求，401。
  */
 export function readConfig(): LlmConfig | null {
+  /*
+   * 运行时覆盖优先。
+   * 注意它的 baseURL/model 可能是空的（用户只填了 Key）——
+   * 那种情况用 provider 的预设补上，和下面的 env 分支同一套逻辑。
+   */
+  if (runtimeOverride) {
+    const preset = PRESETS[runtimeOverride.provider] ?? PRESETS.deepseek!;
+    return {
+      apiKey: runtimeOverride.apiKey,
+      provider: runtimeOverride.provider,
+      baseURL: runtimeOverride.baseURL || preset.baseURL,
+      model: runtimeOverride.model || preset.model,
+    };
+  }
+
   const apiKey = (process.env.LLM_API_KEY ?? '').trim();
   if (!apiKey) return null;
 
@@ -70,6 +135,79 @@ export function readConfig(): LlmConfig | null {
 /** 是否接了真模型。前端不需要知道 Key，只需要知道"是不是走模型" */
 export function isLlmConfigured(): boolean {
   return readConfig() !== null;
+}
+
+/**
+ * 拉取服务商支持的模型列表。
+ *
+ * ============ 为什么用 /models 这个端点 ============
+ *
+ * OpenAI 兼容协议里 `GET {baseURL}/models` 是标准做法，
+ * DeepSeek / 通义 / 月之暗面 / Ollama 都实现了它。
+ * 相比维护一张"哪些模型可用"的硬编码表：
+ *   · 服务商上新的模型自动就有了
+ *   · 不会推荐一个已经下线的模型名
+ *
+ * ============ 为什么这个函数允许失败 ============
+ *
+ * 不是所有兼容实现都提供 /models（有的返回 404，有的权限不同）。
+ * 那种情况下界面要让用户**手填模型名**，而不是卡在这里。
+ * 所以它返回结构化结果，而不是抛异常。
+ *
+ * @returns 模型 id 列表；拿不到时 ok=false 并给出原因
+ */
+export async function listModels(): Promise<
+  { ok: true; models: string[] } | { ok: false; reason: 'not_configured' | 'auth' | 'unreachable' | 'unsupported'; detail: string }
+> {
+  const cfg = readConfig();
+  if (!cfg) return { ok: false, reason: 'not_configured', detail: '还没配置 API Key' };
+
+  const url = `${cfg.baseURL.replace(/\/+$/, '')}/models`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${cfg.apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'unreachable',
+      detail: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, reason: 'auth', detail: 'API Key 无效或没有权限' };
+  }
+  if (res.status === 404) {
+    /*
+     * 有些兼容实现不实现 /models。这不是错误配置，
+     * 只是"这家没法自动列模型"—— 界面要退回手填。
+     */
+    return { ok: false, reason: 'unsupported', detail: '这个服务商没有提供模型列表接口' };
+  }
+  if (!res.ok) {
+    return { ok: false, reason: 'unreachable', detail: `接口返回 ${res.status}` };
+  }
+
+  try {
+    const body = (await res.json()) as { data?: Array<{ id?: string }> };
+    const models = (body.data ?? [])
+      .map((m) => m.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      .sort();
+    if (models.length === 0) {
+      return { ok: false, reason: 'unsupported', detail: '接口没有返回任何模型' };
+    }
+    return { ok: true, models };
+  } catch {
+    return { ok: false, reason: 'unsupported', detail: '返回的不是标准 JSON 格式' };
+  }
 }
 
 /** 给健康检查用：不暴露 key，只暴露"会用哪个模型" */

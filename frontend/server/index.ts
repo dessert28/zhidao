@@ -19,6 +19,7 @@ import { healthRoutes } from './routes/health.js';
 import { modelRoutes } from './routes/models.js';
 import { backendRoutes } from './routes/backend-proxy.js';
 import { ocrRoutes } from './routes/ocr.js';
+import { llmConfigRoutes } from './routes/llm-config.js';
 
 loadEnv();
 
@@ -35,6 +36,13 @@ export function createApp(opts: AppOptions = {}) {
 
   app.route('/api/health', healthRoutes);
   app.route('/api/chat', chatRoutes);
+  /*
+   * 模型配置：/api/llm-config
+   *
+   * 用户在前端设置页填 url / apikey / 模型名，提交到这里。
+   * Key 只进进程内存，不回显、不落盘 —— 见 routes/llm-config.ts 的头注释。
+   */
+  app.route('/api/llm-config', llmConfigRoutes);
   /*
    * 后端代理：/api/backend/* → Spring Boot 的 /*
    *

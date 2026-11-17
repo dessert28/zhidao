@@ -24,7 +24,18 @@ import { emptyOutput, safeRun } from './safe-run.js';
 export const MAX_CLARIFY_ROUNDS = 3;
 /** 置信度下限，低于此值给 Top3 而非单一科室 */
 export const MIN_CONFIDENCE = 0.5;
-export const TRIAGE_TIMEOUT_MS = 8000;
+/**
+ * 分诊的分析超时预算。
+ *
+ * <p>从 8000 调到 30000，理由与 {@code supervisor.ts} 的
+ * SUPERVISOR_TIMEOUT_MS 一致：单次 LLM 往返实测 5.2–8.5 秒，
+ * 8 秒预算基本没有余量，模型慢一点就降级成"只追问、不给科室"。
+ *
+ * <p>注意这不是"调大就没事"：分诊是整轮里最依赖模型的一步，
+ * 它超时的表现是<b>问题问得比实际更少</b>（槽位没抽全），
+ * 用户会以为系统没听懂 —— 比报错更难察觉。
+ */
+export const TRIAGE_TIMEOUT_MS = 30_000;
 
 /* ============================ 槽位定义 ============================ */
 

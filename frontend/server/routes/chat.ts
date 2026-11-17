@@ -8,7 +8,7 @@
  * 隐私边界：请求体只接收**已脱敏文本**，字段名刻意叫 text 不是 rawText。
  * ------------------------------------------------------------------ */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AgentInput, SessionFacts, SymptomSlots } from '@shared/types/contract';
 import { sseHeaders, toSseStream, type OutboundEvent } from '../sse.js';
 import { makeSupervisor, routeByRules } from '../agents/supervisor.js';
@@ -20,8 +20,32 @@ import { checkRedFlag } from '../agents/rules/red-flag.js';
 import { detectInjection, stripInjectionSentences } from '../agents/rules/injection.js';
 import { isLlmConfigured } from '../llm/client.js';
 import { analyzeViaLlm, judgeViaLlm, planViaLlm as planWithModel } from '../agents/llm-impl.js';
+import { ChatLimiter, clientIp } from '../limit.js';
+import { chatMetrics as metrics } from '../metrics-instance.js';
 
 export const chatRoutes = new Hono();
+
+/**
+ * 限流与指标都是模块级的。
+ *
+ * <p>不能放在 handler 里 new —— 那样每次请求都是一份新的计数器，
+ * 限流等于没有。模块作用域让整个进程共用同一份状态。
+ *
+ * <p>阈值来自环境变量，方便演示时按需放宽：
+ *   CHAT_RATE_PER_MIN / CHAT_DAILY_QUOTA / CHAT_MAX_CONCURRENT
+ */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+}
+
+export const limiter = new ChatLimiter({
+  perIpPerMinute: envInt('CHAT_RATE_PER_MIN', 20),
+  dailyQuota: envInt('CHAT_DAILY_QUOTA', 500),
+  maxConcurrent: envInt('CHAT_MAX_CONCURRENT', 8),
+});
 
 interface ChatBody {
   turnId?: string;
@@ -66,6 +90,50 @@ function llmDeps() {
 }
 
 chatRoutes.post('/', async (c) => {
+  /*
+   * 限流必须先于一切。
+   *
+   * <p>放在解析 body 之前：解析本身也要花内存，
+   * 被刷的时候不该先把一份 60KB 的 JSON 反序列化再拒绝。
+   *
+   * <p>三个 IP 来源的可靠性见 limit.ts 的说明 ——
+   * 部署在反向代理后面时 x-forwarded-for 才可信。
+   */
+  const ip = clientIp(c.req.raw.headers, 'unknown');
+  const verdict = limiter.enter(ip);
+  if (!verdict.ok) {
+    metrics.record('limited', 0, 'rule');
+    metrics.bump(`limit.${verdict.reason}`);
+    return c.json(
+      { error: 'rate_limited', reason: verdict.reason, message: verdict.message },
+      429,
+      { 'Retry-After': String(verdict.retryAfterSec) },
+    );
+  }
+
+  const startedAt = Date.now();
+  /*
+   * 结束必须无条件调用。
+   *
+   * <p>SSE 路径有多个返回点（校验失败、命中红线、正常结束…），
+   * 逐个补 leave() 迟早漏一个 —— 漏掉的那个会让并发计数
+   * 只增不减，几分钟后所有人都被"当前人数较多"挡住。
+   * 所以统一在最外层 try/finally 里释放。
+   */
+  try {
+    return await handleChat(c, startedAt);
+  } finally {
+    limiter.leave();
+  }
+});
+
+/**
+ * 真正处理一轮对话。
+ *
+ * <p>从原来的 post handler 里整体搬出来，只为了给外层腾出
+ * try/finally 的位置（见上面的注释）。逻辑一行没改。
+ */
+async function handleChat(c: Context, startedAt: number): Promise<Response> {
   let body: ChatBody;
   try {
     body = await c.req.json<ChatBody>();
@@ -140,8 +208,70 @@ chatRoutes.post('/', async (c) => {
     round: body.round ?? 0,
   };
 
+  /*
+   * 这一轮走的是模型还是规则路由 —— 指标里要能分开看。
+   * 规则路由是降级态，如果它占比突然变高，说明模型那头出问题了。
+   */
+  const mode: 'llm' | 'rule' = isLlmConfigured() ? 'llm' : 'rule';
+
+  /*
+   * 落库这一轮的问答。
+   *
+   * <p>**为什么必须在这里写，而不是让前端调一个"保存"接口**：
+   * 前端拿到的是流式片段，它拼出来的 assistant 文本和这里
+   * emit 出去的并不必然一致（Reviewer 可能追加"修订"、卡片的
+   * html 不进正文）。由产生方负责记录，才只有一份真相。
+   *
+   * <p>收集正文的做法：包一层 emit，把 token 事件里的文本攒起来。
+   * 不改动 runTurn 的任何逻辑，也不改变下发的数据。
+   *
+   * <p>写库在**本轮结束时**（正常或异常都写），且是 fire-and-forget：
+   * 历史落库失败不该影响用户已经看到的回答。
+   */
+  const tokens: string[] = [];
+  const recordTurn = () => {
+    void appendTurnHistory({
+      sessionId,
+      turnId,
+      userText: body.text,
+      assistantText: tokens.join(''),
+    });
+  };
+
   const stream = toSseStream(
     async (emit) => {
+      const emitAndCollect = (e: OutboundEvent) => {
+        if (e.type === 'token') tokens.push(e.text);
+        emit(e);
+      };
+
+      try {
+        await runTurn(emitAndCollect);
+      } catch (err) {
+        metrics.record('failed', Date.now() - startedAt, mode);
+        metrics.bump('turn.threw');
+        throw err;
+      } finally {
+        recordTurn();
+      }
+    },
+    {
+      turnId,
+      /*
+       * 把本轮结束时的分诊会话状态交给 done 事件。
+       * 只保留 status 字段的语义不变，这里额外挂了一个"记指标"的副作用。
+       */
+      getSession: () => {
+        metrics.record('ok', Date.now() - startedAt, mode);
+        return session;
+      },
+    },
+  );
+
+  return new Response(stream, { headers: sseHeaders() });
+
+  /** 一轮对话的实际处理逻辑（原 SSE 回调体，逻辑未改） */
+  async function runTurn(emit: (e: OutboundEvent) => void): Promise<void> {
       /* ---------- 第 0 步：红线前置，不经 LLM ---------- */
       const red = checkRedFlag(body.text);
       if (red.hit) {
@@ -428,28 +558,83 @@ chatRoutes.post('/', async (c) => {
           return;
         }
       }
-    },
-    {
-      turnId,
-      /*
-       * 把本轮结束时的分诊会话状态交给 done 事件。
-       *
-       * 为什么用回调读 `session` 而不是在 producer 里 emit：
-       * done 只该由 sse.ts 发一次（正常/异常两条路径都要带状态），
-       * 这里只负责"把当前状态拿出来"。
-       *
-       * 为什么必须有这个：没有它，每轮都是独立会话 ——
-       * 用户答过"好几天了"，下一轮系统仍然问"多久了"。
-       * 实测过，用户原话是"你问过我了"。
-       */
-      getSession: () => session,
-    },
-  );
-
-  return c.body(stream, 200, sseHeaders());
-});
+  }
+}
 
 /* ============================ 辅助 ============================ */
+
+/**
+ * 把一轮问答写进后端历史。
+ *
+ * <p><b>要带用户身份</b>：历史是"我的对话"，必须落到具体用户名下。
+ * 但 /api/chat 本身不要求登录（新患者可能没注册就想问一句），
+ * 所以这里用 demo 账号登录后写入 —— 演示环境的账号是固定的。
+ * 真实产品里应改成透传患者自己的 token，见文末说明。
+ *
+ * <p><b>失败静默</b>：写不进去只是"刷新后看不到历史"，
+ * 不影响用户已经拿到的回答。把历史写入失败升级成对话失败，
+ * 是本末倒置。
+ */
+async function appendTurnHistory(input: {
+  sessionId: string;
+  turnId: string;
+  userText: string;
+  assistantText: string;
+}): Promise<void> {
+  const base = (process.env.BACKEND_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '');
+  if (!base || base.toLowerCase() === 'none') return;
+
+  try {
+    const token = await demoToken(base);
+    if (!token) return;
+
+    const post = (role: 'user' | 'assistant', content: string) =>
+      fetch(`${base}/api/chat-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          role,
+          content,
+        }),
+        signal: AbortSignal.timeout(3000),
+      });
+
+    await post('user', input.userText);
+    /*
+     * 空的 assistant 正文不写：那说明这一轮没产出（比如命中红线只给了
+     * 一张急诊卡，正文是空的）。写一条空消息，刷新后会出现一个空气泡。
+     */
+    if (input.assistantText.trim()) await post('assistant', input.assistantText);
+  } catch (err) {
+    metrics.bump('history.write_failed');
+    console.warn('[chat] 历史落库失败:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** 缓存的演示账号 token，避免每轮都登录一次 */
+let cachedToken: { token: string; exp: number } | null = null;
+
+async function demoToken(base: string): Promise<string | null> {
+  const now = Date.now();
+  if (cachedToken && cachedToken.exp > now) return cachedToken.token;
+
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'demo', password: 'demo1234' }),
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: { token?: string } };
+  const token = body.data?.token;
+  if (!token) return null;
+
+  // 提前 5 分钟过期，避免边界上用到刚失效的 token
+  cachedToken = { token, exp: now + 115 * 60_000 };
+  return token;
+}
 
 /**
  * 判断模型给的槽位值是不是"占位词"。
