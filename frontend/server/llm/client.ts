@@ -254,27 +254,42 @@ export async function probeLlm(): Promise<ProbeResult> {
 
   const startedAt = Date.now();
   try {
-    const { text } = await withTimeout(
-      generateText({
+    /*
+     * 探测必须和业务链路走**同一条路**：generateObject + mode:'json'。
+     *
+     * 原来这里用 generateText("回答两个字：收到")，于是出现了一个很隐蔽的
+     * 假阳性：实测 DeepSeek V4 思考模式下 maxTokens=16 全被 reasoning 吃掉，
+     * content 其实是空的，但因为没抛异常，测试连接照样显示"正常" ——
+     * 用户填了 Key、测试通过、发消息却一直是规则答案，无从排查。
+     * 更关键的是纯文本通不等于结构化通（V4 默认 auto/tool 模式直接 400），
+     * 而业务用的恰恰是结构化输出。探测错的对象，等于没测。
+     */
+    const { object } = await withTimeout(
+      generateObject({
         model: getClient(cfg)(cfg.model),
-        prompt: '回答两个字：收到',
-        maxTokens: 16,
+        schema: z.object({ reply: z.string() }),
+        system: '你是一个连通性探针，只按 schema 输出，不要有多余的话。',
+        prompt: '在 reply 字段里填「收到」两个字。',
+        mode: 'json',
+        temperature: 0,
         maxRetries: 0,
       }),
       CALL_TIMEOUT_MS,
     );
     return {
       ok: true,
-      text: text.trim(),
+      text: String(object.reply ?? '').trim(),
       latencyMs: Date.now() - startedAt,
     };
   } catch (err) {
     const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     // 401/403 与"连不上"必须分开：前者是 Key 的问题，后者是网络或 baseURL 的问题
     const authLike = /\b(401|403|invalid.?api.?key|unauthorized|authentication)\b/i.test(msg);
+    // 通了但吐不出合法 JSON（不是 OpenAI 兼容服务 / 模型不支持该模式）
+    const badOutput = /\b(json|schema|tool_choice|response_format|parse|unavailable)\b/i.test(msg);
     return {
       ok: false,
-      stage: authLike ? 'auth' : 'network',
+      stage: authLike ? 'auth' : badOutput ? 'bad-output' : 'network',
       detail: msg.slice(0, 300),
     };
   }
@@ -307,10 +322,25 @@ export async function askObject<S extends z.ZodTypeAny>(args: {
         system: args.system,
         prompt: args.prompt,
         temperature: args.temperature ?? 0.2,
-        // 关掉 AI SDK 的内建重试。它默认对可重试错误尝试 3 次，
-        // 每次之间还有指数退避 —— 实测一次"连不上"要耗 6 秒。
-        // 而我们的设计是"失败立刻降级到规则"，重试 3 次纯粹是把
-        // 用户从"秒回"拖成"卡 6 秒"，最后还是走规则。
+        /*
+         * 固定走 JSON 模式，不用 AI SDK 默认的 auto。
+         *
+         * 实测（2026-11-17，DeepSeek deepseek-flash / V4.1-Flash）：
+         *   · auto → 走 tool_choice，模型报 "Thinking mode does not
+         *     support this tool_choice"（V4 默认开思考），400
+         *   · tool → 同样的错
+         *   · json → 把 schema 注入 prompt + response_format=json_object，
+         *     正常返回合法对象
+         * 也就是说默认模式下**三个 Agent 的每次调用都失败并静默降级**，
+         * 用户填了 Key、连通性测试还显示正常，回答却一直是规则 —— 最难查
+         * 的那类 bug。json 模式各家 OpenAI 兼容实现普遍支持，是这里的最优解。
+         *
+         * 关掉 AI SDK 的内建重试。它默认对可重试错误尝试 3 次，
+         * 每次之间还有指数退避 —— 实测一次"连不上"要耗 6 秒。
+         * 而我们的设计是"失败立刻降级到规则"，重试 3 次纯粹是把
+         * 用户从"秒回"拖成"卡 6 秒"，最后还是走规则。
+         */
+        mode: 'json',
         maxRetries: 0,
       }),
       CALL_TIMEOUT_MS,

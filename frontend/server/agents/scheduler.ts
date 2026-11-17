@@ -353,6 +353,13 @@ export interface SchedulerInputPayload {
   text: string;
   /** 会话里已确定的科室（来自分诊），可作为兜底 */
   knownDepartment?: string;
+  /**
+   * 分诊给出的科室候选（首选在前）。
+   *
+   * 只用于**展示层的选择范围**：挂号页据此渲染"可切换但仅限推荐"的
+   * 科室列表。它不参与查号 —— 查号永远只查当前选中的那一个科。
+   */
+  departmentOptions?: string[];
 }
 
 export function makeScheduler() {
@@ -478,6 +485,18 @@ export function makeScheduler() {
       doctor: slot.doctorName,
       slot: slot.visitTime,
       holdExpiresAt: '',
+      /*
+       * 科室候选去重、去掉空值，并保证当前科室排在第一个 ——
+       * 挂号页默认选中第一项，顺序错了就等于"推荐首选"被顶掉。
+       *
+       * 还要**只留下真的能挂号的科**：分诊的推荐里常混着"门诊导诊台"
+       * 这种去处，它不是科室，挂号页给它一个按钮只会让人困惑
+       * （点了也查不到号）。问诊卡照旧展示它，挂号这一步不展示。
+       */
+      departmentOptions: normalizeDepartmentOptions(
+        department,
+        input.payload.departmentOptions,
+      )?.filter((d) => hospitals.some((h) => offersDepartment(h, d))),
     };
 
     events.push({ type: 'booking_preview_card', preorder: preview });
@@ -527,4 +546,30 @@ export function makeScheduler() {
         ],
       },
     });
+}
+
+/**
+ * 科室候选整理：当前科室排第一，去重、去空、限长。
+ *
+ * <p>为什么要限长：推荐列表是模型给的，偶尔会一次给五六个科室。
+ * 挂号页是一排按钮，超过四个就会换行两次，把号源挤到屏幕外。
+ * 取前四个已经够表达"还能往哪几个方向看"。
+ *
+ * <p>没有候选时返回 undefined（而不是空数组）：让下游能区分
+ * "没有推荐"和"推荐了但是空"，前者走"手动选科"那条老路。
+ */
+function normalizeDepartmentOptions(
+  current: string,
+  options: string[] | undefined,
+): string[] | undefined {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [current, ...(options ?? [])]) {
+    const name = (raw ?? '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= 4) break;
+  }
+  return out.length > 0 ? out : undefined;
 }

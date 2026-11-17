@@ -18,6 +18,13 @@ import { makeRetrieval } from '../agents/retrieval.js';
 import { makeScheduler } from '../agents/scheduler.js';
 import { checkRedFlag } from '../agents/rules/red-flag.js';
 import { detectInjection, stripInjectionSentences } from '../agents/rules/injection.js';
+import {
+  detectEmotion,
+  isTopicSwitch,
+  EMOTION_COMFORT,
+  EMOTION_CAVEAT,
+  EMOTION_DEPARTMENTS,
+} from '../agents/rules/topic.js';
 import { isLlmConfigured } from '../llm/client.js';
 import { analyzeViaLlm, judgeViaLlm, planViaLlm as planWithModel } from '../agents/llm-impl.js';
 import { ChatLimiter, clientIp } from '../limit.js';
@@ -52,6 +59,13 @@ interface ChatBody {
   sessionId?: string;
   /** 脱敏后文本；服务端无从得知原文 */
   text: string;
+  /**
+   * 用户的纯问题（脱敏后），不含健康档案等注入上下文。
+   * 可选：老前端不会带这个字段，此时回退到 text。
+   * 话题切换/情绪识别必须基于它 —— 用 text 会把档案里的"高血压"等
+   * 当成用户在描述症状。
+   */
+  question?: string;
   facts?: Partial<SessionFacts>;
   /** 多轮追问时由前端带入的已采集槽位 */
   knownSlots?: SymptomSlots;
@@ -325,17 +339,79 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
       }
 
       /*
-       * 追问连续性：上一轮停在「需要补充」时，本轮**不该重新决策**。
+       * 话题切换检测：本轮若是全新主诉，必须丢弃旧槽位、重新决策。
+       *
+       * 背景：分诊的槽位/轮次存在前端 ref，每轮带回。上一轮停在追问态时，
+       * 原来的逻辑只看 `round > 0` 就短路成"继续采集"，硬套旧槽位。
+       * 用户从"肚子疼"跳到"我失恋了"时，旧症状被揉进新主诉，答非所问。
+       *
+       * 判据用纯规则的 isTopicSwitch（情绪主诉 / 全新的躯体症状），
+       * 它发生在 Supervisor 之前，此时还没决定要不要调模型。
+       * 必须用 question（纯问题）而不是 text —— text 里拼了健康档案，
+       * 用它会把档案里的"高血压/阿司匹林"误当成新症状。
+       */
+      const userQuestion = body.question ?? body.text;
+      const switched = session.round > 0 && isTopicSwitch(userQuestion, session.slots);
+      if (switched) {
+        /*
+         * 换话题 = 旧会话状态作废。显式清空槽位与轮次，让这一轮从零开始。
+         * 不清的话，即便重新决策，triage 仍会 merge 到旧槽位。
+         */
+        session.slots = {};
+        session.round = 0;
+      }
+
+      /*
+       * 情绪主诉短路：先安慰、再给心理科为主的建议。
+       *
+       * 放在决策之前，而不是决策之后 —— 否则 Supervisor 会先按"症状描述"
+       * 发一条 plan，这里再补一条，界面上出现两条「调度：」，用户会以为
+       * 系统在自相矛盾。情绪是一条独立的响应路径，不该先被当成分诊问题
+       * 判一遍。
+       *
+       * 只认纯问题里的情绪词（question），不碰健康档案，避免误判。
+       * 红线（伤害自己）已在第 0 步由 checkRedFlag 处理，这里不重复。
+       */
+      if (detectEmotion(userQuestion).hit) {
+        emit({
+          type: 'plan',
+          decision: 'triage',
+          reason: switched
+            ? '检测到新的主诉（情绪困扰），已清空上一话题的症状信息，转心理支持'
+            : '识别到情绪困扰主诉，优先给予共情并建议心理科',
+          agents: ['triage'],
+        });
+        emit({ type: 'token', text: EMOTION_COMFORT });
+        emit({ type: 'token', text: '\n\n' });
+        const departments = EMOTION_DEPARTMENTS.map((d) => ({ ...d }));
+        emit({ type: 'department_card', departments });
+        const main = departments[0]!;
+        emit({
+          type: 'token',
+          text: `建议优先到「${main.name}」聊聊，也可以先到「全科医学科」评估。${EMOTION_CAVEAT}`,
+        });
+        emit({ type: 'caveat', text: '本回答仅用于信息整理与就诊准备参考，不构成诊断或心理治疗建议。如果情绪困扰持续或加重，请尽快就医。' });
+        return;
+      }
+
+      if (switched) {
+        emit({
+          type: 'plan',
+          decision: 'triage',
+          reason: '检测到新的主诉，已清空上一话题的症状信息，重新分诊',
+          agents: ['triage'],
+        });
+      }
+
+      /*
+       * 追问连续性：上一轮停在「需要补充」且本轮未换话题时，不重新决策。
        *
        * 为什么必须短路：用户正在回答追问，回复往往很短（「嗯」「好几天了」
        * 「胸」），单独看这些句子根本不构成症状描述。让 Supervisor 重新判断，
        * 它会得到荒谬的结论 —— 实测「嗯」被判成 done，
        * 于是 AI 回了句「还有其他需要帮忙的吗？」，把正在问诊的用户赶走。
-       *
-       * 判据不用猜：`round > 0` 就说明上一轮问过、用户在答。
-       * 这个状态是前端带回来的（done 事件里的 session）。
        */
-      const continuingClarify = session.round > 0;
+      const continuingClarify = session.round > 0 && !switched;
 
       let decision: string;
       if (continuingClarify) {
@@ -347,9 +423,11 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
           agents: ['triage'],
         });
         decision = 'triage';
-      } else {
+      } else if (!switched) {
         const supervisor = makeSupervisor({ plan: deps.plan });
-        const plan = await supervisor(baseInput({ text: body.text }));
+        // 用纯问题决策：text 里拼了健康档案，会让 Supervisor 把档案
+        // 里的慢病/用药误当成用户此刻的主诉
+        const plan = await supervisor(baseInput({ text: userQuestion }));
         emitEvents(emit, plan.events);
 
         if (plan.status === 'failed' || plan.status === 'blocked') {
@@ -365,6 +443,9 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
               // 这种退化情况按 triage 处理：宁可多问一句，不要答错
               (plan.payload.agents[0] ?? 'triage')
             : plan.payload.decision;
+      } else {
+        // switched 分支已经发过 plan，直接进分诊
+        decision = 'triage';
       }
 
       /* ---------- 第 2 步：按决策分发 ---------- */
@@ -447,7 +528,14 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
           if (topDept) {
             const scheduler = makeScheduler();
             const schedOut = await scheduler(
-              baseInput({ text: body.text, knownDepartment: topDept }),
+              baseInput({
+                text: body.text,
+                knownDepartment: topDept,
+                // 推荐科室一并带给预约卡：挂号页据此给出"可切换但仅限推荐"
+                // 的科室范围，用户能在心血管内科/消化内科之间换，
+                // 但不能换成推荐之外的科 —— 换了就等于绕过分诊。
+                departmentOptions: triageOut.payload.departments.map((d) => d.name),
+              }),
             );
             emitEvents(emit, schedOut.events);
           }
@@ -521,7 +609,9 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
             const p = schedOut.payload.preview;
             emit({
               type: 'token',
-              text: `${p.hospital}${p.department}最近可预约时段：${p.slot.slice(5, 10)} ${p.slot.slice(11, 16)}（${p.doctor}）。确认挂号请点下方按钮，或直接到院自助机取号。`,
+              // 措辞对齐新流程：对话里只给「去挂号」，不在这里直接下单。
+              // 说"确认挂号"会让用户以为点一下号就占上了。
+              text: `${p.hospital}${p.department}最近可预约时段：${p.slot.slice(5, 10)} ${p.slot.slice(11, 16)}（${p.doctor}）。点下方「去挂号」可以挑别的时段或换院区，也可以直接到院自助机取号。`,
             });
           }
           return;

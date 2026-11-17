@@ -58,7 +58,7 @@ export function DepartmentCard({ departments }: DepartmentCardProps) {
           {
             className:
               'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ' +
-              (i === 0 ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600'),
+              (i === 0 ? 'bg-action text-white' : 'bg-gray-100 text-gray-600'),
           },
           String(i + 1),
         ),
@@ -74,7 +74,7 @@ export function DepartmentCard({ departments }: DepartmentCardProps) {
                   'span',
                   {
                     className:
-                      'rounded bg-teal-50 px-1.5 py-0.5 text-xs text-teal-700',
+                      'rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-700',
                   },
                   '首选',
                 )
@@ -137,13 +137,20 @@ interface CaveatCardProps {
   text: string;
 }
 
-/** 免责与警示条。低饱和灰，不抢注意力但一定看得见。 */
+/**
+ * 免责与出处说明条。
+ *
+ * 中性灰虚线，不是琥珀。
+ * "这条依据可能不足"是**我们不确定**，不是"患者有危险" ——
+ * 染成警告色之后，患者会把免责声明和"空腹抽血别吃饭"读成同一类东西，
+ * 结果是两件都跳过。虚线是"未知"的视觉语汇，正好对应这类内容。
+ */
 export function CaveatCard({ text }: CaveatCardProps) {
   return createElement(
     'div',
     {
       className:
-        'rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900',
+        'rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-sm leading-relaxed text-gray-600',
     },
     text,
   );
@@ -180,7 +187,7 @@ export function TimelineCard({ tasks }: TimelineCardProps) {
             {
               className:
                 'rounded px-2 py-0.5 text-xs ' +
-                (i === 0 ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500'),
+                (i === 0 ? 'bg-action text-white' : 'bg-gray-100 text-gray-500'),
             },
             p,
           ),
@@ -201,7 +208,7 @@ export function TimelineCard({ tasks }: TimelineCardProps) {
             'span',
             {
               className:
-                'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-xs font-medium text-teal-700',
+                'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-medium text-brand-700',
             },
             String(t.order),
           ),
@@ -286,7 +293,7 @@ export function ReviewTraceCard({ scores, action }: ReviewTraceProps) {
             'div',
             { className: 'mt-1 h-1 w-full overflow-hidden rounded bg-gray-200' },
             createElement('div', {
-              className: 'h-full ' + (v >= 0.6 ? 'bg-teal-500' : 'bg-red-500'),
+              className: 'h-full ' + (v >= 0.6 ? 'bg-brand-500' : 'bg-red-500'),
               style: { width: `${Math.round(v * 100)}%` },
             }),
           ),
@@ -313,7 +320,7 @@ export function SourcesCard({ sources, lowEvidence }: SourcesCardProps) {
 
   return createElement(
     'div',
-    { className: 'rounded-xl border border-gray-200 bg-white p-4' },
+    { className: 'rounded-xl border border-gray-200 bg-surface p-4' },
     createElement(
       'div',
       { className: 'mb-2.5 flex items-center gap-2' },
@@ -341,7 +348,7 @@ export function SourcesCard({ sources, lowEvidence }: SourcesCardProps) {
             'span',
             {
               className:
-                'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] font-medium text-gray-500',
+                'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gray-100 text-3xs font-medium text-gray-500',
             },
             String(i + 1),
           ),
