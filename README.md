@@ -381,8 +381,10 @@ zhidao/
 ├── scripts/                  # 一键启动/停止的 PowerShell 实现（被根目录 .bat 调用）
 ├── start.sh                  # 一键启动（macOS/Linux）：探测环境 → 装依赖 → 起前后端
 ├── 启动智诊通.bat             # 一键启动（Windows 双击，转调 scripts/start.ps1）
-├── Dockerfile                # 一体化镜像：前端 dist + Node BFF + Spring Boot（单容器）
-├── render.yaml               # Render Blueprint：免费档在线演示（含 512MB 的堆参数）
+├── Dockerfile                # 一体化镜像：前端 dist + Node BFF + Spring Boot（单容器，需 ≥1 GB 内存）
+├── frontend/Dockerfile       # 分离镜像：只跑 BFF（512 MB 单服务上限时与 backend 分开部署）
+├── backend/Dockerfile        # 分离镜像：只跑 Spring Boot
+├── render.yaml               # Render Blueprint（备选部署方案，本次未启用，说明见 docs/14 §10）
 ├── LICENSE                   # MIT
 └── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
