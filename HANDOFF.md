@@ -1,18 +1,22 @@
 # 交接文档 · 换机器继续开发
 
-> 更新：2026-11-17 ｜ 适用：任何一台干净的电脑
+> 更新：2026-11-18 ｜ 适用：任何一台干净的电脑
 >
 > **省赛提交截止 2026-11-18**。
 > 这份文档的目标是：在新机器上 **30 分钟内**跑起来，并且知道下一步做什么。
 >
-> **当前状态一句话**：功能主线已实现，四层验证齐备（前端 798 + 后端 119 = 922 用例
-> + E2E + 生产构建），`pnpm verify:all` 一条命令可确认健康。
-> **但工作区有一批未提交改动（见 `git status`），不要当成已推送。**
+> **当前状态一句话**：功能主线已实现，五层验证齐备（前端 798 + 后端 119 = 922 用例
+> + lint + E2E + 生产构建），`pnpm verify:all` 一条命令可确认健康。
+> **工作区干净，HEAD 已全部推送到 `origin/master`**（2026-11-18 11:10 核对，100 个提交）。
+> 环境变量、依赖清单、版本要求的完整说明在 **README §9**，本文档只补它没写的坑。
 > §三 列出的是继续深化的方向，以及待开发的项。
 
 ---
 
 ## 一、先跑起来（按顺序做，别跳）
+
+> 只管"怎么装上、怎么启动"。每个环境变量是干什么的、默认值是什么、
+> 依赖清单在哪几个文件里 —— 这些都在 **README §9 环境配置**，不在这里重复。
 
 ### 1. 必要软件
 
@@ -49,6 +53,7 @@ Expand-Archive "$env:TEMP\mvn.zip" -DestinationPath "D:\tools\maven" -Force
 cd frontend
 pnpm install
 pnpm dev          # http://localhost:5173
+pnpm lint         # 规范检查（配置在 frontend/eslint.config.js，应 0 errors）
 ```
 
 `pnpm dev` 会同时起 Vite 和 Node BFF（通过 `configureServer` 挂在同一个端口，没有跨域问题）。
@@ -58,6 +63,7 @@ pnpm dev          # http://localhost:5173
 所以红线拦截、追问、分诊、检索这四条路径全都能演示。评委现场没网也不影响。
 
 要接真模型，复制 `frontend/.env.example` 为 `frontend/.env`，填 `LLM_API_KEY`。
+13 个变量的逐项说明见 README §9.2。
 
 ### 3. 后端（课设交付物）
 
@@ -69,6 +75,19 @@ D:\tools\maven\bin\mvn.cmd spring-boot:run
 
 启动后 <http://localhost:8080> 有 H2 控制台（`/h2-console`，JDBC URL 见 `application.yml`）。
 **不需要装 MySQL**——省赛用 H2 内存库，建表和种子数据在启动时自动执行。
+默认配置**一个环境变量都不用设**。
+
+要改数据源或换密钥时，用模板 `backend/env.example`（7 个变量，逐项说明见 README §9.2）：
+
+```powershell
+# PowerShell 没有 source，模板末尾给了等价的 $env: 写法
+$env:H2_URL = "jdbc:h2:file:./data/zhidao;MODE=MySQL;DATABASE_TO_LOWER=TRUE"
+$env:APP_SEED_MODE = "never"      # 切文件库时必须同时改这个，否则重复灌种子
+```
+
+> 注意：`backend/env.example` 是 **LF** 换行（`.gitattributes` 已固定）。
+> 如果你在 Windows 记事本里改过它再 `source`，每个值末尾可能带上 `\r` ——
+> 症状是密钥永远校验不过、JDBC URL 莫名其妙连不上，且报错完全不提换行符。
 
 > 注意：后端接口层已于 2026-11-14 补齐，`/api/**` 不再是 404。
 > 演示账号 **demo / demo1234**，完整接口见 §三。
@@ -480,6 +499,7 @@ HTTP 状态还是 200，前端 `JSON.parse` 失败却看不到任何错误。
 ```powershell
 cd frontend
 pnpm exec tsc -b --noEmit                                  # 类型
+pnpm exec eslint . --ext .ts,.tsx                          # 规范（0 errors / 5 warnings）
 pnpm exec vitest run                                       # 798 passed / 5 skipped
 pnpm exec vite build                                       # 生产构建
 
@@ -503,13 +523,15 @@ git push origin master
 ```
 
 提交信息要**如实**：做了一半就说做了一半，占了位就说明是占位。
-历史里现在有 72 个提交，每个都能对应到一件具体的事，保持这个粒度。
+历史里现在有 100 个提交，每个都能对应到一件具体的事，保持这个粒度。
 
 **远程仓库**：`git@github.com:dessert28/zhidao.git`（SSH），分支 `master`。
 新机器要先把 SSH key 配好，或者改成 HTTPS + token。
 
-**不要提交**：`node_modules/`、`target/`、`.env`、`*.log`、临时调试脚本（`check*.ts`）。
+**不要提交**：`node_modules/`、`target/`、`.env`、`env.local`、`*.log`、临时调试脚本（`check*.ts`）。
 `.gitignore` 已经覆盖，但用 `git add -A` 前还是扫一眼 `git status`。
+唯一允许入库的是**模板**：`frontend/.env.example` 与 `backend/env.example`——
+这两个文件里不含任何真实密钥，删了反而违反提交要求（「环境变量模板」是硬指标）。
 
 ---
 
@@ -517,12 +539,12 @@ git push origin master
 
 | 日期 | 事项 |
 | --- | --- |
-| **2026-11-18** | 省赛提交截止（还剩 1 天） |
-| 2027-01 上旬 | 评审反馈 |
+| **2026-11-18** | 省赛报名与作品提交截止（**今天**） |
 | 2026-12-10 ~ 12-21 | 国赛报名 |
 | 2026-12-27 | 国赛提交 |
+| 2027-01 上旬 | 省赛评审反馈（可据此修改后再交国赛） |
 
-最后 1 天的取舍：**文档口径校准 + 答辩材料 > 提交前全量验证 > 性能打磨**。
+最后这一天的取舍：**文档口径校准 + 答辩材料 > 提交前全量验证 > 性能打磨**。
 真 Key 验证、TTS、端侧 ONNX 都已完成，不要再回头补这三项。
 
 ---
