@@ -1,0 +1,47 @@
+# ------------------------------------------------------------------
+#  Docker 构建忽略清单
+#
+#  目标：镜像里只放「跑起来需要的」，不放「开发时需要的」。
+#  docs/ 里有几十 MB 的 docx/pdf/png，进构建上下文只会拖慢上传；
+#  .workbuddy/ 与 .archify/ 是本机工具产物，与运行无关。
+# ------------------------------------------------------------------
+
+# 版本控制与 IDE
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+
+# 本机工具产物
+.workbuddy
+.archify
+.slidep
+output
+
+# 文档与素材（运行不需要）
+docs
+ppt
+*.docx
+*.pdf
+
+# 依赖与构建产物（镜像内会重新构建）
+**/node_modules
+frontend/node_modules
+frontend/dist
+backend/target
+frontend/.cache
+**/*.log
+**/*.tsbuildinfo
+
+# 环境变量：镜像里只接受运行时注入，不接受构建期烘焙
+.env
+.env.*
+frontend/.env
+frontend/env.local
+backend/env.local
+
+# 测试与临时文件
+**/coverage
+**/.tmp-vitest
+_tmp_*
