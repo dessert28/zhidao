@@ -313,7 +313,7 @@ cd frontend && pnpm verify:all      # lint → tsc → 单测 → 生产构建
 | 多实例部署 | ⚠️ 单实例 | 对话历史已落库（`chat_message`）；号源锁是进程内锁、限流是单实例内存，多实例需换 Redis / 分布式锁，并处理提醒引擎 `@Scheduled` 的重复扫描 |
 | 管理端/权限矩阵 | ⏳ 待开发 | 患者端是主线；管理端排在后续版本 |
 | MySQL profile 覆盖不全 | ⚠️ 仅基础表 | `schema-mysql.sql` 只建 7 张基础表；对话历史、到院进度、院方凭据、调阅审计共 7 张表**没有 MySQL 版本**。省赛默认 H2 不受影响，上线前需补 DDL（见 `docs/14` §4.3） |
-| 单元测试覆盖率 | ⚠️ 不设门槛 | 前端 798 + 后端 119 = **917 用例**，重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
+| 单元测试覆盖率 | ⚠️ 不设门槛 | 共 **922 个用例**（**917 通过 / 5 跳过**：前端 798 通过 + 5 跳过、后端 119 通过），重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
 
 > **逐项能力核对**（什么能用、什么不能用、按代码而非文档）见 [`HANDOFF.md` §二·五](HANDOFF.md)。
 
@@ -376,7 +376,7 @@ zhidao/
 │           ├── schema.sql        # H2（默认，省赛免装数据库）
 │           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
 │           └── application-mysql.yml  # 切 MySQL 的 profile
-├── docs/                     # 17 份设计文档（含 HIS 接入、院区契约、部署运维）+ 索引，见 docs/README.md
+├── docs/                     # 16 份设计文档（含 HIS 接入、院区契约、部署运维）+ 索引，见 docs/README.md
 ├── scripts/                  # 一键启动/停止的 PowerShell 实现（被根目录 .bat 调用）
 ├── start.sh                  # 一键启动（macOS/Linux）：探测环境 → 装依赖 → 起前后端
 ├── 启动智诊通.bat             # 一键启动（Windows 双击，转调 scripts/start.ps1）
@@ -459,7 +459,7 @@ zhidao/
 - **前端**：React 18、Vite 6、TypeScript 5.7、React Router 6、Tailwind 3、Zustand 5、TanStack Query 5、Vercel AI SDK 4、Hono 4、idb 8、pdfjs-dist 6、zod 3
 - **端侧 AI**：`@huggingface/transformers` 4（ONNX NER 脱敏模型，权重按需下载且不入库）
 - **后端**：Spring Boot 3.2.5（web / security / validation / actuator）、MyBatis-Plus 3.5.6、JJWT 0.12.5、H2（默认）/ MySQL 8
-- **测试**：Vitest 2 + Testing Library + jsdom（前端 798 用例）、JUnit 5（后端 119 用例）
+- **测试**：Vitest 2 + Testing Library + jsdom（前端 798 通过 + 5 跳过）、JUnit 5（后端 119 通过）
 
 > **中文 Windows 注意**：`pom.xml` 已固化 UTF-8，四项设置缺一处就会有中文乱码且不报错，详见 `HANDOFF.md` §五。
 >

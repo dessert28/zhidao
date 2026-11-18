@@ -17,7 +17,7 @@
 
   <Box style={{ flexDirection: 'row', gap: 54, marginTop: 34 }}>
     <Box style={{ width: 400, flexDirection: 'column', paddingTop: 4 }}>
-      <Text style={{ fontSize: 132, fontWeight: 700, color: '#0E3B3A', lineHeight: 0.95, letterSpacing: -2 }}>917</Text>
+      <Text style={{ fontSize: 132, fontWeight: 700, color: '#0E3B3A', lineHeight: 0.95, letterSpacing: -2 }}>922</Text>
       <Text style={{ fontSize: 15, color: '#6B6459', marginTop: 6 }}>条自动化用例 · 前端 798 + 后端 119</Text>
       <Box style={{ width: 360, height: 1, background: 'rgba(20,17,15,0.12)', marginTop: 26 }} />
       <Box style={{ flexDirection: 'row', gap: 30, marginTop: 22 }}>
