@@ -63,3 +63,6 @@ __pycache__/
 # 幻灯片工具中间产物与本机临时文件
 .slidep/
 _tmp_*
+
+# 文档生成流水线的中间产物（含 node_modules，不入库）
+output/
