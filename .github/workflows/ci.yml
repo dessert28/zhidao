@@ -1,8 +1,8 @@
 # ------------------------------------------------------------------
 # 智诊通 · CI
 #
-# 两道关，缺一不可：
-#   1. frontend —— typecheck + vitest + build
+# 缺一不可，前端 4 步、后端 2 步，任一红即失败：
+#   1. frontend —— eslint → typecheck → vitest → build
 #   2. backend  —— mvn compile + mvn test
 #
 # ============ 为什么是两个并行 job，而不是一个 ============
@@ -23,8 +23,15 @@
 #
 # ============ 版本口径 ============
 #
-# Node 20：package.json 的 engines 写的是 >=18，但 pnpm@9.15.0 与
-#           vite 6 在 20 上验证过；用 20 与 HANDOFF.md 的口径一致。
+# Node 22：package.json 的 engines 已写 >=22.22.2，但下限不是随口定的 ——
+#           测试链路的实际下限被依赖顶到了 22：vitest 走 jsdom，
+#           jsdom@31 的 engines 是 ^22.22.2 || ^24.15.0 || >=26.0.0，
+#           而它间接依赖的 undici@8 在 Node 20 上加载期就会抛
+#           TypeError: Cannot read properties of undefined (reading 'bind')
+#           （undici/lib/interceptor/decompress.js）。所以 Node 20 下前端
+#           测试 job 必红，不是"偶发"，也不是靠重跑能过去的环境抖动。
+#           这里写 22（而不是钉 22.22.2），让 setup-node 自动拿到 22 线最新
+#           补丁 —— 只要 >=22.22.2 就满足 jsdom 的区间。
 # JDK 17 ：pom.xml 的 <java.version>17</java.version>，用 21 编译
 #           虽然也能过，但会让"本地 17、CI 21"的差异留到上线才暴露。
 # ------------------------------------------------------------------
@@ -66,10 +73,10 @@ permissions:
 
 jobs:
   # ==================================================================
-  # 前端：类型 → 测试 → 打包
+  # 前端：规范 → 类型 → 测试 → 打包
   # ==================================================================
   frontend:
-    name: frontend (typecheck / test / build)
+    name: frontend (lint / typecheck / test / build)
     runs-on: ubuntu-latest
     # 前端全量测试本地实测约 70 秒，build 约 28 秒；
     # 给 15 分钟是留给"冷缓存 + 慢机器"的余量，不是常态耗时。
@@ -107,10 +114,10 @@ jobs:
         with:
           package_json_file: frontend/package.json
 
-      - name: 安装 Node 20 + 缓存 pnpm store
+      - name: 安装 Node 22 + 缓存 pnpm store
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           # 缓存的是 pnpm 的全局 store（依赖压缩包），不是 node_modules。
           # key 自动包含 pnpm-lock.yaml 的哈希：锁文件一变就重新装，
           # 不影响正确性，只是让"依赖没变"的提交少等一分钟。
@@ -125,7 +132,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # 第零道关：eslint（配置在 frontend/eslint.config.js）
-      # 放在类型检查之前，因为它是三道关里最快的一步（约 8 秒），
+      # 放在类型检查之前，因为它是几道关里最快的一步（约 8 秒），
       # 语法级、风格级的问题不该等到 tsc 跑完 40 秒才报出来。
       # 口径：error 阻断，warning 放行 —— 目前只留 5 条 warning
       # （lab-values.ts 正则字符类里刻意保留的方括号转义），
