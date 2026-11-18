@@ -60,7 +60,7 @@ def set_run_font(run, name=CN_FONT, size=None, bold=None, color=None):
 
 
 def add_par(doc, text="", size=10.2, bold=False, color=None, align=None,
-            space_before=0, space_after=5, indent=None, line=1.36, font=CN_FONT):
+            space_before=0, space_after=4, indent=None, line=1.31, font=CN_FONT):
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.space_before = Pt(space_before)
@@ -194,7 +194,7 @@ def set_cell_borders(cell, hex_color="D1D5DB", sz="4"):
     tcPr.append(borders)
 
 
-def set_cell_margins(cell, top=60, left=100):
+def set_cell_margins(cell, top=30, left=100):
     tcPr = cell._tc.get_or_add_tcPr()
     mar = OxmlElement("w:tcMar")
     for k, v in (("top", top), ("bottom", top), ("left", left), ("right", left)):
@@ -259,7 +259,7 @@ def add_table(doc, headers, rows, widths=None, size=8.6, header_bg="0F766E"):
             p = cell.paragraphs[0]
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
-            p.paragraph_format.line_spacing = 1.3
+            p.paragraph_format.line_spacing = 1.22
             _add_rich(p, str(val), size)
 
     if widths:

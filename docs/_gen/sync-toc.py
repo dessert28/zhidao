@@ -34,8 +34,8 @@ ANCHORS = [
     ("五", "五、核心功能实现"),
     ("六", "六、测试与部署"),
     ("七", "七、总结与展望"),
-    ("附录 A", "附录 A"),
-    ("附录 B", "附录 B"),
+    ("附录 A", "AI 技术说明"),
+    ("附录 B", "创新点说明"),
 ]
 
 
@@ -54,12 +54,25 @@ def main() -> int:
 
     found = {}
     for num, anchor in ANCHORS:
+        # 第一遍：标题在页首区域。章标题必然新起一页，这个条件最严，
+        # 可以挡掉正文里「详见第四章」这类交叉引用的误命中。
         for i, page in enumerate(reader.pages):
             if i in toc_pages:
                 continue
             text = page.extract_text() or ""
-            # 标题出现在页首区域才算本章起始页，避免正文里的交叉引用误命中
             if anchor in text[:300]:
+                found[num] = i + 1
+                break
+        if num in found:
+            continue
+        # 第二遍：附录允许接排（不强制起新页），标题会落在页面中部，
+        # 退化为整页搜索。正文里对附录的引用只用「附录 A/B」这种短称，
+        # 而这里的 anchor 是全称标题串，不会误命中。
+        for i, page in enumerate(reader.pages):
+            if i in toc_pages:
+                continue
+            text = page.extract_text() or ""
+            if anchor in text:
                 found[num] = i + 1
                 break
 
