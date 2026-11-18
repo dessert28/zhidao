@@ -356,7 +356,88 @@ zhidao/
 
 ---
 
-## 9. 快速开始
+## 9. 环境配置与快速开始
+
+> 这一节对应提交要求里的「完整环境配置说明（含环境变量模板、依赖清单）」。
+> **只想把项目跑起来看效果，直接跳到 9.4**；要部署或换机器复现，按 9.1 → 9.3 逐项核对。
+
+### 9.1 运行时版本要求
+
+| 组件 | 版本 | 是否必需 | 说明 |
+| --- | --- | --- | --- |
+| Node.js | **≥ 18**（CI 用 20） | 必需 | 前端与 Node BFF 同进程，缺它什么都起不来 |
+| pnpm | **9.15.0** | 必需 | 版本写在 `package.json` 的 `packageManager` 字段；用 npm/yarn 装会因 lockfile 格式不同而失败 |
+| JDK | **17** | 看需求 | `pom.xml` 的 `<java.version>17</java.version>`。只用前端演示时可以跳过 |
+| Maven | **3.9+** | 看需求 | 仓库**未附 `mvnw`**，需要本机自装；只跑前端可跳过 |
+| Docker | 任意近期版本 | 可选 | 只在启用 MySQL / pgvector 时需要，对应 `docker-compose.yml`。**省赛默认路径不需要 Docker** |
+| 操作系统 | Windows / macOS / Linux | — | Windows 下 `pom.xml` 已固化 UTF-8，避免中文乱码 |
+
+> **不需要**：GPU、Redis、外网大模型额度、任何私有数据库。这四样是刻意的取舍，见 `docs/10`。
+
+### 9.2 环境变量
+
+两份模板，各自对应一个运行单元：
+
+| 模板文件 | 覆盖范围 | 用法 |
+| --- | --- | --- |
+| [`frontend/.env.example`](frontend/.env.example) | 前端 + Node BFF（13 个变量） | `cp .env.example .env` |
+| [`backend/env.example`](backend/env.example) | Spring Boot 业务层（7 个变量） | `source env.example`（或按表手工 export） |
+
+**前端（`frontend/.env`）**
+
+| 变量 | 默认值 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `LLM_API_KEY` | 空 | 否 | 大模型密钥。**留空则整条链路自动走规则路由**，功能完整但回答不走模型 |
+| `LLM_PROVIDER` | `deepseek` | 否 | 供应商：`deepseek` / `openai` / `qwen` / `moonshot` / `ollama`，五家共用 OpenAI 兼容协议 |
+| `LLM_MODEL` | 按供应商取默认 | 否 | 文本模型名，如 `deepseek-chat` |
+| `LLM_BASE_URL` | 官方地址 | 否 | 走代理或本地 Ollama 时填 |
+| `LLM_OCR_MODEL` | 同 `LLM_MODEL` | 否 | 拍照识图用的多模态模型（必须是能接受 `image_url` 的模型） |
+| `PGVECTOR_ENABLED` | `false` | 否 | 关：内存 BM25 单路；开：BM25 + pgvector 双路 RRF 融合 |
+| `PGVECTOR_PORT` | `15432` | 否 | 对应 `docker-compose.yml` 的宿主端口 |
+| `PGVECTOR_URL` | `postgresql://zhidao:zhidao@localhost:15432/zhidao` | 否 | 仅 `PGVECTOR_ENABLED=true` 时使用 |
+| `BACKEND_BASE_URL` | `http://localhost:8080` | 否 | BFF 反向代理到 Spring Boot 的目标地址 |
+| `PORT` | `5173` | 否 | 前端开发服务器端口 |
+| `ALLOW_ORIGIN` | 空 | 否 | CORS 白名单，留空即同源（开发期不需要填） |
+| `PRIVACY_ENFORCE_LOCAL_ONLY` | `true` | 否 | 强制病历原文不出设备；**生产必须保持 true** |
+| `LOG_REDACT_USER_TEXT` | `true` | 否 | 日志里脱敏用户文本，防止病历进日志文件 |
+
+**后端（Spring Boot，`backend/env.example`）**
+
+| 变量 | 默认值 | 必填 | 作用 |
+| --- | --- | --- | --- |
+| `H2_URL` | `jdbc:h2:mem:zhidao;...` | 否 | 默认内存库，进程停数据即失；改为 `jdbc:h2:file:./data/zhidao` 可跨重启保留 |
+| `APP_SEED_MODE` | `always` | 否 | `always` 每次启动灌种子；文件库场景必须改 `never`，否则重复插入 |
+| `ZHIDAO_JWT_SECRET` | 内置演示密钥 | **生产必改** | JWT 签名密钥，默认值是公开的，只能用于演示 |
+| `MYSQL_HOST` | `localhost` | 启用 `mysql` profile 时 | MySQL 地址 |
+| `MYSQL_PORT` | `3306` | 同上 | MySQL 端口 |
+| `MYSQL_DB` | `zhidao` | 同上 | 库名 |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | `zhidao` / `zhidao` | 同上 | 账号密码 |
+
+> **密钥红线**：`.env` 已在 `.gitignore` 中屏蔽，仓库内**不含任何真实密钥**（`docs/08` §3）。
+> 提交前 `git status` 若出现 `.env`，说明 `.gitignore` 被改坏了，先修再提交。
+>
+> **数据库三档**（按需选一，不是三选三）：
+> 1. H2 内存 —— 默认，`mvn spring-boot:run` 直接跑，**省赛演示用这档**
+> 2. H2 文件 —— 设 `H2_URL` + `APP_SEED_MODE=never`，适合连着演示两天
+> 3. MySQL 8 —— `--spring.profiles.active=mysql`（+`prod` 用于生产），配合 `docker-compose up -d`
+
+### 9.3 依赖清单
+
+| 清单文件 | 覆盖内容 | 查看方式 |
+| --- | --- | --- |
+| [`frontend/package.json`](frontend/package.json) | 前端 + BFF 的 15 个运行时依赖、20+ 开发依赖（含精确版本范围） | `pnpm list --depth=0` |
+| [`frontend/pnpm-lock.yaml`](frontend/pnpm-lock.yaml) | 全量依赖树与校验和，**锁定可复现安装** | CI 用 `pnpm install --frozen-lockfile` |
+| [`backend/pom.xml`](backend/pom.xml) | Spring Boot 3.2.5 + MyBatis-Plus + JJWT 等，全部 Maven 坐标 | `mvn dependency:tree` |
+| [`docker-compose.yml`](docker-compose.yml) | MySQL 8.4 + pgvector 两个容器及其环境变量 | `docker compose config` |
+
+主要依赖一览（完整列表见上述清单文件）：
+
+- **前端**：React 18、Vite 6、TypeScript 5.7、React Router 6、Tailwind 3、Zustand 5、TanStack Query 5、Vercel AI SDK 4、Hono 4、idb 8、pdfjs-dist 6、zod 3
+- **端侧 AI**：`@huggingface/transformers` 4（ONNX NER 脱敏模型，权重按需下载且不入库）
+- **后端**：Spring Boot 3.2.5（web / security / validation / actuator）、MyBatis-Plus 3.5.6、JJWT 0.12.5、H2（默认）/ MySQL 8
+- **测试**：Vitest 2 + Testing Library + jsdom（前端 798 用例）、JUnit 5（后端 119 用例）
+
+### 9.4 启动
 
 ```bash
 # 前端（含 BFF，同一端口起 Vite + Hono，无跨域）

@@ -20,6 +20,8 @@ yarn.lock
 .env.local
 .env.*.local
 *.env
+# 后端环境变量的真实值副本（模板 backend/env.example 可以入库）
+env.local
 
 # IDE 与系统
 .idea/
