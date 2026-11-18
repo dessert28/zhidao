@@ -402,7 +402,7 @@ export function makeReviewer(deps: JudgeDeps = {}) {
 
     /* ---- 第 2 步：安全规则硬拦截（规则优先于分数） ---- */
     const safety = applySafetyRules(candidateAnswer);
-    let answer = safety.answer;
+    const answer = safety.answer;
     issues.push(...safety.issues);
 
     if (safety.blocked) {

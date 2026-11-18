@@ -15,8 +15,6 @@
  * 判定标准写在每个 check 里，失败会打印实际值，不做"看起来对"的判断。
  */
 
-import { checkRedFlag } from '../server/agents/rules/red-flag.js';
-
 const BASE = 'http://localhost:5173/api/chat';
 
 interface TurnResult {

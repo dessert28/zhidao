@@ -682,6 +682,27 @@ function PrepSection({ items, department }: { items: PrepItem[]; department: str
 /* ============================ 指标趋势 ============================ */
 
 function TrendSection({ trends, recordCount }: { trends: MarkerTrend[]; recordCount: number }) {
+  /*
+   * 超标的排前面，再按原顺序。
+   *
+   * 默认收起是有代价的：被折起来的那几项，患者不会点开第二次。
+   * 所以先保证"异常项一定在可见的 4 项里" —— 排序动一下位置，
+   * 比让人误以为"指标都正常"要安全得多。
+   *
+   * 注意：这个 useMemo 必须写在下面的 early return 之前。
+   * Hooks 的顺序在每次渲染中必须一致，一旦放在 return 之后，
+   * 「先没有指标、后上传了病历」这条路径就会少调一个 Hook，
+   * React 会直接抛 "Rendered more hooks than during the previous render"。
+   */
+  const ordered = useMemo(
+    () =>
+      [...trends].sort((a, b) => {
+        const bad = (t: MarkerTrend) => (t.points[t.points.length - 1]!.level !== 'normal' ? 1 : 0);
+        return bad(b) - bad(a);
+      }),
+    [trends],
+  );
+
   if (trends.length === 0) {
     return (
       <section>
@@ -697,22 +718,6 @@ function TrendSection({ trends, recordCount }: { trends: MarkerTrend[]; recordCo
       </section>
     );
   }
-
-  /*
-   * 超标的排前面，再按原顺序。
-   *
-   * 默认收起是有代价的：被折起来的那几项，患者不会点开第二次。
-   * 所以先保证"异常项一定在可见的 4 项里" —— 排序动一下位置，
-   * 比让人误以为"指标都正常"要安全得多。
-   */
-  const ordered = useMemo(
-    () =>
-      [...trends].sort((a, b) => {
-        const bad = (t: MarkerTrend) => (t.points[t.points.length - 1]!.level !== 'normal' ? 1 : 0);
-        return bad(b) - bad(a);
-      }),
-    [trends],
-  );
 
   return (
     <section>

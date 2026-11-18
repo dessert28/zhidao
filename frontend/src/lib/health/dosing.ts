@@ -223,7 +223,11 @@ function cnToNum(c: string): number {
   const map: Record<string, number> = {
     一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
   };
-  return map[c] ?? Number(c) ?? 1;
+  // 先查中文数字表，再退回阿拉伯数字；两者都不成立时兜底为 1。
+  // 这里不能用 `Number(c) ?? 1` —— Number('abc') 得到的是 NaN 而不是 null，
+  // `??` 拦不住它，NaN 会一路传进剂量计算，最终显示成「NaN 片」。
+  const n = Number(c);
+  return map[c] ?? (Number.isFinite(n) ? n : 1);
 }
 
 function clampCount(n: number): number {
