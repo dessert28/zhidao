@@ -1,0 +1,5 @@
+# 构建上下文 = backend/ 时，Docker 只认这个文件
+target
+*.log
+.idea
+*.iml
