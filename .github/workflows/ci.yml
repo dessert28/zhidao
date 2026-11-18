@@ -124,6 +124,15 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      # 第零道关：eslint（配置在 frontend/eslint.config.js）
+      # 放在类型检查之前，因为它是三道关里最快的一步（约 8 秒），
+      # 语法级、风格级的问题不该等到 tsc 跑完 40 秒才报出来。
+      # 口径：error 阻断，warning 放行 —— 目前只留 5 条 warning
+      # （lab-values.ts 正则字符类里刻意保留的方括号转义），
+      # 若哪天 error 出现，说明真的引入了问题，CI 该红。
+      - name: 代码规范
+        run: pnpm lint
+
       # 第一道关：tsc -b --noEmit（两个 tsconfig project：app 与 node）
       # 为什么要单独一步而不是靠 build 兜住：
       #   build 里的 `tsc -b` 也做类型检查，但它同时输出产物，
