@@ -23,6 +23,10 @@
 # 表现为 JDBC URL 末尾多一个字符、密钥永远对不上，且报错信息完全不提换行符。
 *.example   text eol=lf
 
+# —— .nvmrc：必须 LF ——
+# nvm 直接把文件内容当版本号读，末尾多一个 \r 会变成 "22.22.2\r" 找不到该版本。
+.nvmrc      text eol=lf
+
 # —— 必须是 CRLF 的脚本 ——
 *.bat       text eol=crlf
 *.cmd       text eol=crlf

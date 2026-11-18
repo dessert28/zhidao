@@ -137,7 +137,7 @@
 
 | 脚本会做的事 | 说明 |
 | --- | --- |
-| 找 Node.js | 检查版本是否 ≥ 18，不够会明确提示 |
+| 找 Node.js | 检查版本是否 ≥ 22.22，不够会明确提示 |
 | 找 pnpm | 没有就用 Node 自带的 `corepack` 启用；再不行退回 `npx` |
 | 装依赖 | `node_modules` 不存在时自动 `pnpm install` |
 | 找 JDK | 先看 `JAVA_HOME` 与 `PATH`，再扫 `Program Files/Java`、`.jdks`、`tools` 等常见目录 |
@@ -365,7 +365,7 @@ zhidao/
 
 | 组件 | 版本 | 是否必需 | 说明 |
 | --- | --- | --- | --- |
-| Node.js | **≥ 18**（CI 用 20） | 必需 | 前端与 Node BFF 同进程，缺它什么都起不来 |
+| Node.js | **≥ 22.22**（CI 用 22） | 必需 | 前端与 Node BFF 同进程，缺它什么都起不来。**不能低于 22.22**：vitest 的 DOM 环境 `jsdom` 31 要求 Node 22.22+（其传递依赖 `undici` 8 用到 Node 22 才有的 zlib zstd API，Node 20 下加载期即抛错）。版本已固化在仓库根 `.nvmrc`，`nvm use` 一键对齐 |
 | pnpm | **9.15.0** | 必需 | 版本写在 `package.json` 的 `packageManager` 字段；用 npm/yarn 装会因 lockfile 格式不同而失败 |
 | JDK | **17** | 看需求 | `pom.xml` 的 `<java.version>17</java.version>`。只用前端演示时可以跳过 |
 | Maven | **3.9+** | 看需求 | 仓库**未附 `mvnw`**，需要本机自装；只跑前端可跳过 |
@@ -456,7 +456,7 @@ mvn spring-boot:run         # http://localhost:8080
 mvn test                    # 119 passed
 ```
 
-> **所需环境**：Node ≥18 + pnpm 9；JDK 17 + Maven 3.9（只前端可跳过）。
+> **所需环境**：Node ≥22.22 + pnpm 9；JDK 17 + Maven 3.9（只前端可跳过）。
 > **无 API Key 也能完整演示主链路** —— 未配置时 Supervisor 自动切规则路由。这是刻意的：评审本地起项目不会白屏。
 > **中文 Windows 注意**：`pom.xml` 已固化 UTF-8，四项设置缺一处就会有中文乱码且不报错，详见 `HANDOFF.md` §五。
 

@@ -28,7 +28,8 @@ Head '检查运行环境'
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodeCmd) {
     Fail '未找到 Node.js'
-    Hint '前端必须依赖 Node.js 18 或更高版本'
+    Hint '前端必须依赖 Node.js 22.22 或更高版本'
+    Hint '（vitest 的 DOM 环境 jsdom 31 要求 Node 22.22+，Node 18/20 跑测试会失败）'
     Hint '下载：https://nodejs.org/zh-cn/download'
     Hint '安装后请重开一个命令行窗口，再运行本脚本'
     Write-Host ''
@@ -38,9 +39,14 @@ if (-not $nodeCmd) {
 
 $nodeVer = (& node -v).Trim()
 $major = 0
-if ($nodeVer -match 'v(\d+)') { $major = [int]$Matches[1] }
-if ($major -lt 18) {
-    Fail "Node.js 版本过低：$nodeVer（需要 18+）"
+$minor = 0
+if ($nodeVer -match 'v(\d+)\.(\d+)') {
+    $major = [int]$Matches[1]
+    $minor = [int]$Matches[2]
+}
+# 下限是 22.22 而不是 22：vitest 的 jsdom 31 的 engines 写的是 ^22.22.2
+if (($major -lt 22) -or (($major -eq 22) -and ($minor -lt 22))) {
+    Fail "Node.js 版本过低：$nodeVer（需要 22.22+）"
     Hint '请升级后重试'
 } else {
     Ok "Node.js $nodeVer"

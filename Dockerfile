@@ -30,7 +30,7 @@ RUN mvn -B -ntp -q clean package -DskipTests
 # ------------------------------------------------------------------
 # 阶段二：前端。tsc -b && vite build → dist/
 # ------------------------------------------------------------------
-FROM node:20-bookworm-slim AS frontend-build
+FROM node:22-bookworm-slim AS frontend-build
 WORKDIR /src
 
 # 锁文件指定的 pnpm 版本是 9.15.0，用 corepack 对齐，避免"本地能装、镜像装不上"
@@ -46,9 +46,9 @@ COPY frontend/ ./
 RUN pnpm build
 
 # ------------------------------------------------------------------
-# 阶段三：运行时。Node 20 + JRE 17
+# 阶段三：运行时。Node 22 + JRE 17
 # ------------------------------------------------------------------
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 # JRE 而非 JDK：运行时只需要能跑 jar，省 ~200MB
 RUN apt-get update \

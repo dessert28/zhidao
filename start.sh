@@ -34,7 +34,8 @@ head_ "检查运行环境"
 
 if ! command -v node >/dev/null 2>&1; then
   fail "未找到 Node.js"
-  hint "前端必须依赖 Node.js 18 或更高版本"
+  hint "前端必须依赖 Node.js 22.22 或更高版本"
+  hint "（vitest 的 DOM 环境 jsdom 31 要求 Node 22.22+，Node 18/20 跑测试会失败）"
   hint "下载：https://nodejs.org/zh-cn/download"
   hint "或用包管理器：brew install node / apt install nodejs"
   exit 1
@@ -42,8 +43,11 @@ fi
 
 NODE_VER="$(node -v)"
 NODE_MAJOR="$(printf '%s' "$NODE_VER" | sed 's/^v//' | cut -d. -f1)"
-if [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
-  fail "Node.js 版本过低：$NODE_VER（需要 18+）"
+NODE_MINOR="$(printf '%s' "$NODE_VER" | sed 's/^v//' | cut -d. -f2)"
+# 下限是 22.22 而不是 22：vitest 的 jsdom 31 的 engines 写的是 ^22.22.2
+if [ "$NODE_MAJOR" -lt 22 ] 2>/dev/null ||
+   { [ "$NODE_MAJOR" -eq 22 ] && [ "${NODE_MINOR:-0}" -lt 22 ]; } 2>/dev/null; then
+  fail "Node.js 版本过低：$NODE_VER（需要 22.22+）"
   hint "请升级后重试"
 else
   ok "Node.js $NODE_VER"
