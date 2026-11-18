@@ -2,7 +2,8 @@
 node_modules/
 *.log
 *.err
-dist/
+# `dist*/` 同时覆盖 dist/ 和部署前备份的 dist.pre-<日期>/（旧构建产物不入库）
+dist*/
 build/
 .next/
 out/

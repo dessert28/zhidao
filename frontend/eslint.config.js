@@ -21,9 +21,12 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   // 构建产物与本机缓存不参与检查
+  // 注意 dist 用 `dist*/**` 而不是 `dist/**`：部署前常会留一份
+  // `dist.pre-<日期>/` 备份（压缩后的旧 bundle + sourcemap），
+  // 只写 `dist/**` 会让这几千条产物告警混进 `eslint .` 的结果里。
   {
     ignores: [
-      'dist/**',
+      'dist*/**',
       'build/**',
       'node_modules/**',
       '.cache/**',
