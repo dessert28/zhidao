@@ -377,14 +377,9 @@ zhidao/
 │           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
 │           └── application-mysql.yml  # 切 MySQL 的 profile
 ├── docs/                     # 17 份设计文档（含 HIS 接入、院区契约、部署运维）+ 索引，见 docs/README.md
-├── deploy/hf/                # 一体化镜像的容器入口脚本（根 Dockerfile 会 COPY 它）+ HF 专用说明
 ├── scripts/                  # 一键启动/停止的 PowerShell 实现（被根目录 .bat 调用）
 ├── start.sh                  # 一键启动（macOS/Linux）：探测环境 → 装依赖 → 起前后端
 ├── 启动智诊通.bat             # 一键启动（Windows 双击，转调 scripts/start.ps1）
-├── Dockerfile                # 一体化镜像：前端 dist + Node BFF + Spring Boot（单容器，需 ≥1 GB 内存）
-├── frontend/Dockerfile       # 分离镜像：只跑 BFF（512 MB 单服务上限时与 backend 分开部署）
-├── backend/Dockerfile        # 分离镜像：只跑 Spring Boot
-├── render.yaml               # Render Blueprint（备选部署方案，本次未启用，说明见 docs/14 §10）
 ├── LICENSE                   # MIT
 └── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
@@ -420,8 +415,7 @@ zhidao/
 | `BACKEND_BASE_URL` | `http://localhost:8080` | 否 | BFF 反向代理到 Spring Boot 的目标地址 |
 | `PORT` | `5173` | 否 | 前端开发服务器端口（仅 `pnpm start` 生效，dev 由 Vite 接管） |
 | `ALLOW_ORIGIN` | 空 | 否 | CORS 白名单。同源部署（默认）留空即可，留空时同源请求不触发预检；前端另放域名时才填 |
-| `HOST` | `0.0.0.0` | 否 | 仅 `pnpm start` 生效。容器或反向代理要能访问就必须保持 `0.0.0.0` |
-| `MODEL_ORIGIN` | `https://modelscope.cn` | 否 | 端侧 ONNX 权重的下载源（`server/routes/models.ts`），海外部署可换 Hugging Face |
+| `MODEL_ORIGIN` | `https://modelscope.cn` | 否 | 端侧 ONNX 权重的下载源（`server/routes/models.ts`）；内网或海外环境可换成可达的镜像地址 |
 | `CHAT_RATE_PER_MIN` | `20` | 否 | 单 IP 每分钟对话次数（滑动窗口，限流第一层） |
 | `CHAT_DAILY_QUOTA` | `500` | 否 | **全局**每日对话总次数，跨 IP 的硬上限，账单止损线；`0` = 不限 |
 | `CHAT_MAX_CONCURRENT` | `8` | 否 | 同时进行中的 SSE 请求上限（第三层） |

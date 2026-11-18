@@ -1,9 +1,0 @@
-# 构建上下文 = frontend/ 时，Docker 只认这个文件（不再读仓库根的 .dockerignore）
-node_modules
-dist
-.cache
-.env
-.env.*
-!.env.example
-*.log
-coverage
