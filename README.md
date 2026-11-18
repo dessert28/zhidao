@@ -377,11 +377,12 @@ zhidao/
 │           ├── schema-mysql.sql  # MySQL 8 专用（类型与索引语法不同，不能混用）
 │           └── application-mysql.yml  # 切 MySQL 的 profile
 ├── docs/                     # 17 份设计文档（含 HIS 接入、院区契约、部署运维）+ 索引，见 docs/README.md
-├── deploy/hf/                # Hugging Face Spaces 部署：入口脚本与说明（在线演示用）
+├── deploy/hf/                # 容器入口脚本（Render 与 HF 共用，Dockerfile 会 COPY 它）+ HF 专用说明
 ├── scripts/                  # 一键启动/停止的 PowerShell 实现（被根目录 .bat 调用）
 ├── start.sh                  # 一键启动（macOS/Linux）：探测环境 → 装依赖 → 起前后端
 ├── 启动智诊通.bat             # 一键启动（Windows 双击，转调 scripts/start.ps1）
 ├── Dockerfile                # 一体化镜像：前端 dist + Node BFF + Spring Boot（单容器）
+├── render.yaml               # Render Blueprint：免费档在线演示（含 512MB 的堆参数）
 ├── LICENSE                   # MIT
 └── docker-compose.yml        # MySQL 8 + pgvector（国赛用；省赛不需要）
 ```
