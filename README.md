@@ -76,6 +76,17 @@ cd frontend && pnpm verify:all      # lint → tsc → 单测 → 生产构建
 
 ---
 
+## 界面预览
+
+本地运行、种子数据复位后的真实截图（全部 13 张在 [`docs/assets/screens-20261118/`](docs/assets/screens-20261118/)，非示意图）。
+
+| | |
+| --- | --- |
+| <img src="docs/assets/screens-20261118/today.png" width="430" alt="首页：今日服药与待办"><br>**首页** —— 今天几个服药时间点、餐前还是餐后、处方原文怎么写的，一眼看完 | <img src="docs/assets/screens-20261118/records-duplicate.png" width="430" alt="跨院重复检查"><br>**跨院重复检查** —— 命中两项，各列出两家医院的出处、相隔天数与判断依据；只提示不判断 |
+| <img src="docs/assets/screens-20261118/chat-redact-band.png" width="430" alt="问诊：发送前遮蔽手机号"><br>**问诊** —— 手机号在离开设备之前就被遮蔽，"将遮蔽 1 处个人信息"是实时算的 | <img src="docs/assets/screens-20261118/summary.png" width="430" alt="就诊摘要：给医生的一页纸"><br>**就诊摘要** —— 两家医院十次记录压成一页，打印或复制，带去门诊给医生看 |
+
+---
+
 ## 1. 问题与方案
 
 ### 1.1 真问题不是挂号，是病历的碎片化
