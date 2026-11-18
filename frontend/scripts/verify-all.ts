@@ -5,13 +5,14 @@
  *
  * ============ 它做什么 ============
  *
- * 按"从零件到整机"的顺序依次跑四层：
+ * 按"从零件到整机"的顺序依次跑六层：
  *
- *   1. 类型检查      tsc -b --noEmit（前端合约是否自洽）
- *   2. 单元测试      vitest run + mvn test（每个零件正确）
- *   3. E2E 多轮      e2e:multiturn（对话逻辑）
- *   4. E2E 缺陷回归  e2e:regressions（修过的不再坏）
- *   5. 生产构建      e2e:prod（打包后能跑）
+ *   1. 代码规范      eslint（语法与风格，最快的一层，先挡掉低级问题）
+ *   2. 类型检查      tsc -b --noEmit（前端合约是否自洽）
+ *   3. 单元测试      vitest run + mvn test（每个零件正确）
+ *   4. E2E 多轮      e2e:multiturn（对话逻辑）
+ *   5. E2E 缺陷回归  e2e:regressions（修过的不再坏）
+ *   6. 生产构建      e2e:prod（打包后能跑）
  *
  * ============ 为什么需要统一入口 ============
  *
@@ -54,6 +55,15 @@ async function reachable(url: string): Promise<boolean> {
 }
 
 const STEPS: Step[] = [
+  {
+    name: '代码规范',
+    /*
+     * 放第一步，因为它最快（约 8 秒），且没必要等问题等到 tsc 跑完才报。
+     * 口径：error 才算失败；warning 放行 —— 目前留 5 条 warning，
+     * 是 lab-values.ts 正则里刻意保留的方括号转义（见 eslint.config.js）。
+     */
+    cmd: 'npx eslint . --ext .ts,.tsx',
+  },
   {
     name: '类型检查',
     cmd: 'npx tsc -b --noEmit',
