@@ -397,8 +397,8 @@ zhidao/
 
 | 模板文件 | 覆盖范围 | 用法 |
 | --- | --- | --- |
-| [`frontend/.env.example`](frontend/.env.example) | 前端 + Node BFF（13 个变量） | `cp .env.example .env` |
-| [`backend/env.example`](backend/env.example) | Spring Boot 侧（7 个变量） | `source env.example`（或按表手工 export） |
+| [`frontend/.env.example`](frontend/.env.example) | 前端 + Node BFF（15 个变量） | `cp .env.example .env` |
+| [`backend/env.example`](backend/env.example) | Spring Boot 侧（8 个变量） | `source env.example`（或按表手工 export） |
 
 **前端（`frontend/.env`）**
 
