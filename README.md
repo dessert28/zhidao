@@ -4,7 +4,7 @@
 >
 > 2026 全国高校 AI Web 开发挑战赛（传智杯）· AI WEB 网页开发 赛道 · 团队赛
 
-[![tests](https://img.shields.io/badge/frontend%20tests-717%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2030%20pages-0f766e)](docs/智诊通-技术文档.pdf)
+[![tests](https://img.shields.io/badge/frontend%20tests-798%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![eslint](https://img.shields.io/badge/eslint-0%20errors-brightgreen)]() [![node](https://img.shields.io/badge/node-%E2%89%A518-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2030%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
 ---
 
@@ -398,6 +398,32 @@ mvn test                    # 119 passed
 - **数据合规**：遵守《个人信息保护法》《数据安全法》《网络安全法》；病历原文不出设备
 - **API 费用**：自担，已规划用量，优先使用免费额度
 - **真实性**：本仓库 Git 历史为真实开发过程，非最后一次性提交
+
+---
+
+## 11. 团队信息
+
+| 项 | 内容 |
+| --- | --- |
+| 队伍名称 | 代码怎么也改不队 |
+| 参赛赛道 | AI WEB 网页开发挑战赛（传智杯）· 团队赛 |
+| 学校 | 浙江树人学院 · 信息科技学院 |
+| 组别 | **B 组**（普通本科） |
+| 指导老师 | 姜丽丽、尉理哲（浙江树人学院） |
+
+| 成员 | 角色 | 负责模块 | 仓库提交身份 |
+| --- | --- | --- | --- |
+| 张博媛 | 前端 A（Agent 编排） | 页面骨架与路由、Supervisor / Triage / Reviewer 链路、生成式 UI 组件字典、SSE 事件流消费 | `dessert1` |
+| 田典 | 前端 B（隐私与数据） | 端侧脱敏（规则 + ONNX NER）、IndexedDB 本地存储、跨院时间轴与检查归一、站内提醒 | `dessert` |
+| 叶百灵 | 后端 | Spring Boot 薄接口层（JWT、五组接口）、`ReminderEngine` 定时提醒、院区适配器与 MCP 工具 | `dessert28` |
+
+> **关于「仓库提交身份」这一列**：三位成员各自在自己的机器上配置了不同的 Git 用户名与邮箱，
+> 因此 `git log` 里看到的是 `dessert` / `dessert1` / `dessert28` 三个身份而不是真名。
+> 表格给出映射，是为了让评审能把提交记录和成员对上——`git log --author=dessert1` 能直接调出
+> 前端 A 的全部提交。这是真实开发留下的痕迹，没有做任何作者信息的改写或伪造。
+>
+> 分工的划分依据见 [`docs/07-工程约定.md`](docs/07-工程约定.md) §8，与 [`docs/05-Agent契约表.md`](docs/05-Agent契约表.md) §8 的模块边界一致：
+> Agent 编排归前端 A（落在 `frontend/server/agents/`），后端只提供工具接口，不做编排决策。
 
 ---
 
