@@ -32,6 +32,8 @@
  * 说"我们什么都不会传"是假的，说清楚了才是可信的。
  * ------------------------------------------------------------------ */
 
+import { readVisionConfig, supportsThinkingToggle } from '../llm/client.js';
+
 /** 检查报告类型（与前端 lib/health/reports.ts 的 ReportKind 对齐） */
 export type ReportKindHint =
   | 'LAB'
@@ -103,13 +105,23 @@ const IMAGE_MIME = /^image\/(png|jpe?g|webp)$/i;
 /** 图片大小上限。超过这个大小的 base64 会让请求体过大、且模型也未必看得清 */
 const MAX_BYTES = 4 * 1024 * 1024;
 
-function llmConfig(): { key: string; base: string; model: string } | null {
-  const key = (process.env.LLM_API_KEY ?? '').trim();
-  if (!key) return null;
+/**
+ * 识图用的模型配置。
+ *
+ * <p>直接复用 `llm/client.ts` 的 `readVisionConfig()`，与文本侧同一套优先级
+ * （设置页的运行时配置 > 环境变量），模型名可被 `LLM_OCR_MODEL` 单独覆盖。
+ *
+ * <p>以前这里自己读 `process.env`，结果是：设置页填好 Key、对话正常，
+ * 但拍照识别报"未配置"——同一份配置，两条路各认一半。
+ */
+function visionConfig(): { key: string; base: string; model: string; toggleThinking: boolean } | null {
+  const cfg = readVisionConfig();
+  if (!cfg) return null;
   return {
-    key,
-    base: (process.env.LLM_BASE_URL ?? 'https://api.deepseek.com/v1').replace(/\/+$/, ''),
-    model: (process.env.LLM_MODEL ?? 'deepseek-chat').trim(),
+    key: cfg.apiKey,
+    base: cfg.baseURL.replace(/\/+$/, ''),
+    model: cfg.model,
+    toggleThinking: supportsThinkingToggle(cfg),
   };
 }
 
@@ -296,7 +308,7 @@ export async function recognizeReportImage(input: RecognizeInput): Promise<Recog
     };
   }
 
-  const cfg = llmConfig();
+  const cfg = visionConfig();
   if (!cfg) {
     return {
       ok: false,
@@ -358,9 +370,21 @@ export async function recognizeReportImage(input: RecognizeInput): Promise<Recog
         ],
       },
     ],
-    // 影像报告的「所见」段落通常较长，800 会被截断 —— 提到 1600
-    max_tokens: 1600,
+    /*
+     * 影像报告的「所见」段落通常较长，800 会被截断。给 2000 是留余量：
+     * 关掉思考之后，一份报告 + 结构化 JSON 大约 300-600 token 就够。
+     */
+    max_tokens: 2000,
     temperature: 0,
+    /*
+     * 关掉思考模式（DeepSeek 专用字段，见 supportsThinkingToggle）。
+     *
+     * 实测 2026-11-17：不关的话同一张化验单图，max_tokens 全被
+     * reasoning_content 吃掉，content 返回空字符串、finish_reason=length——
+     * 前端看到的是"识别服务没有返回内容"，而模型其实已经把图读对了。
+     * 关掉后 45 token 出结果，且 JSON 更规矩。
+     */
+    ...(cfg.toggleThinking ? { thinking: { type: 'disabled' } } : {}),
   };
 
   let text: string;

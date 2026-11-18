@@ -68,8 +68,17 @@ export interface ParsedReport {
  */
 const KIND_PATTERNS: Array<{ kind: ReportKind; re: RegExp }> = [
   { kind: 'ECG', re: /心电图|ECG|心电圖|窦性心律|QRS/ },
+  /*
+   * 病理要排在内镜**之前**。
+   *
+   * 病理报告一定写部位（「（胃窦）黏膜…」），如果先判内镜，
+   * 一份胃癌术后的病理报告会被识别成胃镜报告 —— 而这两类
+   * 报告的界面措辞完全不同（病理必须强调"判定权在病理科"）。
+   * 反过来，内镜报告里出现「病理检查」字样时归到病理类也不冲突：
+   * 它确实包含病理结论。
+   */
+  { kind: 'PATHOLOGY', re: /病理(?:诊断|检查|报告)|石蜡|免疫组化|镜下见.*细胞/ },
   { kind: 'ENDOSCOPY', re: /内镜|胃镜|肠镜|支气管镜|喉镜|贲门|胃窦|十二指肠球部/ },
-  { kind: 'PATHOLOGY', re: /病理(诊断|检查|报告)|石蜡|免疫组化|镜下见.*细胞/ },
   { kind: 'MRI', re: /磁共振|MRI|MR[I]?\s*(平扫|增强)/i },
   { kind: 'CT', re: /CT\s*(平扫|增强|检查|报告)?|螺旋CT|CT值/i },
   { kind: 'ULTRASOUND', re: /超声|彩超|B超|多普勒|彩色多普勒/ },
@@ -81,6 +90,15 @@ const KIND_PATTERNS: Array<{ kind: ReportKind; re: RegExp }> = [
 export function detectKind(text: string, fileName?: string | null): ReportKind {
   const hay = `${fileName ?? ''}\n${text ?? ''}`;
   if (!hay.trim()) return 'OTHER';
+  /*
+   * 门诊记录不是检查报告。
+   *
+   * 「血压 152/94 mmHg，空腹血糖 7.6 mmol/L。处方：二甲双胍…」这段文本
+   * 含 mmol/L，会被下面的 LAB 规则吃掉，于是病历页出现一张标题写着
+   * 「化验单」、内容却是用药清单的卡片 —— 患者会以为这是化验结果。
+   * 处方、主诉、查体这些词只有门诊记录才有，先按它们排除。
+   */
+  if (/(处方|主诉|现病史|既往史|体格检查|查体|医嘱|用法|用药)/.test(text ?? '')) return 'OTHER';
   for (const { kind, re } of KIND_PATTERNS) {
     if (re.test(hay)) return kind;
   }

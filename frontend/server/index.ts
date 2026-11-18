@@ -20,6 +20,7 @@ import { modelRoutes } from './routes/models.js';
 import { backendRoutes } from './routes/backend-proxy.js';
 import { ocrRoutes } from './routes/ocr.js';
 import { llmConfigRoutes } from './routes/llm-config.js';
+import { reportRoutes } from './routes/report.js';
 
 loadEnv();
 
@@ -78,6 +79,14 @@ export function createApp(opts: AppOptions = {}) {
    * 识别出的文本在出关口再脱敏一次（见 routes/ocr.ts 的说明）。
    */
   app.route('/api/ocr', ocrRoutes);
+  /*
+   * 报告解读：/api/report/terms
+   *
+   * 只做「术语 → 白话」的补词，不生成结论。
+   * 内置词库在前端（src/lib/health/glossary.ts），这一层只处理
+   * 词库没有覆盖到的词 —— 所以它可以不配 Key 也能整页可用。
+   */
+  app.route('/api/report', reportRoutes);
   /*
    * 模型文件代理。路径刻意与 HuggingFace 保持一致
    * （/{repo}/resolve/main/{file}），这样 transformers.js 只要把

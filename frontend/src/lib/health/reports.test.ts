@@ -77,6 +77,13 @@ describe('类型识别', () => {
     expect(detectKind('', null)).toBe('OTHER');
   });
 
+  it('门诊记录不会被当成化验单', () => {
+    // 这段含 mmol/L，但它是门诊记录：标题挂「化验单」会让患者以为是用药清单
+    const note =
+      '血压 152/94 mmHg，空腹血糖 7.6 mmol/L。\n处方：\n二甲双胍缓释片 0.5g 每日2次\n建议继续监测血压血糖。';
+    expect(detectKind(note, null)).toBe('OTHER');
+  });
+
   it('文件名也能帮助识别', () => {
     expect(detectKind('所见：未见异常。', '胸部CT报告.pdf')).toBe('CT');
   });

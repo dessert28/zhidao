@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { describeConfig, isLlmConfigured } from '../llm/client.js';
+import { describeConfig, isLlmConfigured, readVisionConfig } from '../llm/client.js';
 import { envSource } from '../env.js';
 import { chatMetrics } from '../metrics-instance.js';
 import { limiter } from './chat.js';
@@ -26,6 +26,12 @@ healthRoutes.get('/', (c) =>
     service: 'zhidao-bff',
     llmConfigured: isLlmConfigured(),
     llm: describeConfig(),
+    /*
+     * 识图用的模型。与 llm 可能是同一个（多模态模型两条路都跑），
+     * 也可能被 LLM_OCR_MODEL 单独指定成视觉模型。
+     * 上传图片报错时先看这里：null 就是根本没配，不是网络问题。
+     */
+    ocrModel: readVisionConfig()?.model ?? null,
     mode: isLlmConfigured() ? 'llm' : 'rule-routing',
     envSource: envSource(),
     quota: limiter.stats(),

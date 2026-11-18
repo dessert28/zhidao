@@ -138,6 +138,43 @@ export function isLlmConfigured(): boolean {
 }
 
 /**
+ * 识图（VLM）用哪份配置 —— 拍照识别专用。
+ *
+ * ============ 为什么单独一个函数 ============
+ *
+ * 识图能力不是每家模型都有，而且往往比文本模型贵。
+ * 所以允许用 `LLM_OCR_MODEL` 单独指定一个视觉模型：
+ *   文本走便宜快的，识图走能看图的。
+ * 不填就与文本模型同一个 —— 一个多模态模型也能把两条路都跑起来。
+ *
+ * ============ 优先级与文本侧一致 ============
+ *
+ * 运行时配置（设置页）> 环境变量。这条以前是断的：
+ * OCR 只读 process.env，导致"设置页填了 Key、对话正常、
+ * 上传图片却说未配置"——用户没有任何线索。现在两边同源。
+ */
+export function readVisionConfig(): LlmConfig | null {
+  const base = readConfig();
+  if (!base) return null;
+  const override = (process.env.LLM_OCR_MODEL ?? '').trim();
+  return override ? { ...base, model: override } : base;
+}
+
+/**
+ * 这家服务商是否接受 `thinking: {type:'disabled'}`。
+ *
+ * <p>DeepSeek V4 系列默认开思考：识图请求会把 max_tokens 全烧在
+ * reasoning_content 上，`content` 返回空字符串（实测 400 token 全用完，
+ * finish_reason=length）。关掉思考后同一张图 45 token 就出结果。
+ *
+ * <p>这个字段是 DeepSeek 扩展，发给 OpenAI 会直接 400
+ * （Unrecognized request argument），所以必须按服务商判断，不能无脑带。
+ */
+export function supportsThinkingToggle(cfg: LlmConfig): boolean {
+  return cfg.provider === 'deepseek' || /deepseek/i.test(cfg.baseURL);
+}
+
+/**
  * 拉取服务商支持的模型列表。
  *
  * ============ 为什么用 /models 这个端点 ============
