@@ -41,7 +41,15 @@ const staticRoot = (() => {
   return rel.startsWith('..') || isAbsolute(rel) ? DIST : rel;
 })();
 
-const app = createApp({ allowOrigin: undefined });
+/**
+ * CORS 白名单。
+ *
+ * <p>同源部署（前端 dist 与本进程同一端口）不需要 CORS，所以默认留空 ——
+ * 留空时 createApp 内部退回 http://localhost:5173，同源请求根本不触发预检。
+ * 只有把前端放到别的域名（例如 CDN + 独立 BFF）时才需要设 ALLOW_ORIGIN，
+ * 否则浏览器会因 CORS 失败且报错很含糊。
+ */
+const app = createApp({ allowOrigin: process.env.ALLOW_ORIGIN || undefined });
 
 // SPA 回退：非 /api 的请求一律交给 index.html（React Router 自己接管路由）
 app.use('/*', serveStatic({ root: staticRoot }));

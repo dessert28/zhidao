@@ -418,10 +418,18 @@ zhidao/
 | `PGVECTOR_PORT` | `15432` | 否 | 对应 `docker-compose.yml` 的宿主端口 |
 | `PGVECTOR_URL` | `postgresql://zhidao:zhidao@localhost:15432/zhidao` | 否 | 仅 `PGVECTOR_ENABLED=true` 时使用 |
 | `BACKEND_BASE_URL` | `http://localhost:8080` | 否 | BFF 反向代理到 Spring Boot 的目标地址 |
-| `PORT` | `5173` | 否 | 前端开发服务器端口 |
-| `ALLOW_ORIGIN` | 空 | 否 | CORS 白名单，留空即同源（开发期不需要填） |
-| `PRIVACY_ENFORCE_LOCAL_ONLY` | `true` | 否 | 强制病历原文不出设备；**生产必须保持 true** |
-| `LOG_REDACT_USER_TEXT` | `true` | 否 | 日志里脱敏用户文本，防止病历进日志文件 |
+| `PORT` | `5173` | 否 | 前端开发服务器端口（仅 `pnpm start` 生效，dev 由 Vite 接管） |
+| `ALLOW_ORIGIN` | 空 | 否 | CORS 白名单。同源部署（默认）留空即可，留空时同源请求不触发预检；前端另放域名时才填 |
+| `HOST` | `0.0.0.0` | 否 | 仅 `pnpm start` 生效。容器或反向代理要能访问就必须保持 `0.0.0.0` |
+| `MODEL_ORIGIN` | `https://modelscope.cn` | 否 | 端侧 ONNX 权重的下载源（`server/routes/models.ts`），海外部署可换 Hugging Face |
+| `CHAT_RATE_PER_MIN` | `20` | 否 | 单 IP 每分钟对话次数（滑动窗口，限流第一层） |
+| `CHAT_DAILY_QUOTA` | `500` | 否 | **全局**每日对话总次数，跨 IP 的硬上限，账单止损线；`0` = 不限 |
+| `CHAT_MAX_CONCURRENT` | `8` | 否 | 同时进行中的 SSE 请求上限（第三层） |
+
+> **这里没有隐私开关，是刻意的。** 医疗数据的保护靠架构而非配置：原文只进浏览器 IndexedDB、
+> 出设备前在 `lib/privacy/outbound.ts` 单一出口脱敏、服务端只收脱敏文本并存结构化字段
+> （`docs/08` §2.1）。提供一个"关掉隐私保护"的开关，等于埋一个误配点。
+
 
 **后端（Spring Boot，`backend/env.example`）**
 
