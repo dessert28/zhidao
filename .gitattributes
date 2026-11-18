@@ -17,6 +17,12 @@
 *.sh        text eol=lf
 *.bash      text eol=lf
 
+# —— 环境变量模板：必须 LF ——
+# `backend/env.example` 是给 shell `source` 用的。若换成 CRLF，
+# 每个 export 的值末尾都会粘上一个不可见的 \r，
+# 表现为 JDBC URL 末尾多一个字符、密钥永远对不上，且报错信息完全不提换行符。
+*.example   text eol=lf
+
 # —— 必须是 CRLF 的脚本 ——
 *.bat       text eol=crlf
 *.cmd       text eol=crlf
