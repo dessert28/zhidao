@@ -10,8 +10,16 @@ set -euo pipefail
 
 PORT="${PORT:-7860}"
 
-echo "[zhidao] 启动 Spring Boot（H2 内存库）…"
-java -Dfile.encoding=UTF-8 -Xms256m -Xmx768m \
+# 堆大小必须可调：不同托管平台给的内存差一个数量级。
+#   HF Spaces 免费档 16 GB → 768m 堆绰绰有余
+#   Render 免费档 512 MB → 768m 堆会让容器被 OOM kill（表现为构建成功、
+#   部署时反复重启，日志里只有一句 Killed，没有任何 Java 异常）
+# 默认值保持 768m 以兼容大内存平台，小平台通过 JAVA_OPTS 覆盖。
+JAVA_OPTS="${JAVA_OPTS:--Xms256m -Xmx768m}"
+
+echo "[zhidao] 启动 Spring Boot（H2 内存库），JAVA_OPTS=${JAVA_OPTS}"
+# shellcheck disable=SC2086  # 需要按空格拆分多个 JVM 参数
+java -Dfile.encoding=UTF-8 $JAVA_OPTS \
      -jar /app/backend.jar --server.port=8080 &
 JAVA_PID=$!
 

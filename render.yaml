@@ -1,0 +1,59 @@
+# ==================================================================
+#  Render Blueprint —— 免费档在线演示
+#
+#  用法：Render 控制台 → New + → Blueprint → 选这个仓库 → Apply。
+#  它会读到本文件，自动创建服务并把下面的变量灌进去。
+#
+#  为什么是 Render 而不是 Hugging Face Spaces：
+#    2026-11-18 实测 HF 的 Docker Space 已不再对免费档开放，创建时报
+#    "hosting Gradio and Docker Spaces on free cpu-basic requires a PRO
+#    subscription"。Render 免费档（512 MB / <1 CPU / 支持 Docker）仍在，
+#    且 onrender.com 在国内可直连（vercel.app、workers.dev 均已污染）。
+#
+#  两个必须写明的代价：
+#    1. 15 分钟无请求会休眠，下次访问冷启动约 50 秒。评审可能会以为挂了，
+#       所以首页文案和 README 都要提一句。
+#    2. 内存只有 512 MB，JVM 与 Node 挤在一起。堆上限刻意压到很小，
+#       见下面的 JAVA_OPTS / NODE_OPTIONS —— 不改这两个值会 OOM kill。
+# ==================================================================
+services:
+  - type: web
+    name: zhidao-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    # 探活走 BFF 自己的聚合健康端点（它会顺带反映上游 Spring Boot 状态）
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Render 会注入 PORT，这里显式声明便于本地照抄
+      - key: PORT
+        value: "10000"
+
+      # 512 MB 的分配：JVM 192m 堆 + 80m 元空间 ≈ 300m 常驻，
+      # Node 64m 堆 ≈ 110m 常驻。留约 100m 给 H2、线程栈与 page cache。
+      # 用 SerialGC 而非 G1：单核小堆下 G1 的并行线程反而增加开销。
+      - key: JAVA_OPTS
+        value: "-Xms96m -Xmx192m -XX:MaxMetaspaceSize=80m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=64"
+
+      # 数据库用 H2 内存库：免费档没有持久磁盘，H2 文件库重启也会丢，
+      # 而种子数据在启动时灌入，反而比"半持久"更可预期。
+      - key: H2_URL
+        value: "jdbc:h2:mem:zhidao;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE"
+      - key: APP_SEED_MODE
+        value: "always"
+      - key: BACKEND_BASE_URL
+        value: "http://127.0.0.1:8080"
+      - key: MODEL_ORIGIN
+        value: "https://modelscope.cn"
+
+      # sync: false 表示"值不写进仓库，首次部署时在控制台填"。
+      # 留空也能跑：planViaLlm 检测不到 key 会退回规则路由，
+      # 红线拦截 / 追问 / 分诊 / 检索四条路径全部可用。
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        sync: false

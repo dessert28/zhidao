@@ -54,6 +54,16 @@ app.get('*', (c) => {
   }
 });
 
-serve({ fetch: app.fetch, port: PORT }, (info: { port: number }) => {
-  console.log(`[zhidao] http://localhost:${info.port}`);
+/*
+ * 监听地址要显式给。
+ *
+ * @hono/node-server 默认绑 0.0.0.0，但容器平台（Render / Fly / K8s）
+ * 的健康检查来自容器外部，一旦哪天默认值变成 127.0.0.1，症状是
+ * 「本地 docker run 一切正常、平台上一直 unhealthy」，排查成本很高。
+ * 显式声明，顺带留一个 HOST 变量给只监听回环的场景。
+ */
+const HOST = process.env.HOST ?? '0.0.0.0';
+
+serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info: { port: number }) => {
+  console.log(`[zhidao] listening on ${HOST}:${info.port}`);
 });
