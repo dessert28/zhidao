@@ -18,6 +18,8 @@
 
 SET NAMES utf8mb4;
 
+-- sys_notice 放最前：它不引用任何表，先删它不会遇到"还有表依赖"的问题
+DROP TABLE IF EXISTS sys_notice;
 DROP TABLE IF EXISTS reminder_task;
 DROP TABLE IF EXISTS booking_order;
 DROP TABLE IF EXISTS medical_record;
@@ -28,7 +30,8 @@ DROP TABLE IF EXISTS sys_user;
 -- ---------------- 用户 ----------------
 CREATE TABLE sys_user (
   id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-  username      VARCHAR(64)  NOT NULL COMMENT '登录名',
+  username      VARCHAR(64)  NOT NULL COMMENT '登录名，手机号即登录名',
+  display_name  VARCHAR(64)           COMMENT '展示名（注册填的姓名），不做身份核验',
   password_hash VARCHAR(100) NOT NULL COMMENT 'bcrypt，绝不明文',
   recovery_hash VARCHAR(100)          COMMENT '恢复码，也是 bcrypt',
   role          VARCHAR(20)  NOT NULL DEFAULT 'PATIENT',
@@ -38,7 +41,7 @@ CREATE TABLE sys_user (
   deleted       TINYINT(1)   NOT NULL DEFAULT 0,
   UNIQUE KEY uk_user_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='认证主体。刻意不存手机号与身份证（docs/09 硬约束）';
+  COMMENT='认证主体。手机号即登录名；不收身份证、不做真实身份核验';
 
 -- ---------------- 院区 ----------------
 CREATE TABLE hospital (
@@ -163,3 +166,25 @@ CREATE TABLE IF NOT EXISTS hospital_place (
   KEY idx_place_lookup (hospital_code, place_type, department)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='院内地点。data_quality 区分院方真实数据与演示示意数据';
+
+-- ============================================================
+-- 系统公告（与 schema.sql 的 sys_notice 一一对应）
+--
+-- status 与 published_at 分开：草稿没有发布时间，已发布公告撤回后
+-- 再发布时不该丢历史时间。患者端按 published_at <= now 过滤，
+-- 因此不能合并成一个字段。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sys_notice (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  title         VARCHAR(200) NOT NULL,
+  content       TEXT         NOT NULL COMMENT '正文，课设阶段按纯文本渲染',
+  level         VARCHAR(20)  NOT NULL DEFAULT 'INFO' COMMENT 'INFO 通知 / WARN 提醒 / URGENT 紧急',
+  pinned        TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '置顶；排序优先于发布时间',
+  status        VARCHAR(20)  NOT NULL DEFAULT 'DRAFT' COMMENT 'PUBLISHED / DRAFT',
+  published_at  DATETIME              COMMENT 'null 表示尚未发布',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted       TINYINT(1)   NOT NULL DEFAULT 0,
+  KEY idx_notice_published (status, published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='系统公告。草稿只对管理端可见';

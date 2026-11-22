@@ -7,6 +7,7 @@ import {
   auditSupervisorTools,
   makeSupervisor,
   parsePlan,
+  resolveMultiPlan,
   routeByRules,
   serializeIfConflicting,
   SUPERVISOR_TOOLS,
@@ -166,5 +167,71 @@ describe('工具越界检测', () => {
 
   it('用了业务工具要报出来', () => {
     expect(auditSupervisorTools(['get_session_state', 'hold_slot'])).toEqual(['hold_slot']);
+  });
+});
+
+/*
+ * multi 计划展开 —— 决定并行时到底跑哪几条。
+ *
+ * 这组用例的价值在于把"模型可能吐出的退化组合"钉死：
+ * agents 是模型给的，它完全可能只给 reviewer、或者给了 scheduler
+ * 却没给 triage。任何一种没处理，表现都是"用户的话有一半没被回应"。
+ */
+describe('resolveMultiPlan', () => {
+  it('triage + retrieval 都跑，且不单独跑排程', () => {
+    expect(resolveMultiPlan(['triage', 'retrieval'])).toEqual({
+      triage: true,
+      retrieval: true,
+      scheduleAlone: false,
+    });
+  });
+
+  it('triage + scheduler：排程并入分诊，不单独再跑一次', () => {
+    // triage 分支内部已经带科室查号源，再跑会下发两张一样的预览卡
+    expect(resolveMultiPlan(['triage', 'scheduler'])).toEqual({
+      triage: true,
+      retrieval: false,
+      scheduleAlone: false,
+    });
+  });
+
+  it('三条一起给：只跑 triage + retrieval', () => {
+    expect(resolveMultiPlan(['triage', 'retrieval', 'scheduler'])).toEqual({
+      triage: true,
+      retrieval: true,
+      scheduleAlone: false,
+    });
+  });
+
+  it('只有 retrieval 时单独跑检索', () => {
+    expect(resolveMultiPlan(['retrieval'])).toEqual({
+      triage: false,
+      retrieval: true,
+      scheduleAlone: false,
+    });
+  });
+
+  it('只有 scheduler 时才单独跑排程', () => {
+    expect(resolveMultiPlan(['scheduler'])).toEqual({
+      triage: false,
+      retrieval: false,
+      scheduleAlone: true,
+    });
+  });
+
+  it('只给了 reviewer：全部为 false，调用方据此退回分诊', () => {
+    expect(resolveMultiPlan(['reviewer'])).toEqual({
+      triage: false,
+      retrieval: false,
+      scheduleAlone: false,
+    });
+  });
+
+  it('空数组：同样全部为 false', () => {
+    expect(resolveMultiPlan([])).toEqual({
+      triage: false,
+      retrieval: false,
+      scheduleAlone: false,
+    });
   });
 });

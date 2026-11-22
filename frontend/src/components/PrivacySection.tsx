@@ -156,18 +156,25 @@ export function PrivacySection() {
           </div>
           <button
             type="button"
+            role="switch"
+            aria-checked={autoGrant}
+            aria-label="就诊期间自动允许院方调阅"
             disabled={busy}
             onClick={toggleAuto}
             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
               autoGrant ? 'bg-action' : 'bg-gray-300'
             } disabled:opacity-50`}
-            aria-label={autoGrant ? '关闭自动授权' : '开启自动授权'}
           >
+            {/*
+             * 圆点必须显式 left-0.5 锚定在轨道左端。
+             * 只写 absolute 不带 left 时，起点是按钮内的静态位置（按钮默认居中），
+             * 再 translate 到 22px 会直接飘出 44px 宽的轨道 —— 表现为圆点跑到开关外面。
+             * 轨道 44 / 圆点 20 / 左右各留 2：关 = left 2 + 0，开 = left 2 + 20。
+             */}
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-surface transition-transform ${
-                autoGrant ? 'translate-x-5.5' : 'translate-x-0.5'
+              className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-surface shadow-sm transition-transform ${
+                autoGrant ? 'translate-x-5' : 'translate-x-0'
               }`}
-              style={{ transform: `translateX(${autoGrant ? '22px' : '2px'})` }}
             />
           </button>
         </div>

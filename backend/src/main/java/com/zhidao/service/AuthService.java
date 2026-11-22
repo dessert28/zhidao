@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhidao.common.BizException;
 import com.zhidao.dto.LoginRequest;
 import com.zhidao.dto.LoginResponse;
+import com.zhidao.dto.RegisterRequest;
 import com.zhidao.entity.SysUser;
 import com.zhidao.mapper.SysUserMapper;
 import com.zhidao.security.JwtUtil;
@@ -51,6 +52,34 @@ public class AuthService {
 
         String token = jwtUtil.issue(user.getId(), user.getRole());
         log.info("登录成功 userId={}", user.getId());
+        return new LoginResponse(token, user.getId(), user.getUsername(), user.getRole(),
+                jwtUtil.expireSeconds());
+    }
+
+    /**
+     * 注册。手机号即登录名，成功后直接签发 token（与登录同构，前端无需二次登录）。
+     *
+     * <p>重复手机号返回 409 而不是"注册失败"：前端要能区分"换一个号"和"重试"。
+     * 日志不记手机号 —— 手机号属于个人信息，不进服务端日志。
+     */
+    public LoginResponse register(RegisterRequest req) {
+        String phone = req.phone();
+        Long exists = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getUsername, phone));
+        if (exists != null && exists > 0) {
+            throw new BizException(40901, "该手机号已注册，请直接登录");
+        }
+
+        SysUser user = new SysUser();
+        user.setUsername(phone);
+        user.setDisplayName(req.name());
+        user.setPasswordHash(passwordEncoder.encode(req.password()));
+        user.setRole("PATIENT");
+        user.setEnabled(true);
+        userMapper.insert(user);
+
+        log.info("注册成功 userId={}", user.getId());
+        String token = jwtUtil.issue(user.getId(), user.getRole());
         return new LoginResponse(token, user.getId(), user.getUsername(), user.getRole(),
                 jwtUtil.expireSeconds());
     }

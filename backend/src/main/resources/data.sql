@@ -431,3 +431,54 @@ INSERT INTO patient_binding (user_id, hospital_code, match_code, enabled) VALUES
 -- 演示账号默认允许自动授权（诊疗必需，也是行业惯例）
 DELETE FROM access_preference WHERE user_id = 1;
 INSERT INTO access_preference (user_id, auto_grant) VALUES (1, TRUE);
+
+-- ============================================================
+-- 管理端 / 医生端演示账号
+--
+-- 为什么要补这两个账号：
+--   /api/admin/** 与 /api/doctor/patients/** 的权限规则是
+--   hasRole("ADMIN") / hasAnyRole("DOCTOR","ADMIN")，
+--   没有对应角色的账号，"只有管理员能进管理端"这条边界就无从验证 ——
+--   所有请求一律 403，看起来像权限配错了。
+--
+-- 哈希与 demo 完全相同，明文都是 demo1234（BCrypt cost=10）。
+-- 用同一套密码是为了演示方便，**真实部署必须在首次登录后改掉**。
+--
+-- 用 MERGE ... KEY (username)：data.sql 会被多个 Spring 上下文重复执行，
+-- 普通 INSERT 第二次就撞 uk_user_username。MERGE 幂等。
+-- ============================================================
+MERGE INTO sys_user (username, display_name, password_hash, role, enabled) KEY (username) VALUES
+  ('admin', '院方管理员', '$2a$10$A8hrJ98MEdtngRppd5VVTOnxcg6SSOrhtjYUo9l3o3qQEY7.AYcwG', 'ADMIN', TRUE),
+  ('doctor', '王医生', '$2a$10$A8hrJ98MEdtngRppd5VVTOnxcg6SSOrhtjYUo9l3o3qQEY7.AYcwG', 'DOCTOR', TRUE);
+
+-- ============================================================
+-- 系统公告种子
+--
+-- 三条覆盖三种关键状态：
+--   ① INFO 已发布 —— 普通通知，患者端能看到
+--   ② WARN 已发布 + 置顶 —— 验证「置顶优先于发布时间」
+--   ③ DRAFT 未发布 —— 验证「草稿不会出现在患者端」，
+--      这也是最容易在演示时被忘掉的一条：草稿必须真的不可见
+--
+-- 先按标题删除再插入，保证重复执行 data.sql 不会堆出重复公告。
+-- published_at 写死为 2026-11 的日期（早于演示基准日 2026-11-14 之后），
+-- 患者端按 published_at <= now 过滤时一定能看到前两条。
+-- ============================================================
+DELETE FROM sys_notice WHERE title IN (
+  '门诊时间调整：11 月 25 日起周六门诊 8:00-12:00',
+  '流感高发期，发热患者请先到发热门诊分诊',
+  '【草稿】12 月大型义诊活动安排'
+);
+
+INSERT INTO sys_notice (title, content, level, pinned, status, published_at) VALUES
+  ('门诊时间调整：11 月 25 日起周六门诊 8:00-12:00',
+   '为方便上班族就诊，自 11 月 25 日起，周六门诊时间调整为 8:00-12:00。请提前在预约页面选择对应时段，并按预约时间到院。',
+   'INFO', FALSE, 'PUBLISHED', '2026-11-18 09:00:00'),
+
+  ('流感高发期，发热患者请先到发热门诊分诊',
+   '近期流感就诊人数明显增加。如有发热、咳嗽等症状，请先到发热门诊分诊，不要直接前往普通门诊候诊区，以免交叉感染。',
+   'WARN', TRUE, 'PUBLISHED', '2026-11-20 08:00:00'),
+
+  ('【草稿】12 月大型义诊活动安排',
+   '草稿：活动时间、地点与参与科室尚未最终确定，请勿对外发布。',
+   'INFO', FALSE, 'DRAFT', NULL);

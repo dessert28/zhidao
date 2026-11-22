@@ -19,18 +19,21 @@
  * ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Logo from '../components/ui/Logo';
 import { Callout } from '../components/ui/Callout';
 import {
   ChevronRightIcon,
+  GearIcon,
   HeartIcon,
   LockIcon,
+  LogoutIcon,
   MoonIcon,
   RecordsIcon,
   SheetIcon,
   SlidersIcon,
   TypeIcon,
+  UserIcon,
   type IconProps,
 } from '../components/ui/icons';
 import { TEXT_SCALE_OPTIONS } from '../hooks/useTextScale';
@@ -38,11 +41,13 @@ import { THEME_OPTIONS } from '../hooks/useTheme';
 import { genderLabel } from '../lib/health/summary-text';
 import { useUiPrefs } from '../hooks/ui-prefs';
 import {
+  currentRole,
   ensureLogin,
   getProfile,
   getRecords,
   hospitalName,
   loadHospitalCatalog,
+  logout,
   shortDate,
   type BackendFailure,
   type MedicalRecord,
@@ -64,7 +69,16 @@ const EMPTY: State = { loading: true, failure: null, profile: null, records: [] 
 
 export default function MinePage() {
   const [state, setState] = useState<State>(EMPTY);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const navigate = useNavigate();
   const { scale, setScale, themeMode, setThemeMode } = useUiPrefs();
+  /*
+   * 角色只用来决定「显示哪个入口」，不构成权限边界：
+   * sessionStorage 里的值谁都能改，真门禁在后端 hasAnyRole("ADMIN") /
+   * hasAnyRole("DOCTOR","ADMIN")。这一层存在的唯一理由是
+   * 别让患者点进后台撞一脸 403。
+   */
+  const role = currentRole();
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, failure: null }));
@@ -272,6 +286,32 @@ export default function MinePage() {
             />
           </div>
 
+          {/*
+            角色入口。插在资料卡之后、显示设置之前：
+            医生/管理员进来第一件事就是找自己的工具，往下翻三屏才看到
+            等于没有。普通患者这两条都不渲染 —— 一个点进去只会 403 的
+            入口比没有更糟。
+          */}
+          {role === 'ADMIN' || role === 'DOCTOR' ? (
+            <Group title="工作台">
+              {role === 'ADMIN' ? (
+                <RowLink
+                  to="/admin"
+                  Icon={GearIcon}
+                  title="管理后台"
+                  sub="用户、院区、公告与数据看板"
+                />
+              ) : (
+                <RowLink
+                  to="/doctor"
+                  Icon={UserIcon}
+                  title="医生工作台"
+                  sub="查看患者授权的就诊资料"
+                />
+              )}
+            </Group>
+          ) : null}
+
           <Group title="显示与辅助">
             <RowControl Icon={TypeIcon} title="字体大小" sub="影响所有页面，下次打开仍然生效">
               <Seg
@@ -299,11 +339,63 @@ export default function MinePage() {
               sub="用的是你自己的 API Key"
             />
             <RowLink
-              to="/records"
+              to="/privacy"
               Icon={LockIcon}
               title="隐私与脱敏"
-              sub="上传前自动抹掉身份证、手机号"
+              sub="原文不出设备，看看数据怎么流动"
             />
+          </Group>
+
+          {/*
+            退出做成两段式：先展开确认，再真正执行。
+            原因是这一行和「隐私与脱敏」挨着，单段式点一下就退，
+            老人在找设置时很容易误触 —— 而误触退出的代价是整屏被登录页替换。
+          */}
+          <Group title="账号">
+            {confirmLogout ? (
+              <div className="px-3.5 py-3">
+                <p className="text-sm font-medium text-gray-900">确定要退出登录吗？</p>
+                <p className="mt-0.5 text-2xs leading-relaxed text-gray-500">
+                  本机保存的病历与设置不会被删除，下次登录仍可查看。
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmLogout(false)}
+                    className="flex-1 rounded-lg border border-gray-300 bg-surface px-3 py-2 text-xs text-gray-700 transition-colors hover:border-gray-400"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      logout();
+                      navigate('/login', { replace: true });
+                    }}
+                    className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-700"
+                  >
+                    确认退出
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmLogout(true)}
+                className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-gray-50/70"
+              >
+                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-500">
+                  <LogoutIcon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-gray-900">退出登录</span>
+                  <span className="mt-0.5 block text-2xs leading-relaxed text-gray-500">
+                    退出后需重新登录才能查看健康档案
+                  </span>
+                </span>
+                <span className="shrink-0 text-2xs font-medium text-red-600">退出</span>
+              </button>
+            )}
           </Group>
 
           <p className="px-1 pt-4 text-2xs leading-relaxed text-gray-400">

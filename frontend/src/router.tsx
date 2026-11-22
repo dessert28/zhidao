@@ -13,6 +13,33 @@ import App from './App';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
 export const router = createBrowserRouter([
+  /*
+   * 登录 / 注册挂在根下、与 App 平级，而不是 App 的 children：
+   * 这两个页面是"还没进入系统"的状态，顶栏的五个导航项、字号/主题切换
+   * 对它毫无意义，套上去反而让人分不清自己是在登录还是在逛主界面。
+   * 用 lazy 与主应用保持一致的首屏体积策略。
+   */
+  {
+    path: '/login',
+    lazy: async () => {
+      const { default: LoginPage } = await import('./pages/LoginPage');
+      return { Component: LoginPage };
+    },
+  },
+  {
+    path: '/register',
+    lazy: async () => {
+      const { default: RegisterPage } = await import('./pages/RegisterPage');
+      return { Component: RegisterPage };
+    },
+  },
+  {
+    path: '/legal/:type',
+    lazy: async () => {
+      const { default: LegalPage } = await import('./pages/LegalPage');
+      return { Component: LegalPage };
+    },
+  },
   {
     path: '/',
     element: <App />,
@@ -94,6 +121,17 @@ export const router = createBrowserRouter([
       },
       {
         /*
+         * 隐私与脱敏：独立的说明页，不再把「隐私与脱敏」入口指到病历页。
+         * 挂在 App 下而非顶层：页内的「谁看过你的数据」要读登录态接口。
+         */
+        path: 'privacy',
+        lazy: async () => {
+          const { default: PrivacyPage } = await import('./pages/PrivacyPage');
+          return { Component: PrivacyPage };
+        },
+      },
+      {
+        /*
          * 健康管家。
          *
          * 单独一个页面而不是塞进病历页：病历页是"我上传过什么"，
@@ -128,6 +166,86 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { default: SettingsPage } = await import('./pages/SettingsPage');
           return { Component: SettingsPage };
+        },
+      },
+      {
+        /*
+         * 管理后台。
+         *
+         * 五个页面拆成五条平级路由而不是嵌套 + Outlet：
+         * 后台的「tab」是导航而不是布局层级 —— 每个页面都要独立
+         * 处理自己的加载/失败/空状态，套一层父路由只会多一个
+         * 什么都不干的 <Outlet/>。tab 本身由 AdminShell 渲染。
+         *
+         * 路由存在不代表能用：真正的门禁在后端 hasRole("ADMIN")，
+         * AdminShell 里的角色判断只是让患者别撞一脸 403。
+         */
+        path: 'admin',
+        lazy: async () => {
+          const { default: AdminDashboardPage } = await import('./pages/admin/AdminDashboardPage');
+          return { Component: AdminDashboardPage };
+        },
+      },
+      {
+        path: 'admin/users',
+        lazy: async () => {
+          const { default: AdminUsersPage } = await import('./pages/admin/AdminUsersPage');
+          return { Component: AdminUsersPage };
+        },
+      },
+      {
+        path: 'admin/hospitals',
+        lazy: async () => {
+          const { default: AdminHospitalsPage } = await import('./pages/admin/AdminHospitalsPage');
+          return { Component: AdminHospitalsPage };
+        },
+      },
+      {
+        path: 'admin/notices',
+        lazy: async () => {
+          const { default: AdminNoticesPage } = await import('./pages/admin/AdminNoticesPage');
+          return { Component: AdminNoticesPage };
+        },
+      },
+      {
+        path: 'admin/knowledge',
+        lazy: async () => {
+          const { default: AdminKnowledgePage } = await import('./pages/admin/AdminKnowledgePage');
+          return { Component: AdminKnowledgePage };
+        },
+      },
+      {
+        /*
+         * 医生工作台。和后台并列而不是子路由：医生不是管理员，
+         * 他能看的只有「患者授权范围内的资料」，和后台的写操作
+         * 是两套权限，混在一条路由树下会让守卫写成一团。
+         */
+        path: 'doctor',
+        lazy: async () => {
+          const { default: DoctorPage } = await import('./pages/DoctorPage');
+          return { Component: DoctorPage };
+        },
+      },
+      {
+        /*
+         * 预问诊摘要：后端契约已定但恒定 501。做成状态展示页而不是
+         * 画一个假的输入框，避免演示时让人以为能力已经做完。
+         */
+        path: 'doctor/brief',
+        lazy: async () => {
+          const { default: DoctorBriefPage } = await import('./pages/DoctorBriefPage');
+          return { Component: DoctorBriefPage };
+        },
+      },
+      {
+        /*
+         * 工作边界：把只读、检索范围、空值口径、权限落地收敛成一页。
+         * 医生看的是别人的病历，这些规则必须能被指着界面讲清楚。
+         */
+        path: 'doctor/policy',
+        lazy: async () => {
+          const { default: DoctorPolicyPage } = await import('./pages/DoctorPolicyPage');
+          return { Component: DoctorPolicyPage };
         },
       },
       {

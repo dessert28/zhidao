@@ -9,9 +9,10 @@
  * ------------------------------------------------------------------ */
 
 import { Hono, type Context } from 'hono';
-import type { AgentInput, SessionFacts, SymptomSlots } from '@shared/types/contract';
+import type { AgentInput, AgentName, SessionFacts, SymptomSlots } from '@shared/types/contract';
 import { sseHeaders, toSseStream, type OutboundEvent } from '../sse.js';
-import { makeSupervisor, routeByRules } from '../agents/supervisor.js';
+import { makeSupervisor, resolveMultiPlan, routeByRules } from '../agents/supervisor.js';
+import { collectParallel, type ParallelBranch } from '../agents/parallel.js';
 import { makeTriage, type TriageInputPayload } from '../agents/triage.js';
 import { makeReviewer, sanitizeAnswer, type ReviewInputPayload } from '../agents/reviewer.js';
 import { makeRetrieval } from '../agents/retrieval.js';
@@ -414,6 +415,15 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
       const continuingClarify = session.round > 0 && !switched;
 
       let decision: string;
+      /**
+       * Supervisor 计划里的完整子 Agent 列表。
+       *
+       * <p>原来 `multi` 会被压成 `agents[0]`，等于把"两条链路都要"
+       * 退化成只跑一条 —— 用户说「我头晕，帮我挂个神经内科的号」，
+       * 只会拿到分诊，挂号那半被静默丢掉。现在保留列表，交给
+       * `case 'multi'` 真正并行执行。
+       */
+      let plannedAgents: AgentName[] = [];
       if (continuingClarify) {
         // 仍然发一条 plan，让前端知道"正在继续采集"，但不问模型
         emit({
@@ -437,182 +447,283 @@ async function handleChat(c: Context, startedAt: number): Promise<Response> {
           });
           return;
         }
-        decision =
-          plan.payload.decision === 'multi'
-            ? // multi 时取第一个子 Agent；数组可能为空（模型给了 multi 但没给 agents），
-              // 这种退化情况按 triage 处理：宁可多问一句，不要答错
-              (plan.payload.agents[0] ?? 'triage')
-            : plan.payload.decision;
+        /*
+         * multi 不再压缩成单个 Agent。
+         *
+         * <p>supervisor 的契约里 `multi` 表示"确实需要两条链路"，
+         * 原实现取 `agents[0]` 只是让流程能跑通，实际丢掉了另一半需求。
+         * 现在保留 `multi` 与完整 agent 列表，由下面的 case 'multi'
+         * 并行执行；列表为空（模型给了 multi 却没给 agents）时
+         * 退回 triage —— 宁可多问一句，不要答错。
+         */
+        if (plan.payload.decision === 'multi') {
+          plannedAgents = plan.payload.agents;
+          decision = plannedAgents.length > 0 ? 'multi' : 'triage';
+        } else {
+          decision = plan.payload.decision;
+        }
       } else {
         // switched 分支已经发过 plan，直接进分诊
         decision = 'triage';
       }
 
-      /* ---------- 第 2 步：按决策分发 ---------- */
-      switch (decision) {
-        case 'triage': {
-          const triage = makeTriage(deps.triage);
-          const triageInput: TriageInputPayload = {
-            text: body.text,
-            // 用会话里累积的槽位，而不是请求里那份原样传一次 ——
-            // 后者在同一轮内部就不一致了
-            knownSlots: session.slots,
-            round: session.round,
-          };
-          const triageOut = await triage(baseInput(triageInput));
-          emitEvents(emit, triageOut.events);
+      /* ---------- 分支实现：事件写到传入的 sink ---------- */
 
-          /*
-           * 把本轮抽到的槽位并回会话。
-           *
-           * 这一步必须做，否则下一轮还是缺 —— 这是"问了又问"的直接原因。
-           *
-           * 但要过滤模型返回的**占位词**：实测模型会说「部位=未提及」
-           * 「时长=不详」「诱因=无」，如果不挡，系统就把这些当成已采集，
-           * 于是跳过那个槽位不再追问 —— 用户明明没说哪里不舒服，
-           * 系统却直接给科室了。这是比"重复追问"更危险的一类错误：
-           * 前者烦人，后者给错结论。
-           */
-          for (const [k, v] of Object.entries(triageOut.payload.collectedSymptoms ?? {})) {
-            if (typeof v !== 'string') continue;
-            const val = v.trim();
-            if (!val) continue;
-            if (isPlaceholderValue(val)) continue;
-            session.slots[k] = val;
-          }
+      /*
+       * ============ 为什么抽成 sink 而不是直接用 emit ============
+       *
+       * 单路执行时 sink 就是 emit，行为和原来完全一样。
+       * 但 multi 需要**同时**跑两条链路：如果各自直接 emit，
+       * 两边的 token 会在同一个 SSE 连接上交错到达 ——
+       * 前端是 append 式拼接正文，交错的后果是答案变成
+       * 「建议挂消化内科，空腹血糖升高要注意……依据是……」这种
+       * 两个人在抢话的文本。
+       *
+       * 所以 multi 给每条链路一个内存缓冲区，全部跑完再按
+       * triage → retrieval 的固定顺序 flush。顺序稳定，内容不串。
+       */
+      type Sink = (e: OutboundEvent) => void;
 
-          // 追问态：轮次 +1 再返回，让下一轮知道已经问过几次
-          if (triageOut.status === 'need_clarify') {
-            session.round += 1;
-            return;
-          }
-          if (triageOut.status === 'blocked') return;
+      async function runTriageBranch(sink: Sink): Promise<'ok' | 'clarify' | 'blocked'> {
+        const triage = makeTriage(deps.triage);
+        const triageInput: TriageInputPayload = {
+          text: body.text,
+          // 用会话里累积的槽位，而不是请求里那份原样传一次 ——
+          // 后者在同一轮内部就不一致了
+          knownSlots: session.slots,
+          round: session.round,
+        };
+        const triageOut = await triage(baseInput(triageInput));
+        emitEvents(sink, triageOut.events);
 
-          /* ---------- 第 3 步：Reviewer 审查分诊结果 ---------- */
-          const answer = summarizeTriage(triageOut.payload.departments);
-          emit({ type: 'token', text: answer });
-
-          const reviewer = makeReviewer(deps.reviewer);
-          const reviewInput: ReviewInputPayload = {
-            candidateAnswer: answer,
-            evidenceCount: triageOut.evidence.length,
-            lowScoreStreak: body.lowScoreStreak ?? 0,
-          };
-          const reviewOut = await reviewer(baseInput(reviewInput));
-          emitEvents(emit, reviewOut.events);
-
-          // 若 Reviewer 改写了答案，把安全版本补发出去
-          const safe = sanitizeAnswer(answer);
-          if (safe.answer !== answer && !safe.blocked) {
-            emit({ type: 'token', text: `\n\n（修订：${safe.answer}）` });
-          }
-
-          /*
-           * 分诊之后**接着查号源**，而不是让用户再说一句"帮我挂号"。
-           *
-           * 这是"像安诊儿那样能约"的关键一步：原来的链路是
-           *   分诊 → 给出科室 → 结束
-           * 用户想预约还得再问一遍，而且那句话往往被判成 schedule
-           * 才走得到预约分支。真实的导诊产品是"告诉你挂哪个科"
-           * 和"给你一个号"连在一起的。
-           *
-           * 边界没变：这里只产 booking_preview_card（预览），
-           * **下单仍然必须由用户点"确认挂号"**（POST /api/bookings）。
-           * AI 替人占号是不可回滚的操作，这条线不能松。
-           *
-           * 失败静默：号源服务挂了不该影响分诊结论 —— 用户至少
-           * 还知道该挂哪个科。所以这里不看返回状态，只把事件并进去；
-           * 真没号时 scheduler 自己会给 caveat。
-           */
-          const topDept = triageOut.payload.departments[0]?.name;
-          if (topDept) {
-            const scheduler = makeScheduler();
-            const schedOut = await scheduler(
-              baseInput({
-                text: body.text,
-                knownDepartment: topDept,
-                // 推荐科室一并带给预约卡：挂号页据此给出"可切换但仅限推荐"
-                // 的科室范围，用户能在心血管内科/消化内科之间换，
-                // 但不能换成推荐之外的科 —— 换了就等于绕过分诊。
-                departmentOptions: triageOut.payload.departments.map((d) => d.name),
-              }),
-            );
-            emitEvents(emit, schedOut.events);
-          }
-          return;
+        /*
+         * 把本轮抽到的槽位并回会话。
+         *
+         * 这一步必须做，否则下一轮还是缺 —— 这是"问了又问"的直接原因。
+         *
+         * 但要过滤模型返回的**占位词**：实测模型会说「部位=未提及」
+         * 「时长=不详」「诱因=无」，如果不挡，系统就把这些当成已采集，
+         * 于是跳过那个槽位不再追问 —— 用户明明没说哪里不舒服，
+         * 系统却直接给科室了。这是比"重复追问"更危险的一类错误：
+         * 前者烦人，后者给错结论。
+         */
+        for (const [k, v] of Object.entries(triageOut.payload.collectedSymptoms ?? {})) {
+          if (typeof v !== 'string') continue;
+          const val = v.trim();
+          if (!val) continue;
+          if (isPlaceholderValue(val)) continue;
+          session.slots[k] = val;
         }
 
-        case 'retrieve': {
-          const retrieval = makeRetrieval();
-          const out = await retrieval(baseInput({ text: body.text }));
+        // 追问态：轮次 +1 再返回，让下一轮知道已经问过几次
+        if (triageOut.status === 'need_clarify') {
+          session.round += 1;
+          return 'clarify';
+        }
+        if (triageOut.status === 'blocked') return 'blocked';
 
-          emitEvents(emit, out.events);
+        /* ---------- 第 3 步：Reviewer 审查分诊结果 ---------- */
+        const answer = summarizeTriage(triageOut.payload.departments);
+        sink({ type: 'token', text: answer });
 
-          const p = out.payload;
+        const reviewer = makeReviewer(deps.reviewer);
+        const reviewInput: ReviewInputPayload = {
+          candidateAnswer: answer,
+          evidenceCount: triageOut.evidence.length,
+          lowScoreStreak: body.lowScoreStreak ?? 0,
+        };
+        const reviewOut = await reviewer(baseInput(reviewInput));
+        emitEvents(sink, reviewOut.events);
 
-          // 无证据：如实说，不拿"一般性建议"糊过去
-          if (out.status !== 'ok' || p.sources.length === 0) {
-            emit({
-              type: 'token',
-              text: '这个问题我没在资料库里找到可靠依据。可以换个说法再问一次，或者直接咨询医生。',
-            });
-            return;
-          }
-
-          emit({ type: 'token', text: p.answer });
-
-          // 检索到的答案同样要过 Reviewer —— 有引用不代表内容一定安全
-          const reviewer = makeReviewer(deps.reviewer);
-          const reviewed = await reviewer(
-            baseInput<ReviewInputPayload>({
-              candidateAnswer: p.answer,
-              evidenceCount: p.sources.length,
-              lowScoreStreak: body.lowScoreStreak ?? 0,
-            }),
-          );
-
-          emitEvents(emit, reviewed.events);
-
-          if (reviewed.status === 'blocked') {
-            emit({
-              type: 'token',
-              text: '这段内容涉及用药细节，超出本系统的能力范围。请直接咨询医生或药师。',
-            });
-          }
-          return;
+        // 若 Reviewer 改写了答案，把安全版本补发出去
+        const safe = sanitizeAnswer(answer);
+        if (safe.answer !== answer && !safe.blocked) {
+          sink({ type: 'token', text: `\n\n（修订：${safe.answer}）` });
         }
 
-        case 'schedule': {
-          /*
-           * 号源查询与预约预览。
-           *
-           * 只给预览，**不直接下单** —— 挂号是有后果的操作（占号、影响别人），
-           * AI 未经用户确认就下单，出错后无法回滚到"用户没同意"。
-           * 确认动作留给前端调 POST /api/bookings。
-           */
+        /*
+         * 分诊之后**接着查号源**，而不是让用户再说一句"帮我挂号"。
+         *
+         * 这是"像安诊儿那样能约"的关键一步：原来的链路是
+         *   分诊 → 给出科室 → 结束
+         * 用户想预约还得再问一遍，而且那句话往往被判成 schedule
+         * 才走得到预约分支。真实的导诊产品是"告诉你挂哪个科"
+         * 和"给你一个号"连在一起的。
+         *
+         * 边界没变：这里只产 booking_preview_card（预览），
+         * **下单仍然必须由用户点"确认挂号"**（POST /api/bookings）。
+         * AI 替人占号是不可回滚的操作，这条线不能松。
+         *
+         * 失败静默：号源服务挂了不该影响分诊结论 —— 用户至少
+         * 还知道该挂哪个科。所以这里不看返回状态，只把事件并进去；
+         * 真没号时 scheduler 自己会给 caveat。
+         */
+        const topDept = triageOut.payload.departments[0]?.name;
+        if (topDept) {
           const scheduler = makeScheduler();
           const schedOut = await scheduler(
             baseInput({
               text: body.text,
-              // 分诊已经确定的科室可以作为兜底：用户先说"头晕"、再说"帮我挂个号"
-              knownDepartment: session.slots['科室'],
+              knownDepartment: topDept,
+              // 推荐科室一并带给预约卡：挂号页据此给出"可切换但仅限推荐"
+              // 的科室范围，用户能在心血管内科/消化内科之间换，
+              // 但不能换成推荐之外的科 —— 换了就等于绕过分诊。
+              departmentOptions: triageOut.payload.departments.map((d) => d.name),
             }),
           );
-          emitEvents(emit, schedOut.events);
+          emitEvents(sink, schedOut.events);
+        }
+        return 'ok';
+      }
 
-          if (schedOut.status === 'failed') {
-            emit({
-              type: 'token',
-              text: '号源查询暂时用不了。可以先把症状告诉我，我帮你确认该挂哪个科。',
+      async function runRetrievalBranch(sink: Sink): Promise<void> {
+        const retrieval = makeRetrieval();
+        const out = await retrieval(baseInput({ text: body.text }));
+
+        emitEvents(sink, out.events);
+
+        const p = out.payload;
+
+        // 无证据：如实说，不拿"一般性建议"糊过去
+        if (out.status !== 'ok' || p.sources.length === 0) {
+          sink({
+            type: 'token',
+            text: '这个问题我没在资料库里找到可靠依据。可以换个说法再问一次，或者直接咨询医生。',
+          });
+          return;
+        }
+
+        sink({ type: 'token', text: p.answer });
+
+        // 检索到的答案同样要过 Reviewer —— 有引用不代表内容一定安全
+        const reviewer = makeReviewer(deps.reviewer);
+        const reviewed = await reviewer(
+          baseInput<ReviewInputPayload>({
+            candidateAnswer: p.answer,
+            evidenceCount: p.sources.length,
+            lowScoreStreak: body.lowScoreStreak ?? 0,
+          }),
+        );
+
+        emitEvents(sink, reviewed.events);
+
+        if (reviewed.status === 'blocked') {
+          sink({
+            type: 'token',
+            text: '这段内容涉及用药细节，超出本系统的能力范围。请直接咨询医生或药师。',
+          });
+        }
+      }
+
+      async function runScheduleBranch(sink: Sink, knownDepartment?: string): Promise<void> {
+        /*
+         * 号源查询与预约预览。
+         *
+         * 只给预览，**不直接下单** —— 挂号是有后果的操作（占号、影响别人），
+         * AI 未经用户确认就下单，出错后无法回滚到"用户没同意"。
+         * 确认动作留给前端调 POST /api/bookings。
+         */
+        const scheduler = makeScheduler();
+        const schedOut = await scheduler(
+          baseInput({
+            text: body.text,
+            // 分诊已经确定的科室可以作为兜底：用户先说"头晕"、再说"帮我挂个号"
+            knownDepartment,
+          }),
+        );
+        emitEvents(sink, schedOut.events);
+
+        if (schedOut.status === 'failed') {
+          sink({
+            type: 'token',
+            text: '号源查询暂时用不了。可以先把症状告诉我，我帮你确认该挂哪个科。',
+          });
+        } else if (schedOut.payload.action === 'preview_booking' && schedOut.payload.preview) {
+          const p = schedOut.payload.preview;
+          sink({
+            type: 'token',
+            // 措辞对齐新流程：对话里只给「去挂号」，不在这里直接下单。
+            // 说"确认挂号"会让用户以为点一下号就占上了。
+            text: `${p.hospital}${p.department}最近可预约时段：${p.slot.slice(5, 10)} ${p.slot.slice(11, 16)}（${p.doctor}）。点下方「去挂号」可以挑别的时段或换院区，也可以直接到院自助机取号。`,
+          });
+        }
+      }
+
+      /* ---------- 第 2 步：按决策分发 ---------- */
+      switch (decision) {
+        case 'triage': {
+          await runTriageBranch(emit);
+          return;
+        }
+
+        case 'retrieve': {
+          await runRetrievalBranch(emit);
+          return;
+        }
+
+        case 'schedule': {
+          await runScheduleBranch(emit, session.slots['科室']);
+          return;
+        }
+
+        /*
+         * ============ multi：真并行 ============
+         *
+         * supervisor 的契约里 multi 表示"确实需要两条链路"
+         * （比如「我头晕，帮我挂个神经内科的号」）。
+         * 原实现只取 agents[0]，另一半需求被静默丢掉。
+         *
+         * 现在把互不依赖的链路并发跑：
+         *   · triage 与 retrieval 的输入都只有 text，彼此无依赖 → 并发
+         *   · scheduler 依赖 triage 得出的科室 → 不并发，且
+         *     triage 分支内部已经会查号源，这里只在没跑 triage 时补
+         *
+         * 事件先各自缓冲、跑完按固定顺序 flush：前端 append 式渲染，
+         * 交错下发会让正文变成两条回答混在一起。
+         */
+        case 'multi': {
+          const branch = resolveMultiPlan(plannedAgents);
+
+          // 过滤后没有任何可用链路（模型只给了 reviewer 之类）：
+          // 退回分诊，宁可多问一句
+          if (!branch.triage && !branch.retrieval && !branch.scheduleAlone) {
+            await runTriageBranch(emit);
+            return;
+          }
+
+          const branches: Array<ParallelBranch<OutboundEvent>> = [];
+          if (branch.triage) {
+            branches.push({
+              key: 'triage',
+              run: (sink) => runTriageBranch(sink),
             });
-          } else if (schedOut.payload.action === 'preview_booking' && schedOut.payload.preview) {
-            const p = schedOut.payload.preview;
-            emit({
-              type: 'token',
-              // 措辞对齐新流程：对话里只给「去挂号」，不在这里直接下单。
-              // 说"确认挂号"会让用户以为点一下号就占上了。
-              text: `${p.hospital}${p.department}最近可预约时段：${p.slot.slice(5, 10)} ${p.slot.slice(11, 16)}（${p.doctor}）。点下方「去挂号」可以挑别的时段或换院区，也可以直接到院自助机取号。`,
+          }
+          if (branch.retrieval) {
+            branches.push({
+              key: 'retrieval',
+              run: (sink) => runRetrievalBranch(sink),
             });
+          }
+
+          const { buffers, results } = await collectParallel(branches);
+
+          // 定序下发：分诊在前（含科室与可能出现的追问），检索在后
+          for (const e of buffers.get('triage') ?? []) emit(e);
+
+          /*
+           * 分诊被安全策略拦截（blocked）时丢掉检索结果：
+           * 这一轮的结论是"不建议继续"，再补一段知识回答会让
+           * 用户以为系统没听懂拦截，反而更危险。
+           *
+           * 追问态（clarify）不同 —— 检索回答的是用户**另问的一件事**，
+           * 丢弃等于白跑一次模型；保留它，用户既能补症状也能拿到答案。
+           */
+          if (!results.includes('blocked')) {
+            for (const e of buffers.get('retrieval') ?? []) emit(e);
+          }
+
+          if (branch.scheduleAlone) {
+            await runScheduleBranch(emit, session.slots['科室']);
           }
           return;
         }

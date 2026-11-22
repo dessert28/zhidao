@@ -42,6 +42,12 @@ export type BackendResult<T> =
   | { ok: true; data: T }
   | { ok: false; failure: BackendFailure };
 
+/** 把失败原因转成可展示的话。unauthorized 分支没有 message，不能直接用 r.failure.message */
+export function failureMessage(f: BackendFailure): string {
+  if (f.kind === 'unauthorized') return '登录已失效，请重新登录';
+  return f.message;
+}
+
 export interface MedicalRecord {
   id: number;
   hospitalCode: string;
@@ -134,6 +140,19 @@ export interface BookingOrder {
 
 const TOKEN_KEY = 'zhidao:token';
 
+/**
+ * 用户主动退出标记。
+ *
+ * <p>为什么不能只删 token：项目里有 {@link ensureLogin}，各页面拿不到数据
+ * 就会用演示账号自动登一次。只删 token 的话，退出后跳回首页的瞬间就被
+ * 悄悄登回去了 —— 用户会以为"退出"按钮是坏的。
+ *
+ * <p>这个标记表达的是"用户明确选择不登录"，只有再次登录/注册，或显式点
+ * 登录页的「先逛逛」才会清除。放在 sessionStorage：关掉标签页后标记消失，
+ * 下次打开仍是熟悉的自动登录体验。
+ */
+const SIGNED_OUT_KEY = 'zhidao:signed-out';
+
 export function getToken(): string | null {
   try {
     return sessionStorage.getItem(TOKEN_KEY);
@@ -166,6 +185,46 @@ export function clearToken(): void {
     /* ignore */
   }
   memoryToken = null;
+}
+
+/** 是否为「用户主动退出」状态。主应用外壳据此把人送回登录页。 */
+export function isSignedOut(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNED_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** 登录/注册成功，或用户选择「先逛逛」时，解除退出状态 */
+export function clearSignedOut(): void {
+  try {
+    sessionStorage.removeItem(SIGNED_OUT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 退出登录：丢弃 token，并阻止 ensureLogin 自动把人登回去。
+ *
+ * <p>后端 JWT 是无状态的，服务端没有会话可注销 —— 所以这里的工作就是
+ * 丢弃客户端凭证。token 只存于本次会话，关标签页即失效。
+ */
+export function logout(): void {
+  clearToken();
+  // 角色也要清掉：不清的话，管理员退出后用患者账号登录，
+  // 顶栏仍按 ADMIN 渲染，点进去只会收获一串 403
+  try {
+    sessionStorage.removeItem(ROLE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    sessionStorage.setItem(SIGNED_OUT_KEY, '1');
+  } catch {
+    /* ignore */
+  }
 }
 
 /* ============================ 底层请求 ============================ */
@@ -241,16 +300,75 @@ async function safeJson<T>(res: Response): Promise<T | null> {
  * <p>演示账号 demo / demo1234 是种子数据，不是密钥 —— 它就写在
  * README 与 data.sql 注释里，目的是让评委不用注册就能看功能。
  */
+export interface AuthPayload {
+  token: string;
+  userId: number;
+  username: string;
+  role: string;
+  /** 秒。客户端时钟不可信，由它换算倒计时 */
+  expiresIn: number;
+}
+
 export async function login(
   username = 'demo',
   password = 'demo1234',
-): Promise<BackendResult<{ token: string; username: string }>> {
-  const r = await request<{ token: string; username: string }>('/api/auth/login', {
+): Promise<BackendResult<AuthPayload>> {
+  const r = await request<AuthPayload>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   });
-  if (r.ok) setToken(r.data.token);
+  if (r.ok) {
+    setToken(r.data.token);
+    setRole(r.data.role);
+    clearSignedOut();
+  }
   return r;
+}
+
+/**
+ * 注册。手机号即登录名，后端注册成功后直接签发 token —— 注册即登录，
+ * 前端拿到 token 后就不用再跳一次登录页。
+ */
+export async function register(
+  name: string,
+  phone: string,
+  password: string,
+): Promise<BackendResult<AuthPayload>> {
+  const r = await request<AuthPayload>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, phone, password, agreed: true }),
+  });
+  if (r.ok) {
+    setToken(r.data.token);
+    setRole(r.data.role ?? 'PATIENT');
+    clearSignedOut();
+  }
+  return r;
+}
+
+/* ============================ 协议 ============================ */
+
+export interface AgreementLinkData {
+  id: 'terms' | 'privacy';
+  label: string;
+  href: string;
+}
+
+export interface AgreementDocumentData {
+  id: 'terms' | 'privacy';
+  title: string;
+  updatedAt: string;
+  sections: Array<{ heading: string; body: string }>;
+}
+
+/** 协议链接列表（公开接口，未登录可读） */
+export function getAgreementLinks() {
+  return request<AgreementLinkData[]>('/api/agreements');
+}
+
+/** 协议正文（公开接口） */
+export function getAgreementDocument(id: 'terms' | 'privacy') {
+  return request<AgreementDocumentData>(`/api/agreements/${id}`);
 }
 
 /** 确保已登录：没有 token 就自动用演示账号登一次 */
@@ -262,6 +380,8 @@ export async function login(
 let pendingLogin: Promise<BackendResult<true>> | null = null;
 
 export async function ensureLogin(): Promise<BackendResult<true>> {
+  // 用户主动退出后不能再自动登回去，否则「退出」按钮等于没生效
+  if (isSignedOut()) return { ok: false, failure: { kind: 'unauthorized' } };
   if (currentToken()) return { ok: true, data: true };
   pendingLogin ??= (async () => {
     const r = await login();
@@ -727,4 +847,311 @@ export function shortDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/* ================================================================
+ * 角色
+ *
+ * 后端 JWT 里带 role 声明，登录响应也把它一起给前端。这里存一份，
+ * 只用于**决定显示哪个入口**（管理员登录后落到后台、医生落到工作台）。
+ *
+ * 为什么这不算「前端做权限控制」：它只影响导航，不构成安全边界。
+ * 真正的边界在 SecurityConfig 的 hasRole("ADMIN")，
+ * 前端即使被改也打不到接口。这一层存在的唯一理由是
+ * 「管理员登录后不该先看到患者首页再自己去找后台」。
+ * ================================================================ */
+
+const ROLE_KEY = 'zhidao:role';
+
+function setRole(role: string): void {
+  try {
+    sessionStorage.setItem(ROLE_KEY, role);
+  } catch {
+    /* 隐私模式下存不了，降级成 PATIENT：少个入口，不会多权限 */
+  }
+}
+
+/** 当前角色。读不到时按 PATIENT 处理 —— 默认值必须是权限最小的那个 */
+export function currentRole(): string {
+  try {
+    return sessionStorage.getItem(ROLE_KEY) ?? 'PATIENT';
+  } catch {
+    return 'PATIENT';
+  }
+}
+
+/** 角色 → 中文名。未知角色原样返回，便于发现后端新增了角色而前端没跟上 */
+export function roleLabel(role: string): string {
+  if (role === 'ADMIN') return '管理员';
+  if (role === 'DOCTOR') return '医生';
+  if (role === 'PATIENT') return '患者';
+  return role;
+}
+
+/* ================================================================
+ * 管理端 / 医生端
+ *
+ * 这两组接口与患者端**共用同一个 request()**，token 走同一处。
+ * 不另开一套客户端的原因：一旦分成两套，超时、401 处理、
+ * 后端不可达的提示就会慢慢分叉，最后变成两套不同的错误话术。
+ * ================================================================ */
+
+/** 分页结构，与后端 common/PageResult 对齐 */
+export interface PageData<T> {
+  records: T[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  displayName?: string | null;
+  role: string;
+  enabled: boolean;
+  createdAt?: string | null;
+}
+
+export interface AdminHospital {
+  hospitalCode: string;
+  name: string;
+  level?: string | null;
+  city?: string | null;
+  adapterType?: string | null;
+  enabled: boolean;
+  /** 院内地点数。列表页用它说明「这个院区配了几条导航」 */
+  placeCount?: number;
+}
+
+export interface AdminPlace {
+  id: number;
+  hospitalCode?: string;
+  placeType: string;
+  department?: string | null;
+  name: string;
+  building?: string | null;
+  floor?: string | null;
+  directions?: string | null;
+  openHours?: string | null;
+  estMinutes?: number | null;
+  sortOrder?: number | null;
+  dataQuality?: string | null;
+}
+
+export interface AdminStatsOverview {
+  userCount: number;
+  patientCount: number;
+  doctorCount: number;
+  adminCount: number;
+  hospitalCount: number;
+  placeCount: number;
+  bookingCount: number;
+  recordCount: number;
+  noticeCount: number;
+  todayBookingCount: number;
+}
+
+export interface StatPoint {
+  name: string;
+  value: number;
+}
+
+export interface TrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface Notice {
+  id: number;
+  title: string;
+  content: string;
+  /** INFO / WARN / URGENT，决定患者端公告条的强调色 */
+  level: string;
+  pinned: boolean;
+  /** PUBLISHED / DRAFT */
+  status: string;
+  publishedAt?: string | null;
+  createdAt?: string | null;
+}
+
+/* ---------------- 用户管理 ---------------- */
+
+export function listAdminUsers(params: {
+  keyword?: string;
+  role?: string;
+  page?: number;
+  size?: number;
+} = {}) {
+  const q = new URLSearchParams();
+  if (params.keyword) q.set('keyword', params.keyword);
+  if (params.role) q.set('role', params.role);
+  q.set('page', String(params.page ?? 1));
+  q.set('size', String(params.size ?? 20));
+  return request<PageData<AdminUser>>(`/api/admin/users?${q.toString()}`);
+}
+
+export function createAdminUser(input: {
+  username: string;
+  displayName?: string;
+  password: string;
+  role: string;
+}) {
+  return request<{ id: number }>('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAdminUser(
+  id: number,
+  patch: { role?: string; enabled?: boolean; displayName?: string },
+) {
+  return request<null>(`/api/admin/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteAdminUser(id: number) {
+  return request<null>(`/api/admin/users/${id}`, { method: 'DELETE' });
+}
+
+/* ---------------- 院区 / 科室 ---------------- */
+
+export function listAdminHospitals(params: { keyword?: string; page?: number; size?: number } = {}) {
+  const q = new URLSearchParams();
+  if (params.keyword) q.set('keyword', params.keyword);
+  q.set('page', String(params.page ?? 1));
+  q.set('size', String(params.size ?? 20));
+  return request<PageData<AdminHospital>>(`/api/admin/hospitals?${q.toString()}`);
+}
+
+export function saveAdminHospital(input: AdminHospital, isNew: boolean) {
+  return isNew
+    ? request<null>('/api/admin/hospitals', { method: 'POST', body: JSON.stringify(input) })
+    : request<null>(`/api/admin/hospitals/${encodeURIComponent(input.hospitalCode)}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      });
+}
+
+export function deleteAdminHospital(code: string) {
+  return request<null>(`/api/admin/hospitals/${encodeURIComponent(code)}`, { method: 'DELETE' });
+}
+
+export function listPlaces(code: string) {
+  return request<AdminPlace[]>(`/api/admin/hospitals/${encodeURIComponent(code)}/places`);
+}
+
+export function createPlace(code: string, input: Omit<AdminPlace, 'id'>) {
+  return request<{ id: number }>(`/api/admin/hospitals/${encodeURIComponent(code)}/places`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePlace(id: number) {
+  return request<null>(`/api/admin/places/${id}`, { method: 'DELETE' });
+}
+
+/* ---------------- 统计 ---------------- */
+
+/**
+ * 统计接口的院区参数。
+ *
+ * <p>空值一律**不拼参数**，而不是拼 `?hospitalCode=`：后端虽然会把空串
+ * 归一成全院，但少发一个参数能少一条"空串到底算不算筛选"的歧义。
+ */
+function scopeQuery(hospitalCode?: string): string {
+  return hospitalCode ? `?hospitalCode=${encodeURIComponent(hospitalCode)}` : '';
+}
+
+/** 概览。hospitalCode 省略 = 全部院区汇总 */
+export function getAdminOverview(hospitalCode?: string) {
+  return request<AdminStatsOverview>(`/api/admin/stats/overview${scopeQuery(hospitalCode)}`);
+}
+
+export function getBookingTrend(days = 14, hospitalCode?: string) {
+  const scope = hospitalCode ? `&hospitalCode=${encodeURIComponent(hospitalCode)}` : '';
+  return request<TrendPoint[]>(`/api/admin/stats/bookings-trend?days=${days}${scope}`);
+}
+
+export function getDepartmentStats(hospitalCode?: string) {
+  return request<StatPoint[]>(`/api/admin/stats/departments${scopeQuery(hospitalCode)}`);
+}
+
+/**
+ * 角色分布不接受院区参数：`sys_user` 没有院区字段，管理员/医生不归属院区。
+ * 传了也是全院数字，所以干脆不提供这个入口，避免前端误以为筛选生效。
+ */
+export function getRoleStats() {
+  return request<StatPoint[]>('/api/admin/stats/roles');
+}
+
+/* ---------------- 公告 ---------------- */
+
+export function listAdminNotices(params: { page?: number; size?: number } = {}) {
+  const q = new URLSearchParams();
+  q.set('page', String(params.page ?? 1));
+  q.set('size', String(params.size ?? 20));
+  return request<PageData<Notice>>(`/api/admin/notices?${q.toString()}`);
+}
+
+export function saveAdminNotice(input: Omit<Notice, 'id' | 'createdAt' | 'publishedAt'>, id?: number) {
+  return id
+    ? request<null>(`/api/admin/notices/${id}`, { method: 'PUT', body: JSON.stringify(input) })
+    : request<null>('/api/admin/notices', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deleteAdminNotice(id: number) {
+  return request<null>(`/api/admin/notices/${id}`, { method: 'DELETE' });
+}
+
+/** 患者端：已发布公告（首页公告条用）。拉不到就当没有公告，不阻塞首页 */
+export function getNotices(limit = 3) {
+  return request<Notice[]>(`/api/notices?limit=${limit}`);
+}
+
+/* ---------------- 医生工作台 ---------------- */
+
+export interface DoctorPatientRow {
+  userId: number;
+  displayName?: string | null;
+  gender?: string | null;
+  age?: number | null;
+  allergies: string[];
+  chronics: string[];
+  medications: string[];
+  recordCount: number;
+  bookingCount: number;
+  lastVisitDate?: string | null;
+}
+
+export interface DoctorPatientDetail extends DoctorPatientRow {
+  records: Array<{
+    id: number;
+    visitDate: string;
+    hospitalCode: string;
+    department?: string | null;
+    diagnosisBrief?: string | null;
+  }>;
+  bookings: Array<{
+    id: number;
+    visitTime: string;
+    department?: string | null;
+    status: string;
+  }>;
+}
+
+export function listDoctorPatients(params: { keyword?: string; page?: number; size?: number } = {}) {
+  const q = new URLSearchParams();
+  if (params.keyword) q.set('keyword', params.keyword);
+  q.set('page', String(params.page ?? 1));
+  q.set('size', String(params.size ?? 20));
+  return request<PageData<DoctorPatientRow>>(`/api/doctor/patients?${q.toString()}`);
+}
+
+export function getDoctorPatientDetail(userId: number) {
+  return request<DoctorPatientDetail>(`/api/doctor/patients/${userId}`);
 }

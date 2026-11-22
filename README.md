@@ -57,8 +57,18 @@ pnpm install
 pnpm dev                 # http://localhost:5173
 
 cd ../backend            # 可选：需要病历与预约页时再起
-mvn spring-boot:run      # http://localhost:8080，演示账号 demo / demo1234
+mvn spring-boot:run      # http://localhost:8080
 ```
+
+登录页有三个演示账号（密码都是 `demo1234`），对应三种角色：
+
+| 账号 | 角色 | 登录后落到 | 能做什么 |
+| --- | --- | --- | --- |
+| `demo` | 患者 | 首页 | 智能分诊、病历、预约、健康管家 —— 全部患者功能 |
+| `doctor` | 医生 | `/doctor` 医生工作台 | 按姓名/手机号检索患者、看过敏史与在用药、就诊与预约记录（只读） |
+| `admin` | 管理员 | `/admin` 管理后台 | 用户与角色、院区与院内地点、院内公告的增删改查，以及预约趋势/科室分布/角色分布三类图表 |
+
+三个账号的差异**不只是界面**：后端 `SecurityConfig` 里 `/api/admin/**` 要求 `ROLE_ADMIN`、`/api/doctor/patients/**` 要求 `ROLE_DOCTOR`，患者账号直接打这两个前缀会拿到 403。前端隐藏入口只是体验，边界在服务端。
 
 ### 三个"第一次跑"的提醒
 
@@ -212,7 +222,7 @@ cd frontend && pnpm verify:all      # lint → tsc → 单测 → 生产构建
 
 | 接口 | 结果 |
 | --- | --- |
-| `POST /api/auth/login` | 200 + JWT（`demo` / `demo1234`） |
+| `POST /api/auth/login` | 200 + JWT（`demo`/`doctor`/`admin`，密码均 `demo1234`，`role` 声明分别是 PATIENT/DOCTOR/ADMIN） |
 | `GET /api/patient/records` | 200，10 条跨院记录，按 `Z2-JFL`（7 条）/ `Z2-BJ`（3 条）分组 |
 | `GET /api/bookings/slots` | 同一科室在两家院区号源数不同（换院区才有意义） |
 | `POST /api/bookings` | 院方成功才落库；同号重复下单 409 |
@@ -311,7 +321,8 @@ cd frontend && pnpm verify:all      # lint → tsc → 单测 → 生产构建
 | 出错态 / 并发态 UI | ⚠️ 部分 | 后端已给出 409 语义（重复下单、状态冲突），前端预约卡有对应提示；但**按钮连点防护、断网重连、版本不一致**这几类没有专门设计 |
 | 视频模态 | ⏳ 待开发 | 导诊场景边际价值低于图像+语音，成本显著更高，排在后续版本 |
 | 多实例部署 | ⚠️ 单实例 | 对话历史已落库（`chat_message`）；号源锁是进程内锁、限流是单实例内存，多实例需换 Redis / 分布式锁，并处理提醒引擎 `@Scheduled` 的重复扫描 |
-| 管理端/权限矩阵 | ⏳ 待开发 | 患者端是主线；管理端排在后续版本 |
+| 管理端/权限矩阵 | ✅ **2026-11-22 已实现** | 三种角色（PATIENT / DOCTOR / ADMIN）+ 管理端 5 页（概览 / 用户 / 院区科室 / 公告 / 知识库占位）+ 医生工作台。权限由 `SecurityConfig` 的 `hasRole("ADMIN")` / `hasAnyRole("DOCTOR","ADMIN")` 兜底，前端隐藏入口只是体验层 |
+| 管理端统计口径 | ⚠️ **院区筛选是展示口径，不是数据权限** | `/api/admin/stats/*` 支持 `hospitalCode`：预约/病历/院内地点按院区收敛，**用户与公告始终全院**（`sys_user`、`sys_notice` 无院区字段）。院区级数据权限（管理员归属某院区）未做，需要 `sys_admin_hospital` 关联表 + 数据层拦截 |
 | MySQL profile 覆盖不全 | ⚠️ 仅基础表 | `schema-mysql.sql` 只建 7 张基础表；对话历史、到院进度、院方凭据、调阅审计共 7 张表**没有 MySQL 版本**。省赛默认 H2 不受影响，上线前需补 DDL（见 `docs/14` §4.3） |
 | 单元测试覆盖率 | ⚠️ 不设门槛 | 共 **922 个用例**（**917 通过 / 5 跳过**：前端 798 通过 + 5 跳过、后端 119 通过），重点覆盖红线规则、四维自审降级、LLM 降级、多轮会话、语音/TTS 降级、提醒引擎幂等、接口状态码。另有 E2E 三套脚本（多轮 7 场景 / 缺陷回归 9 项 / 生产构建 13 项） |
 

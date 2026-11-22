@@ -23,8 +23,9 @@
  * ------------------------------------------------------------------ */
 
 import { Suspense } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Logo from './components/ui/Logo';
+import { currentRole, isSignedOut } from './lib/api';
 import { GearIcon, MoonIcon, SunIcon, TypeIcon } from './components/ui/icons';
 import { TEXT_SCALE_OPTIONS } from './hooks/useTextScale';
 import { UiPrefsProvider, useUiPrefs } from './hooks/ui-prefs';
@@ -50,7 +51,7 @@ const NAV = [
  * <p>在这几页时顶栏要让「我的」保持选中 —— 否则用户点进病历页后
  * 顶栏 five 项全是灰的，会以为自己走到了导航之外。
  */
-const MINE_CHILDREN = ['/mine', '/health', '/records', '/summary', '/settings'] as const;
+const MINE_CHILDREN = ['/mine', '/health', '/records', '/privacy', '/summary', '/settings'] as const;
 
 function isActive(pathname: string, to: string): boolean {
   if (to === '/mine') return MINE_CHILDREN.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -75,6 +76,51 @@ function AppShell() {
   const { pathname } = useLocation();
   const { scale, setScale, resolvedTheme: resolved, themeMode: mode, toggleTheme: toggle } =
     useUiPrefs();
+
+  /*
+   * 退出后的兜底守卫。
+   * 「我的」页退出时会主动 navigate('/login')，这一层是给"后退按钮回到
+   * 主应用"和"直接输入地址"准备的：只要用户明确退出了，就不能再被
+   * ensureLogin 悄悄登回去。登录/注册/协议页是 App 的兄弟路由，不受影响。
+   */
+  if (isSignedOut()) return <Navigate to="/login" replace />;
+
+  /*
+   * 按角色决定首页落在哪。
+   *
+   * 管理员登录后停在患者首页是错的体验：他会先看到"今天要吃什么药"，
+   * 然后自己去顶栏找一个不存在的后台入口。医生的同理。
+   *
+   * 这一层不是权限：改前端只能改自己看到什么，改不了接口能返回什么。
+   * 工作台里已经没有"回患者端"的链接（两个 Shell 的品牌区各自回本端
+   * 首页），所以这里不需要任何绕过标记 —— 唯一的例外是"我的"页里
+   * 明确点角色入口时，本来就是去 /admin 或 /doctor，不经过 "/"。
+   */
+  const role = currentRole();
+  if (role === 'ADMIN' && pathname === '/') {
+    return <Navigate to="/admin" replace />;
+  }
+  if (role === 'DOCTOR' && pathname === '/') {
+    return <Navigate to="/doctor" replace />;
+  }
+
+  /*
+   * 工作台（管理端 / 医生端）不套患者端外壳。
+   *
+   * 患者端是 672px 单列流，服务于"焦虑状态下看一屏"；后台要的是
+   * 宽表格、并排图表、侧栏导航。共用一个 <main> 的宽度上限，
+   * 等于让后台永远活在手机宽度里 —— 这里直接交出去，由各自的
+   * Shell 决定骨架。
+   */
+  if (pathname.startsWith('/admin') || pathname.startsWith('/doctor')) {
+    return (
+      <Suspense
+        fallback={<div className="py-20 text-center text-sm text-gray-400">载入中…</div>}
+      >
+        <Outlet />
+      </Suspense>
+    );
+  }
 
   /*
    * 单按钮循环切档。

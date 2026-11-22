@@ -236,3 +236,66 @@ export function SendIcon(p: IconProps) {
     </Icon>
   );
 }
+
+/* ---------------- 登录 / 注册 ---------------- */
+
+/** 手机号 */
+export function PhoneIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <rect x="6" y="2" width="12" height="20" rx="2.5" />
+      <path d="M10 18h4" />
+    </Icon>
+  );
+}
+
+/** 用户 */
+export function UserIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </Icon>
+  );
+}
+
+/** 睁眼：密码可见 */
+export function EyeIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </Icon>
+  );
+}
+
+/** 闭眼：密码隐藏 */
+export function EyeOffIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 6.1A10.6 10.6 0 0 1 12 6c6.4 0 10 6 10 6a16 16 0 0 1-3.3 3.8M6.2 7.7A16 16 0 0 0 2 12s3.6 6 10 6a9.7 9.7 0 0 0 4-.8" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </Icon>
+  );
+}
+
+/** 勾选：注册协议 */
+export function CheckIcon(p: IconProps) {
+  return (
+    <Icon strokeWidth={2.4} {...p}>
+      <path d="M5 12.5l4.5 4.5L19 7" />
+    </Icon>
+  );
+}
+
+/** 退出登录：门框 + 向外的箭头 */
+export function LogoutIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
+      <path d="M14 16l4-4-4-4" />
+      <path d="M9 12h9" />
+    </Icon>
+  );
+}

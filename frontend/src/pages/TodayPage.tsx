@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AskBar } from '../components/home/AskBar';
 import { NextBookingBanner, type UpcomingBooking } from '../components/home/NextBookingBanner';
+import { NoticeBar } from '../components/home/NoticeBar';
 import { TodayHero } from '../components/home/TodayHero';
 import { Card } from '../components/ui/Card';
 import { Callout } from '../components/ui/Callout';
@@ -356,6 +357,9 @@ export default function TodayPage() {
         是这个产品最不能含糊的一句话。
       */}
       <div className="space-y-5 pb-20">
+        {/* 公告放在英雄区之前：院方停诊/时间调整这类信息，先于"今天吃什么药" */}
+        <NoticeBar />
+
         {nextBooking ? <NextBookingBanner booking={nextBooking} /> : null}
 
         <TodayHero

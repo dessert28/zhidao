@@ -11,6 +11,7 @@
 --      它的主键不归我们管，用外键会在对方换系统时把我们的库锁死。
 -- ============================================================
 
+DROP TABLE IF EXISTS sys_notice;
 DROP TABLE IF EXISTS reminder_task;
 DROP TABLE IF EXISTS booking_order;
 DROP TABLE IF EXISTS medical_record;
@@ -24,7 +25,8 @@ DROP TABLE IF EXISTS sys_user;
 --   业务档案不会因为这个人的密码泄露而需要重建。
 CREATE TABLE sys_user (
   id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-  username      VARCHAR(64)  NOT NULL,
+  username      VARCHAR(64)  NOT NULL COMMENT '登录名，手机号即登录名',
+  display_name  VARCHAR(64)           COMMENT '展示名（注册填的姓名），不做身份核验',
   password_hash VARCHAR(100) NOT NULL COMMENT 'bcrypt，绝不明文',
   recovery_hash VARCHAR(100)          COMMENT '恢复码，也是 bcrypt',
   role          VARCHAR(20)  NOT NULL DEFAULT 'PATIENT',
@@ -178,3 +180,36 @@ CREATE TABLE IF NOT EXISTS hospital_place (
   deleted       TINYINT      NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_place_lookup ON hospital_place (hospital_code, place_type, department);
+
+-- ============================================================
+-- 系统公告
+--
+-- 为什么单独一张表而不是并进院方知识库：
+--   公告是「院方主动让所有患者看到」的广播，知识库是「患者问什么答什么」
+--   的检索语料。公告有置顶、有草稿、会过期，知识库文档是长期沉淀；
+--   混在一起，公告的置顶与过期逻辑会污染检索结果。
+--
+-- 为什么 status 与 published_at 分开：
+--   草稿没有发布时间；已发布的公告也可能撤回后再次发布。
+--   用「publishedAt 是否为空」代替状态，撤稿就只能抹掉时间，
+--   重新发布时历史发布时间就丢了。
+--
+-- 用 IF NOT EXISTS：与 hospital_place 同理，测试会创建多个 Spring 上下文，
+-- 它们共用同一个 H2 内存库，第二次执行建表不能失败。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sys_notice (
+  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  title         VARCHAR(200) NOT NULL,
+  content       TEXT         NOT NULL COMMENT '正文，课设阶段按纯文本渲染',
+  level         VARCHAR(20)  NOT NULL DEFAULT 'INFO' COMMENT 'INFO 通知 / WARN 提醒 / URGENT 紧急',
+  pinned        TINYINT      NOT NULL DEFAULT 0 COMMENT '置顶；排序优先于发布时间',
+  status        VARCHAR(20)  NOT NULL DEFAULT 'DRAFT' COMMENT 'PUBLISHED / DRAFT，草稿只对管理端可见',
+  -- 发布时间与创建时间分开：支持「提前写好、到点发布」，
+  -- 患者端按 published_at <= now 过滤
+  published_at  TIMESTAMP             COMMENT 'null 表示尚未发布',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted       TINYINT      NOT NULL DEFAULT 0
+);
+-- 患者端每次打开首页都要查「已发布且已到发布时间」的前几条，按这两列走索引
+CREATE INDEX IF NOT EXISTS idx_notice_published ON sys_notice (status, published_at);

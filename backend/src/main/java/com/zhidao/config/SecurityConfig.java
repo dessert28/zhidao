@@ -177,6 +177,29 @@ public class SecurityConfig {
                         .requestMatchers("/api/doctor/brief/**")
                         .permitAll()
                         /*
+                         * ==================== 管理端 / 医生端边界 ====================
+                         *
+                         * <b>前端隐藏入口不算权限。</b> 管理页的菜单、按钮、
+                         * 路由守卫都只是"别让用户误点"，任何人打开开发者工具、
+                         * 或者直接 curl，都能绕过它们。真正的边界只在这里：
+                         * 请求进不了 Controller，页面上写什么都无所谓。
+                         *
+                         * /api/admin/** 一律 ADMIN。管理端能改用户角色、能删院区、
+                         * 能发全院公告 —— 这些操作的影响面是"所有患者"，
+                         * 不能再用 authenticated() 糊过去。
+                         *
+                         * /api/doctor/patients/** 放 DOCTOR 与 ADMIN：
+                         * 医生工作台要查患者档案；管理员在没有医生账号的环境里
+                         * 需要能核对同一份数据。患者（ROLE_PATIENT）打这个前缀
+                         * 仍是 403 —— 患者只能看自己的数据，走 /api/patient/**。
+                         *
+                         * 顺序：这两条必须放在下面任何更宽松的规则之前。
+                         * Spring Security 按声明顺序取第一条匹配，
+                         * 后面的规则对已经命中的请求不再生效。
+                         */
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/doctor/patients/**").hasAnyRole("DOCTOR", "ADMIN")
+                        /*
                          * 预留接口：院方知识库运营（上传 / 列表 / 重建索引）。
                          *
                          * 用 hasRole("ADMIN") 而不是 authenticated()：
@@ -190,9 +213,19 @@ public class SecurityConfig {
                          * 现状：种子账号只有 PATIENT，故普通登录用户是 403、
                          * 未登录是 401，真正返回 501 需要等实现阶段补一个管理员账号。
                          * 不要为了「方便看到 501」把这条放宽成 authenticated()。
+                         *
+                         * 注：上面的 /api/admin/** 已经覆盖了这个前缀，
+                         * 这条保留是为了单独说明知识库的权限意图 ——
+                         * 将来若把 /api/admin/** 拆细，不至于把知识库漏掉。
                          */
                         .requestMatchers("/api/admin/knowledge/**")
                         .hasRole("ADMIN")
+                        /*
+                         * 协议接口放行：注册页在未登录状态就要展示协议，
+                         * 要求先登录会形成循环依赖。协议文本是公开的运营内容。
+                         */
+                        .requestMatchers(HttpMethod.GET, "/api/agreements", "/api/agreements/**")
+                        .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",

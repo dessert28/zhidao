@@ -18,7 +18,11 @@ public class SysUser {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    /** 登录名。手机号即登录名（账号体系改为接受手机号后） */
     private String username;
+
+    /** 展示名（注册时填的姓名），不做身份核验 */
+    private String displayName;
 
     /** BCrypt 哈希。任何日志、接口响应都不得带出这个字段 */
     private String passwordHash;

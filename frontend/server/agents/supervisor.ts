@@ -136,6 +136,46 @@ export function serializeIfConflicting(agents: AgentName[]): AgentName[] {
   return [...ordered, ...rest];
 }
 
+/* ============================ multi 计划展开 ============================ */
+
+/** 一次 multi 决策要真正执行哪几条链路 */
+export interface MultiPlan {
+  /** 跑分诊（含内部串行的 Reviewer 与号源查询） */
+  triage: boolean;
+  /** 跑循证检索 */
+  retrieval: boolean;
+  /** 单独跑排程：只有在没有 triage 时才需要，否则 triage 内部已查过号源 */
+  scheduleAlone: boolean;
+}
+
+/**
+ * 把 Supervisor 给出的 agent 列表展开成"要跑哪几条链路"。
+ *
+ * <p><b>为什么单独抽出来</b>：这段判断决定了并行时跑什么、怎么排序，
+ * 逻辑一错就是"要么漏答一半需求，要么重复查两次号源"。
+ * 写成纯函数才能把各种组合钉死在测试里 —— 尤其是「只给 reviewer」
+ * 「给了 scheduler 但没给 triage」这类模型可能吐出的退化组合。
+ *
+ * <p><b>返回空计划表示无可用链路</b>：调用方应退回单路分诊
+ * （宁可多问一句，不要答错），而不是静默什么都不做。
+ *
+ * <p>注意 `scheduler` 与 `triage` 同时出现时不再单独跑：
+ * triage 分支内部会带着科室去查号源，重复跑会把同一张
+ * 预约预览卡下发两次，前端会渲染出两张一模一样的卡。
+ */
+export function resolveMultiPlan(agents: readonly AgentName[]): MultiPlan {
+  const wanted = new Set(
+    agents.filter((a): a is AgentName => a === 'triage' || a === 'retrieval' || a === 'scheduler'),
+  );
+
+  const triage = wanted.has('triage');
+  return {
+    triage,
+    retrieval: wanted.has('retrieval'),
+    scheduleAlone: wanted.has('scheduler') && !triage,
+  };
+}
+
 /* ============================ 主处理 ============================ */
 
 export interface SupervisorDeps {
