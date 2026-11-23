@@ -226,6 +226,15 @@ public class SecurityConfig {
                          */
                         .requestMatchers(HttpMethod.GET, "/api/agreements", "/api/agreements/**")
                         .permitAll()
+                        /*
+                         * AI 导诊对话：公开入口，与迁移前的 Node BFF /api/chat 一致
+                         * （那侧只做 IP 限流、不强制登录）。导诊是未注册患者也能用的
+                         * 第一接触点，要求先登录会挡住最需要它的人。
+                         */
+                        .requestMatchers(HttpMethod.POST, "/api/chat")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/chat/health")
+                        .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",
