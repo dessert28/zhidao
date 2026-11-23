@@ -6,6 +6,12 @@
 
 [![tests](https://img.shields.io/badge/frontend%20tests-798%20passed-brightgreen)]() [![tests](https://img.shields.io/badge/backend%20tests-119%20passed-brightgreen)]() [![tsc](https://img.shields.io/badge/tsc-strict-blue)]() [![eslint](https://img.shields.io/badge/eslint-0%20errors-brightgreen)]() [![node](https://img.shields.io/badge/node-%E2%89%A522.22-informational)]() [![doc](https://img.shields.io/badge/tech%20doc-PDF%2030%20pages-0f766e)](docs/智诊通-技术文档.pdf)
 
+> ⚠️ **本分支（`homework/spring-ai-adapter`）架构已变更**：Node BFF 已下线，
+> AI 编排 / RAG / 五 Agent / SSE / 端侧脱敏全部迁到 Spring Boot，
+> 下文描述的「浏览器 + Node BFF + Spring Boot」三段结构**不再适用**。
+> 当前架构与迁移记录见 [`docs/18-AI迁移到后端.md`](docs/18-AI迁移到后端.md)；
+> `master` 分支保留迁移前的比赛定稿版本，需要对照时看那里。
+
 ---
 
 ## 给评审的阅读路径（10 分钟读完，2 分钟跑起来）
