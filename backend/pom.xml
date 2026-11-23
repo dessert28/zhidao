@@ -6,12 +6,17 @@
     比赛：业务闭环的落点 —— 预约单、提醒任务、跨院适配器
     课设：完整的三层架构 CRUD + 定时任务 + 事务 + 参数校验
 
-  边界（docs/04 §1，docs/00）：
-    **Spring Boot 不调用任何大模型**。AI 编排全部在 frontend 侧
-    （浏览器 + Node BFF）。这里的职责只有三件事：
-      ① 业务闭环：患者档案 / 就诊记录 / 预约单
-      ② 提醒引擎：@Scheduled + 可解释规则
-      ③ 院区适配：HospitalAdapter 接口，省赛用两个 Mock 实现
+  边界（docs/04 §1，docs/00；大作业分支 homework/spring-ai-adapter 局部调整）：
+    主业务边界不变：患者档案 / 就诊记录 / 预约单、提醒引擎、院区适配
+    依然全部在 Spring Boot，AI 主编排仍留在 frontend 侧（Node BFF）。
+
+    课设考核点名 Spring AI Alibaba，故本分支新增**一层薄的 AI 接入**：
+      ai/ 包下只做"最小模型调用验证"，不承载五 Agent / RAG / SSE 编排。
+    两个约束必须守住：
+      ① 无 Key 也能启动、也能跑 —— 模型未配置时端点返回明确状态而非报错，
+         与 frontend/server/llm/client.ts 的"没有 Key 就是没有异常"同构
+      ② Key 只从环境变量读，不写进 yml 默认值、不进日志
+    详细取舍见 docs/17-大作业思路与决策.md
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -36,6 +41,20 @@
     <mybatis-plus.version>3.5.6</mybatis-plus.version>
     <knife4j.version>4.5.0</knife4j.version>
     <jjwt.version>0.12.5</jjwt.version>
+
+    <!--
+      Spring AI 基线：Alibaba starter 1.0.0-M5.1 依赖 Spring AI 1.0.0-M5。
+      为什么是 M5 而不是更新的 M6：
+        · M6.1 的 autoconfigure 显式依赖 Spring Boot 3.3.3，本项目是 3.2.5
+        · M3/M4 的 jar 没进中央仓库（只在 repo.spring.io/milestone），
+          而本项目用的是阿里云镜像，拉不到
+        · M5 的 jar 已进中央仓库，且 autoconfigure 未锁死 Boot 版本，
+          经 dependency:tree 验证可在本项目解析
+      OpenAI starter 与 Alibaba starter 同为 M5，混用不会版本打架：
+      Alibaba 满足课设条款，OpenAI 兼容协议对接项目现有的 DeepSeek/Qwen 端点。
+    -->
+    <spring-ai.version>1.0.0-M5</spring-ai.version>
+    <spring-ai-alibaba.version>1.0.0-M5.1</spring-ai-alibaba.version>
 
     <!--
       强制 UTF-8。
@@ -136,6 +155,24 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
+    </dependency>
+
+    <!--
+      课设要求的 AI 接入层（仅 annotation + 最小验证端点，不做业务编排）。
+      Alibaba starter 对应"考核内容点名 Spring AI Alibaba"这一条；
+      OpenAI starter 让同一个 ChatClient 能走项目现有的 OpenAI 兼容端点
+      （DeepSeek / Qwen / Ollama），Key 来源与 frontend/.env 一致。
+      两者同属 Spring AI 1.0.0-M5 基线，不会版本冲突。
+    -->
+    <dependency>
+      <groupId>com.alibaba.cloud.ai</groupId>
+      <artifactId>spring-ai-alibaba-starter</artifactId>
+      <version>${spring-ai-alibaba.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+      <version>${spring-ai.version}</version>
     </dependency>
   </dependencies>
 
