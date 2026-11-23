@@ -12,11 +12,6 @@
     "moduleDetection": "force",
     "noEmit": true,
 
-    // BFF 侧的生成式 UI 渲染器是 .tsx（server/render/registry.tsx 用
-    // renderToString 产出 HTML），所以 Node 侧也需要 JSX 转换。
-    // 用 react-jsx 自动运行时，不需要 import React。
-    "jsx": "react-jsx",
-
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -26,9 +21,8 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["./src/*"],
-      "@server/*": ["./server/*"]
+      "@shared/*": ["./src/*"]
     }
   },
-  "include": ["server", "vite.config.ts", "src/types"]
+  "include": ["vite.config.ts", "vitest.config.ts", "src/types"]
 }

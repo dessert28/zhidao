@@ -2,9 +2,12 @@
 // 智诊通 · ESLint 扁平配置（ESLint 9）
 //
 // 为什么自己写而不是 `eslint --init` 生成的：
-//   init 会给一份带 react-refresh 的全家桶，但这个项目的 BFF（server/）
-//   是 Node 环境，不是 React，全家桶会把 server 代码按浏览器规则误判。
+//   init 会给一份带 react-refresh 的全家桶，但本项目的 scripts/ 是
+//   Node 环境、不是 React，全家桶会把它按浏览器规则误判。
 //   这里按目录分两段 files，各管各的。
+//
+// 大作业分支：Node BFF（server/）已下线，AI 编排迁到 Spring Boot，
+// 原先针对 server/ 的规则段一并移除。
 //
 // 规则口径（刻意保守，避免"改一个报十个"）：
 //   · 只开 recommended，不开 type-checked 规则集
@@ -105,7 +108,7 @@ export default tseslint.config(
 
   // ---------- 测试与脚本：放宽断言类规则 ----------
   {
-    files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', 'scripts/**/*.ts', 'server/**/*.ts'],
+    files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', 'scripts/**/*.ts'],
     rules: {
       // 测试里 `as any` 造残缺对象是常规手法；脚本本身就是 console 驱动
       '@typescript-eslint/no-explicit-any': 'off',

@@ -244,6 +244,19 @@ public class SecurityConfig {
                                 "/doc.html",
                                 "/webjars/**"
                         ).permitAll()
+                        /*
+                         * 前端静态产物与 SPA 路由（BFF 下线后由后端同源托管）。
+                         *
+                         * 放行所有「非 /api 的 GET」：这类请求只会命中 index.html、
+                         * /assets/** 或前端路由（/chat、/records、/admin/* 等），
+                         * 本身不含任何数据；真正的数据接口都在 /api 后面，仍逐条鉴权。
+                         *
+                         * 为什么必须放行：不放行的话未登录用户连登录页都加载不出来
+                         * （整页 401 JSON 白屏），而该出现的 401 应该来自 /api，不是来自 HTML。
+                         */
+                        .requestMatchers(request -> "GET".equalsIgnoreCase(request.getMethod())
+                                && !request.getRequestURI().startsWith("/api"))
+                        .permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(e -> e
