@@ -86,6 +86,7 @@ public class ChatOrchestrator {
         if (req.getKnownSlots() != null) sessionSlots.putAll(req.getKnownSlots());
         int sessionRound = req.getRound() != null ? req.getRound() : 0;
         String userQuestion = complaint;
+        DegradeFlag degraded = new DegradeFlag();
 
         /* 第 0 步：红线前置，不经 LLM */
         RedFlagRule.RedFlagResult red = redFlagRule.check(complaint);
@@ -178,6 +179,7 @@ public class ChatOrchestrator {
             AgentOutput<SupervisorPayload> plan = supervisor.run(planInput,
                     llm.available() ? llm::plan : null);
             events.addAll(plan.getEvents());
+            if (plan.getDegraded() != null) degraded.mark();
             if (plan.getStatus().equals(AgentOutput.FAILED)
                     || plan.getStatus().equals(AgentOutput.BLOCKED)) {
                 events.add(AgentEvent.caveat("AI 调度暂不可用，已切换到基础指引。请稍后重试或咨询门诊导诊台。"));
@@ -196,26 +198,27 @@ public class ChatOrchestrator {
 
         /* 按决策分发 */
         switch (decision == null ? "" : decision) {
-            case "triage" -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events);
-            case "retrieve" -> runRetrievalBranch(text, events);
+            case "triage" -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events, degraded);
+            case "retrieve" -> runRetrievalBranch(text, events, degraded);
             case "schedule" -> runScheduleBranch(events);
-            case "multi" -> runMultiBranch(complaint, text, plannedAgents, sessionSlots, sessionRound, events);
+            case "multi" -> runMultiBranch(complaint, text, plannedAgents, sessionSlots, sessionRound, events, degraded);
             case "done" -> {
                 if (!injection.isEmpty()) events.add(AgentEvent.token(refusal));
                 else events.add(AgentEvent.token("好的。有哪里不舒服，或者想确认该挂哪个科，随时告诉我。"));
             }
-            default -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events);
+            default -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events, degraded);
         }
-        return done(events, turnId, started, sessionSlots, sessionRound, false);
+        return done(events, turnId, started, sessionSlots, sessionRound, degraded.isDegraded());
     }
 
     /** 分诊分支 —— 对照 runTriageBranch */
     private int runTriageBranch(String text, Map<String, String> sessionSlots,
-                                int sessionRound, List<AgentEvent> events) {
+                                int sessionRound, List<AgentEvent> events, DegradeFlag degraded) {
         AgentOutput<TriagePayload> out = triage.run(text, sessionSlots, sessionRound,
                 // 有 Key 才注入模型分析；没有就是 null，TriageAgent 走关键词表 + 规则分
                 llm.available() ? (t, r) -> llm.analyze(t, sessionSlots, r) : null);
         events.addAll(out.getEvents());
+        if (out.getDegraded() != null) degraded.mark();
 
         // 合并槽位（过滤占位词）
         if (out.getPayload().getCollectedSymptoms() != null) {
@@ -259,9 +262,10 @@ public class ChatOrchestrator {
     }
 
     /** 检索分支 —— 对照 runRetrievalBranch */
-    private void runRetrievalBranch(String text, List<AgentEvent> events) {
+    private void runRetrievalBranch(String text, List<AgentEvent> events, DegradeFlag degraded) {
         AgentOutput<RetrievalPayload> out = retrieval.run(text);
         events.addAll(out.getEvents());
+        if (out.getDegraded() != null) degraded.mark();
         RetrievalPayload p = out.getPayload();
         if (out.getStatus().equals(AgentOutput.FAILED) || p.getSources().isEmpty()) {
             events.add(AgentEvent.token("这个问题我没在资料库里找到可靠依据。"
@@ -305,16 +309,17 @@ public class ChatOrchestrator {
      * "我能吃什么"有用，对判断挂哪个科是干扰。
      */
     private void runMultiBranch(String complaint, String text, List<String> plannedAgents,
-                                Map<String, String> slots, int round, List<AgentEvent> events) {
+                                Map<String, String> slots, int round, List<AgentEvent> events,
+                                DegradeFlag degraded) {
         SupervisorAgent.MultiPlan plan = supervisor.resolveMultiPlan(plannedAgents);
         if (!plan.triage() && !plan.retrieval() && !plan.scheduleAlone()) {
-            runTriageBranch(complaint, slots, round, events);
+            runTriageBranch(complaint, slots, round, events, degraded);
             return;
         }
         List<AgentEvent> triageBuf = new ArrayList<>();
         List<AgentEvent> retrievalBuf = new ArrayList<>();
-        if (plan.triage()) runTriageBranch(complaint, slots, round, triageBuf);
-        if (plan.retrieval()) runRetrievalBranch(text, retrievalBuf);
+        if (plan.triage()) runTriageBranch(complaint, slots, round, triageBuf, degraded);
+        if (plan.retrieval()) runRetrievalBranch(text, retrievalBuf, degraded);
         events.addAll(triageBuf);
         boolean blocked = triageBuf.stream().anyMatch(e -> "emergency".equals(e.getType()));
         if (!blocked) events.addAll(retrievalBuf);
@@ -343,9 +348,28 @@ public class ChatOrchestrator {
         return m;
     }
 
+    /**
+     * 本轮是否发生过降级（模型超时/失败 → 规则兜底），随 done 事件下发。
+     *
+     * <p>原本 done 的 degraded 是各调用点写死的 {@code false}，从来没有真值 ——
+     * 后果是「这一轮到底走了模型还是走了规则表」在协议里查不出来：
+     * 用户看到回复很机械，日志里也看不出是模型答得差还是压根没调。
+     * 现在各分支在 {@code AgentOutput.degraded != null} 时 mark 一次。
+     */
+    private static final class DegradeFlag {
+        private boolean degraded;
+
+        void mark() {
+            this.degraded = true;
+        }
+
+        boolean isDegraded() {
+            return degraded;
+        }
+    }
+
     /** 补 done 事件 */
-    private TurnResult done(List<AgentEvent> events, String turnId, long started,
-                            Map<String, String> slots, int round, boolean degraded) {
+    private TurnResult done(List<AgentEvent> events, String turnId, long started,                            Map<String, String> slots, int round, boolean degraded) {
         Map<String, Object> session = new LinkedHashMap<>();
         session.put("slots", new HashMap<>(slots));
         session.put("round", round);

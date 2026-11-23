@@ -138,6 +138,33 @@ class ChatOrchestratorTest {
     }
 
     @Test
+    @DisplayName("无 Key 时 done.degraded=true：协议里能看出这轮走的是规则兜底")
+    void doneReportsDegradedWhenNoKey() {
+        ChatOrchestrator.TurnResult out = orchestrator.run(req("最近老是头晕"));
+
+        Boolean degraded = out.events().stream()
+                .filter(e -> "done".equals(e.getType()))
+                .map(AgentEvent::getDegraded)
+                .findFirst().orElse(null);
+        assertEquals(Boolean.TRUE, degraded,
+                "没有 Key 时科室与追问都来自规则表，done 必须如实标 degraded，"
+                        + "否则「回复很机械」会被误判成模型能力问题");
+    }
+
+    @Test
+    @DisplayName("急症走规则不算降级：degraded 保持 false")
+    void emergencyIsNotDegraded() {
+        ChatOrchestrator.TurnResult out = orchestrator.run(req("胸口疼得厉害，左胳膊发麻，冒冷汗"));
+
+        Boolean degraded = out.events().stream()
+                .filter(e -> "done".equals(e.getType()))
+                .map(AgentEvent::getDegraded)
+                .findFirst().orElse(null);
+        assertEquals(Boolean.FALSE, degraded,
+                "红线是设计上就不调模型，与「模型不可用」不是一回事");
+    }
+
+    @Test
     @DisplayName("追问中问「检查原因」交回调度，不被硬当成补充症状")
     void knowledgeQuestionDuringClarify() {
         ChatRequest r = req("检查原因");

@@ -3,10 +3,11 @@
  *
  * 两条渲染路径：
  *   1. 服务端已渲染好的 html → 直接用（首帧快，无 hydration 成本）
- *   2. 无 html 或需要接管交互 → 按 type 用本地组件 + props 渲染
+ *   2. 无 html → 按 type 用本地组件 + props 渲染（AgentCards.tsx）
  *
- * 这里优先用 html：卡片是纯展示的，服务端已经算好了 DOM，
- * 客户端再做一遍是浪费。把 props 路径留给将来的交互卡。
+ * 迁移到 Spring Boot 后端后只有第 2 条路了：Java 侧没有 React，
+ * 不产出 html。第 1 条保留着 —— 旧 BFF 的产物、以及将来若在别处
+ * 做渲染，都还能直接用，不必改这里。
  * ------------------------------------------------------------------ */
 
 import type { StreamEvent } from '../hooks/useEventStream';
@@ -14,13 +15,14 @@ import { useTts } from '../hooks/useTts';
 import { Link } from 'react-router-dom';
 import type { BookingPreview } from '@shared/types/contract';
 import { WaitingIndicator } from './WaitingIndicator';
+import { CaveatCard, DepartmentCard, EmergencyCard } from './AgentCards';
 
-/** 服务端渲染的卡片：直接注入 HTML */
+/** 服务端渲染的卡片：直接注入 HTML（当前 Java 后端不产出，保留兼容路径） */
 function ServerCard({ html }: { html: string }) {
   return (
     <div
       className="animate-fade-up"
-      // 内容由本仓库自己的 server/render/registry.tsx 产出，
+      // 内容只可能来自本仓库的渲染层（旧 BFF 的 server/render/registry.tsx），
       // 不含用户输入的原样拼接（所有文本都经过 React 转义），
       // 因此这里注入是安全的。
       dangerouslySetInnerHTML={{ __html: html }}
@@ -185,10 +187,26 @@ function SpeakerIcon({ speaking }: { speaking: boolean }) {
 
 export function EventRenderer({ event }: { event: StreamEvent }) {
   switch (event.type) {
-    /* 有服务端渲染产物的，一律直接用 */
+    /*
+     * 卡片：有服务端 html 就用它，没有就本地渲染。
+     *
+     * 原来这里只有 `<ServerCard>` 一条路，而 AI 迁到 Spring Boot 之后
+     * Java 侧不产生 html（没有 React 运行时），于是卡片全部静默消失 ——
+     * 用户看到的只有一句「建议优先挂「神经内科」」，红色急症卡也没了。
+     * 本地组件是同样的视觉，作为兜底；两条路谁先用谁。
+     */
     case 'department_card':
+      return event.html ? (
+        <ServerCard html={event.html} />
+      ) : (
+        <DepartmentCard departments={event.departments} />
+      );
     case 'emergency':
+      return event.html ? <ServerCard html={event.html} /> : <EmergencyCard redFlag={event.redFlag} />;
     case 'caveat':
+      return event.html ? <ServerCard html={event.html} /> : <CaveatCard text={event.text} />;
+
+    /* 以下两种后端当前不发，留 html 路径；真发时需补本地组件（否则仍在页面上不可见） */
     case 'timeline_card':
     case 'review_trace':
       return event.html ? <ServerCard html={event.html} /> : null;
