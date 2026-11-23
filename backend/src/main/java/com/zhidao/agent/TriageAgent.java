@@ -257,12 +257,19 @@ public class TriageAgent {
         Map<String, String> slots = mergeSlots(knownSlots, extractSlots(text));
         List<TriagePayload.Department> departments = new ArrayList<>();
         boolean usedLlm = false;
+        // 模型写好的追问句（可能是空串）。只在"确实要追问"时才用得上，
+        // 校验不过就退回模板 —— 见 pickQuestion / acceptableAsk。
+        String llmAsk = "";
         if (analyzeFn != null) {
             try {
                 LlmAnalysis out = analyzeFn.apply(text, round);
                 if (out != null) {
                     slots = mergeSlots(slots, out.slots());
-                    departments = out.departments();
+                    // 拷一份可变列表：下面低置信时要追加兜底科室、最后还要去重，
+                    // 直接持有注入方给的列表会踩不可变集合的坑（List.of 会抛）
+                    departments = out.departments() == null
+                            ? new ArrayList<>() : new ArrayList<>(out.departments());
+                    llmAsk = out.ask() == null ? "" : out.ask();
                     usedLlm = true;
                 }
             } catch (Exception e) {
@@ -311,7 +318,7 @@ public class TriageAgent {
 
         // 缺槽位且未达上限 → 追问
         if (!missing.isEmpty() && round < MAX_CLARIFY_ROUNDS) {
-            String question = buildQuestion(missing, slots);
+            String question = pickQuestion(llmAsk, missing, slots);
             events.add(AgentEvent.builder().type("clarify").question(question).missing(missing).build());
             Map<String, Object> degraded = usedLlm ? null
                     : degrade("槽位与科室由本地规则表推算", "rule-table");
@@ -358,5 +365,36 @@ public class TriageAgent {
     }
 
     /** LLM 分析结果（可选注入） */
-    public record LlmAnalysis(Map<String, String> slots, List<TriagePayload.Department> departments) {}
+    public record LlmAnalysis(Map<String, String> slots, List<TriagePayload.Department> departments,
+                              String ask) {}
+
+    /**
+     * 追问句的可用性校验 —— 模型写的话比模板自然，但必须过闸才能出境。
+     *
+     * <p>为什么校验放在这里而不是信任 prompt：追问句会直接显示给患者，
+     * 一句话里混进"确诊""吃什么药""别担心，应该是小问题"就是医疗风险，
+     * 而 prompt 只是建议、不是保证。校验不过就退回模板，模板永远是安全的。
+     */
+    private static final int ASK_MIN = 4;
+    private static final int ASK_MAX = 80;
+    private static final List<String> ASK_BANNED = List.of(
+            "确诊", "诊断为", "癌变", "肿瘤", "阿司匹林", "布洛芬", "头孢", "药量", "剂量",
+            "停药", "换药", "别担心", "不用担心", "一定没事", "保证", "治愈");
+
+    public boolean acceptableAsk(String ask) {
+        if (ask == null) return false;
+        String t = ask.trim();
+        if (t.length() < ASK_MIN || t.length() > ASK_MAX) return false;
+        if (t.indexOf('？') < 0 && t.indexOf('?') < 0) return false;
+        if (t.split("\n").length > 2) return false;
+        for (String bad : ASK_BANNED) {
+            if (t.contains(bad)) return false;
+        }
+        return true;
+    }
+
+    /** 优先用模型写的追问句，不合格就用模板 */
+    public String pickQuestion(String llmAsk, List<String> missing, Map<String, String> slots) {
+        return acceptableAsk(llmAsk) ? llmAsk.trim() : buildQuestion(missing, slots);
+    }
 }

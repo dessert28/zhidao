@@ -66,16 +66,16 @@ class ChatRulesTest {
     void summarizeTriage() {
         TriagePayload.Department a = TriagePayload.Department.builder()
                 .name("神经内科").reason("症状指向神经系统").confidence(0.72).build();
-        assertEquals("建议优先挂「神经内科」，依据是症状指向神经系统。",
+        assertEquals("从你的描述看，最该先挂的是「神经内科」——症状指向神经系统。",
                 rules.summarizeTriage(List.of(a)));
 
         TriagePayload.Department b = TriagePayload.Department.builder()
                 .name("耳鼻咽喉科").reason("症状指向耳鼻咽喉").confidence(0.72).build();
-        assertEquals("建议优先挂「神经内科」，依据是症状指向神经系统。"
-                        + "如果挂号有困难，也可以先到「耳鼻咽喉科」或门诊导诊台评估。",
+        assertEquals("从你的描述看，最该先挂的是「神经内科」——症状指向神经系统。"
+                        + "挂不上号的话，「耳鼻咽喉科」也可以先看，或者去门诊导诊台问一下。",
                 rules.summarizeTriage(List.of(a, b)));
 
-        assertEquals("暂时无法判断该挂哪个科，建议到门诊导诊台说明情况。",
+        assertEquals("这会儿还判断不出该挂哪个科，先去门诊导诊台问一下最省事。",
                 rules.summarizeTriage(List.of()));
     }
 

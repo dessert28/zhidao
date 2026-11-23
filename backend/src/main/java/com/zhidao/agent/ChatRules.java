@@ -119,18 +119,36 @@ public class ChatRules {
         return PLACEHOLDERS.contains(v.trim());
     }
 
-    /** 分诊摘要 —— 逐字对照 chat.ts summarizeTriage */
+    /**
+     * 分诊摘要 —— 对照 chat.ts summarizeTriage。
+     *
+     * <p><b>有意偏离 TS 版措辞</b>：原来是「建议优先挂「X」，依据是…」，
+     * 读起来像系统报告 —— 用户的原话是"能不能说人话"。
+     * 结构不变（结论 + 依据 + 备选），只把连接词换成日常说法：
+     * 结论不再是"建议优先挂"，依据不再用"依据是"这种公文词。
+     * 那段 reason 本身就是模型按患者原话写的，所以换掉骨架后像对话而不像报告。
+     */
     public String summarizeTriage(List<TriagePayload.Department> departments) {
         if (departments == null || departments.isEmpty())
-            return "暂时无法判断该挂哪个科，建议到门诊导诊台说明情况。";
+            return "这会儿还判断不出该挂哪个科，先去门诊导诊台问一下最省事。";
         TriagePayload.Department top = departments.get(0);
-        String main = "建议优先挂「" + top.getName() + "」，依据是" + top.getReason() + "。";
+        String main = "从你的描述看，最该先挂的是「" + top.getName() + "」——" + trimTail(top.getReason()) + "。";
         if (departments.size() == 1) return main;
         StringBuilder others = new StringBuilder();
         for (int i = 1; i < departments.size(); i++) {
             if (i > 1) others.append("」或「");
             others.append(departments.get(i).getName());
         }
-        return main + "如果挂号有困难，也可以先到「" + others + "」或门诊导诊台评估。";
+        return main + "挂不上号的话，「" + others + "」也可以先看，或者去门诊导诊台问一下。";
+    }
+
+    /** 去掉句末标点，避免拼句时出现「…评估。。」 */
+    private static String trimTail(String s) {
+        if (s == null) return "";
+        String t = s.trim();
+        while (!t.isEmpty() && "。．.!！?？；;，,".indexOf(t.charAt(t.length() - 1)) >= 0) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
+        return t;
     }
 }

@@ -171,4 +171,37 @@ class TriageAgentTest {
         assertEquals("是怎么个难受法？针扎一样疼、闷闷地胀，还是酸麻？",
                 agent.buildQuestion(List.of("性质"), Map.of()));
     }
+
+    @Test
+    @DisplayName("模型写的追问句：合规就用，越界/不像话就退回模板")
+    void llmAskValidation() {
+        assertTrue(agent.acceptableAsk("头晕好几个小时确实挺折腾的，是一直晕还是一阵一阵的？"));
+        assertFalse(agent.acceptableAsk("这可能是颈椎病，建议吃布洛芬。"), "药名 + 诊断结论必须拦");
+        assertFalse(agent.acceptableAsk("别担心，一定没事的"), "空保证要拦，且没有问号");
+        assertFalse(agent.acceptableAsk("多久了"), "太短、像填表");
+        assertFalse(agent.acceptableAsk(""), "空串不算合规");
+
+        assertEquals("「头晕」大概多久了？几个小时，还是好几天了？",
+                agent.pickQuestion("这可能是颈椎病，建议吃布洛芬。", List.of("时长"),
+                        Map.of("性质", "头晕")), "不合规必须退回模板");
+        assertEquals("头晕一阵一阵还是一直晕？",
+                agent.pickQuestion("头晕一阵一阵还是一直晕？", List.of("时长"), Map.of()));
+    }
+
+    @Test
+    @DisplayName("注入的模型分析带了 ask，追问句优先用它")
+    void usesLlmAskWhenPresent() {
+        TriageAgent.LlmAnalysis analysis = new TriageAgent.LlmAnalysis(
+                Map.of("部位", "头", "性质", "头晕"),
+                new java.util.ArrayList<>(List.of(TriagePayload.Department.builder()
+                        .name("神经内科").confidence(0.5).reason("头晕").build())),
+                "头晕好几个小时确实难受，是一直晕还是一阵一阵的？");
+
+        AgentOutput<TriagePayload> out = agent.run("最近老是头晕", new java.util.LinkedHashMap<>(),
+                0, (t, r) -> analysis);
+
+        assertEquals(AgentOutput.NEED_CLARIFY, out.getStatus());
+        assertEquals("头晕好几个小时确实难受，是一直晕还是一阵一阵的？",
+                out.getPayload().getNextQuestion());
+    }
 }

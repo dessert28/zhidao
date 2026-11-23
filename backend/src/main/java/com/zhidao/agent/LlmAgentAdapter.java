@@ -147,7 +147,8 @@ public class LlmAgentAdapter {
 
         // 空对象 / 空数组都算"模型没给出有效内容"，交给规则兜底（对照 TS 同名判断）
         if (slots.isEmpty() && departments.isEmpty()) return null;
-        return new TriageAgent.LlmAnalysis(slots, departments);
+        String ask = out.get("ask") instanceof String a ? a.trim() : "";
+        return new TriageAgent.LlmAnalysis(slots, departments, ask);
     }
 
     /* ==================== 3. Reviewer 打分 ==================== */
