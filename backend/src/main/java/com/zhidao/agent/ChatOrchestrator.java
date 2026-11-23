@@ -1,6 +1,7 @@
 package com.zhidao.agent;
 
 import com.zhidao.agent.contract.*;
+import com.zhidao.agent.contract.ReviewPayload.ReviewScores;
 import com.zhidao.agent.rules.RedFlagRule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,12 @@ import java.util.*;
  * （TS 版是并发后按同序 flush，对前端而言输出顺序完全一致，但省去缓冲复杂度）。
  *
  * <p>这样做的好处：编排逻辑可脱离 HTTP 单测；Controller 只负责把事件编码成 SSE。
+ *
+ * <p><b>模型依赖是可选注入的：</b>有 Key 时 Supervisor 用模型做路由、
+ * Triage 用模型抽槽位与排科室、检索分支用模型做安全复核；
+ * 没 Key 时这三处传 null，全部退回规则。判断只在这里做一次（{@link #llm}.available()），
+ * 与 TS 版把判断集中在一处的做法一致 —— 分散判断只要漏一处，
+ * 评委本地就会因为 401 白屏。
  */
 @Slf4j
 @Component
@@ -28,11 +35,12 @@ public class ChatOrchestrator {
     private final RetrievalAgent retrieval;
     private final ReviewerAgent reviewer;
     private final SchedulerIntentParser scheduler;
+    private final LlmAgentAdapter llm;
 
     public ChatOrchestrator(RedFlagRule redFlagRule, ChatRules chatRules,
                             SupervisorAgent supervisor, TriageAgent triage,
                             RetrievalAgent retrieval, ReviewerAgent reviewer,
-                            SchedulerIntentParser scheduler) {
+                            SchedulerIntentParser scheduler, LlmAgentAdapter llm) {
         this.redFlagRule = redFlagRule;
         this.chatRules = chatRules;
         this.supervisor = supervisor;
@@ -40,6 +48,7 @@ public class ChatOrchestrator {
         this.retrieval = retrieval;
         this.reviewer = reviewer;
         this.scheduler = scheduler;
+        this.llm = llm;
     }
 
     /** 一轮对话的产出 */
@@ -127,7 +136,8 @@ public class ChatOrchestrator {
                     List.of("triage")));
             decision = "triage";
         } else if (!switched) {
-            AgentOutput<SupervisorPayload> plan = supervisor.run(userQuestion);
+            AgentOutput<SupervisorPayload> plan = supervisor.run(userQuestion,
+                    llm.available() ? llm::plan : null);
             events.addAll(plan.getEvents());
             if (plan.getStatus().equals(AgentOutput.FAILED)
                     || plan.getStatus().equals(AgentOutput.BLOCKED)) {
@@ -163,7 +173,9 @@ public class ChatOrchestrator {
     /** 分诊分支 —— 对照 runTriageBranch */
     private int runTriageBranch(String text, Map<String, String> sessionSlots,
                                 int sessionRound, List<AgentEvent> events) {
-        AgentOutput<TriagePayload> out = triage.run(text, sessionSlots, sessionRound, null);
+        AgentOutput<TriagePayload> out = triage.run(text, sessionSlots, sessionRound,
+                // 有 Key 才注入模型分析；没有就是 null，TriageAgent 走关键词表 + 规则分
+                llm.available() ? (t, r) -> llm.analyze(t, sessionSlots, r) : null);
         events.addAll(out.getEvents());
 
         // 合并槽位（过滤占位词）
@@ -213,6 +225,22 @@ public class ChatOrchestrator {
         ReviewerAgent.SafetyResult reviewed = reviewer.applySafetyRules(p.getAnswer());
         if (reviewed.blocked()) {
             events.add(AgentEvent.token("这段内容涉及用药细节，超出本系统的能力范围。请直接咨询医生或药师。"));
+            return;
+        }
+        /*
+         * LLM-as-judge 补充防线（仅检索分支 —— 这里才有长答案与证据数）。
+         *
+         * 规则表是"已知越界表达"的黑名单，judge 能看出规则覆盖不到的新措辞
+         * （比如换个说法下诊断）。所以规则优先、judge 只做加法：
+         * 规则已经拦下的不重复处理，规则漏了而 judge 判 safety 很低时，
+         * 追加一句提示而不是删答案 —— 抽取式作答的原文来自知识库，删掉反而丢证据。
+         */
+        if (llm.available()) {
+            ReviewScores judged = llm.judge(reviewed.answer(), p.getSources().size());
+            if (judged != null && judged.getSafety() < 0.5) {
+                events.add(AgentEvent.caveat(
+                        "这段回答经安全复核把握不大，请以医生面诊意见为准。"));
+            }
         }
     }
 

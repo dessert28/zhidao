@@ -53,12 +53,21 @@ public class AiVerificationConfig {
             return null;
         }
 
-        OpenAiApi api = new OpenAiApi(apiKey.trim(), baseUrl.trim());
+        // (baseUrl, apiKey) —— Spring AI 的两参构造顺序如此，别按直觉写成 (apiKey, baseUrl)
+        OpenAiApi api = new OpenAiApi(normalize(baseUrl), apiKey.trim());
         OpenAiChatModel chatModel = new OpenAiChatModel(api,
                 org.springframework.ai.openai.OpenAiChatOptions.builder()
                         .model(model.trim())
                         .temperature(0.1)
                         .build());
         return ChatClient.create(chatModel);
+    }
+
+    /** 去掉尾部斜杠与结尾的 /v1 —— OpenAiApi 自己会拼 /v1/chat/completions */
+    private static String normalize(String baseUrl) {
+        String b = baseUrl == null ? "" : baseUrl.trim();
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        if (b.endsWith("/v1")) b = b.substring(0, b.length() - 3);
+        return b;
     }
 }

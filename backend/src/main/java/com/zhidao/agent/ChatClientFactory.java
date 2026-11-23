@@ -34,7 +34,11 @@ public class ChatClientFactory {
         Optional<String> key = config.apiKey();
         if (key.isEmpty()) return Optional.empty();
         try {
-            OpenAiApi api = new OpenAiApi(key.get(), config.baseUrl());
+            // 注意参数顺序：Spring AI 的两参构造是 (baseUrl, apiKey)，不是 (apiKey, baseUrl)。
+            // 传反了不会报错 —— 它会拿 Key 当域名去发请求，报 UnknownHost 而不是认证失败，
+            // 排查起来很容易误以为是 Key 无效。真机验证时踩过这个坑，这里写明。
+            // 地址用 normalizedBaseUrl()：OpenAiApi 自己拼 /v1/...，用户写成 .../v1 也不会双段。
+            OpenAiApi api = new OpenAiApi(config.normalizedBaseUrl(), key.get());
             OpenAiChatModel model = new OpenAiChatModel(api,
                     org.springframework.ai.openai.OpenAiChatOptions.builder()
                             .model(config.model())

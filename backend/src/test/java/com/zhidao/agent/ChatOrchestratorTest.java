@@ -23,6 +23,9 @@ class ChatOrchestratorTest {
                 new com.zhidao.agent.rag.KnowledgeBase(new ObjectMapper());
         kb.load();
         com.zhidao.agent.rules.RedFlagRule redFlag = new com.zhidao.agent.rules.RedFlagRule();
+        // 未配置 Key 的 LlmConfigService：adapter.available() = false，编排全程走规则，
+        // 与线上"评委 clone 下来没填 Key"的形态一致
+        LlmConfigService llmConfig = new LlmConfigService();
         orchestrator = new ChatOrchestrator(
                 redFlag,
                 new ChatRules(),
@@ -30,7 +33,8 @@ class ChatOrchestratorTest {
                 new TriageAgent(redFlag),
                 new RetrievalAgent(new com.zhidao.agent.rag.Bm25Search(kb)),
                 new ReviewerAgent(),
-                new SchedulerIntentParser());
+                new SchedulerIntentParser(),
+                new LlmAgentAdapter(new ChatClientFactory(llmConfig), llmConfig, new ObjectMapper()));
     }
 
     private ChatRequest req(String text) {

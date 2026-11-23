@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -81,9 +82,43 @@ public class LlmConfigService {
         return runtime != null && !runtime.model.isEmpty() ? runtime.model : envModel;
     }
 
+    /**
+     * 归一化后的基础地址 —— 构造 OpenAiApi / 拼接 /models 时用。
+     *
+     * <p>Spring AI 的 OpenAiApi 会自己在 baseUrl 后拼 {@code /v1/chat/completions}，
+     * 所以 baseUrl 只能是域名部分。但用户（以及旧版 .env）习惯写成
+     * {@code https://api.deepseek.com/v1} —— 直接传进去会变成 {@code /v1/v1/...}，
+     * 报 404 却看不出原因。这里统一去掉尾部斜杠与结尾的 /v1，
+     * 让两种写法都能用，而不是要求用户记住这个坑。
+     */
+    public String normalizedBaseUrl() {
+        String b = baseUrl() == null ? "" : baseUrl().trim();
+        while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        if (b.endsWith("/v1")) b = b.substring(0, b.length() - 3);
+        return b;
+    }
+
+    /** 各家的默认网关与默认模型 —— 对照 llm/client.ts 的 PRESETS。都走 OpenAI 兼容协议 */
+    private static final Map<String, String[]> PRESETS = Map.of(
+            "deepseek", new String[]{"https://api.deepseek.com", "deepseek-chat"},
+            "openai", new String[]{"https://api.openai.com", "gpt-4o-mini"},
+            "qwen", new String[]{"https://dashscope.aliyuncs.com/compatible-mode", "qwen-plus"},
+            "moonshot", new String[]{"https://api.moonshot.cn", "moonshot-v1-8k"},
+            "ollama", new String[]{"http://localhost:11434", "qwen2.5:7b"}
+    );
+
     /** 设置运行时配置（不落盘、不记日志） */
     public void setRuntime(String apiKey, String provider, String baseURL, String model) {
-        this.runtime = new RuntimeConfig(apiKey, provider, baseURL, model);
+        String p = provider == null ? "" : provider.trim().toLowerCase();
+        String[] preset = PRESETS.getOrDefault(p, PRESETS.get("deepseek"));
+        /*
+         * 用户只填 Key 是常态（设置页允许留空地址与模型名）。
+         * 留空就按 provider 的预设补齐 —— 否则选 openai 却仍然打 DeepSeek 的地址，
+         * 表现是"Key 正确但 401"，而界面上一切都正常。
+         */
+        String base = (baseURL == null || baseURL.isBlank()) ? preset[0] : baseURL.trim();
+        String m = (model == null || model.isBlank()) ? preset[1] : model.trim();
+        this.runtime = new RuntimeConfig(apiKey.trim(), p.isEmpty() ? "deepseek" : p, base, m);
     }
 
     /** 清除运行时配置，回到环境变量 */

@@ -26,8 +26,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>无 Key 降级</b>：未配 ZHIDAO_LLM_API_KEY 时，端点返回
  *       {@code configured=false} 的 200，<b>不是 500/401</b>。
  *       这是"无 Key 也能完整演示"这条承诺在 AI 层的落地。</li>
- *   <li><b>鉴权边界</b>：这个端点会消耗真实 Token，绝不能匿名开放 ——
- *       未登录 401，否则任何人都能刷 Key。</li>
+ *   <li><b>可见性与 chat 一致</b>：这个端点是答辩演示用的探针，与 {@code /api/chat}
+ *       同样匿名开放。不是"忘了加鉴权"——挡住 verify 而放开 chat 是假安全：
+ *       真要被刷，攻击者去刷对话即可，verify 反而更便宜。
+ *       公网部署时必须给整组 AI 端点统一补 IP 限流（docs/18 §7）。</li>
  *   <li><b>不泄露配置</b>：响应体里没有 apiKey/base-url 等任何配置字段。</li>
  * </ol>
  *
@@ -57,10 +59,15 @@ class AiVerificationTest {
     }
 
     @Test
-    @DisplayName("AI 验证端点：未登录 401（不能让匿名者刷 Key）")
-    void verifyRequiresLogin() throws Exception {
-        mvc.perform(get("/api/ai/verify"))
-                .andExpect(status().isUnauthorized());
+    @DisplayName("AI 验证端点：匿名可访问（与 /api/chat 同可见性），无 Key 时给明确状态")
+    void verifyIsPublicLikeChat() throws Exception {
+        MvcResult r = mvc.perform(get("/api/ai/verify"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String body = r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        // 测试环境没注入 Key，所以走降级分支；关键是不能是 401/500
+        assertThat(json.readTree(body).path("data").path("configured").asBoolean()).isFalse();
     }
 
     @Test

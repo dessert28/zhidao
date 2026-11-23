@@ -235,6 +235,24 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/chat/health")
                         .permitAll()
+                        /*
+                         * 其余 AI 能力：与迁移前 Node BFF 的可见性保持一致。
+                         *
+                         * BFF 时代这些路由挂在 BFF 自己身上，不经过 Spring Security，
+                         * 前端也是裸 fetch（不带 Authorization）。迁移后若按默认策略要求登录，
+                         * 设置页读写 Key、报告识图、术语解释会整片 401 —— 功能等于没迁过来。
+                         *
+                         * 逐条对应（都是匿名可用，没有用户数据，只有调用方自己的输入）：
+                         *   /api/llm-config  运行时 Key 配置；读接口只回显 hasKey，从不回显 Key
+                         *   /api/ocr/**      报告图片识别（体积上限在 Controller 里）
+                         *   /api/report/**   化验单术语通俗解释
+                         *   /api/ai/**       模型接入最小验证（答辩演示用探针）
+                         *
+                         * 已知取舍：这些端点会消耗模型额度，公网部署前必须补 IP 限流与登录态，
+                         * 与 docs/18「Key 管理重设计」一节记录的风险项一致。
+                         */
+                        .requestMatchers("/api/llm-config/**", "/api/ocr/**", "/api/report/**", "/api/ai/**")
+                        .permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/health",
