@@ -84,6 +84,44 @@ public class TriageAgent {
 
     /** 追问话术 —— 逐字对齐 QUESTIONS */
     private static final Map<String, String> QUESTIONS = new LinkedHashMap<>();
+    /**
+     * 用户"答不上来"时的简化问法 —— 二选一，比原来的开放式问题好答。
+     *
+     * <p>真机对话：问"多久了"→ 答"不知道欸"。原来的逻辑把"最近"当成已答，
+     * 于是直接给结论；用户看到的是"我问了句不知道，你就开始下结论"。
+     * 追问的礼貌是：把问题变简单，而不是放弃，也不是把同一句再念一遍。
+     */
+    private static final Map<String, String> SIMPLE_QUESTIONS = new LinkedHashMap<>();
+    static {
+        SIMPLE_QUESTIONS.put("时长", "没关系，估个大概就行：是今天才开始的，还是已经好几天了？");
+        SIMPLE_QUESTIONS.put("部位", "没关系，说个大概位置就行：是上边、中间，还是下边？");
+        SIMPLE_QUESTIONS.put("性质", "不用说得太准：是疼、是胀，还是别的不舒服？");
+        SIMPLE_QUESTIONS.put("诱因", "想不起来也没关系：是活动之后明显，还是休息时也这样？");
+        SIMPLE_QUESTIONS.put("伴随", "没关系，就看看有没有：有没有发热、恶心或者出汗？");
+    }
+
+    /**
+     * "不知道欸""真说不好" —— 这类回答不是拒绝，是真的估不出来。
+     *
+     * <p>允许前缀（也/真/确实）与句尾语气词（欸/呀/啦）：「不知道欸」「真说不好」
+     * 都是真实说法，卡死成整串精确匹配会把它们漏掉，然后被当成"没回答"。
+     */
+    private static final Pattern UNCERTAIN = Pattern.compile(
+            "^(也|真|确实|反正|这个|那|就是)?\\s*"
+                    + "(不知道|不清楚|说不清|说不好|不好说|记不清|记不住|忘了|没注意|没留意"
+                    + "|大概吧|可能吧|随便|都行|无所谓|看情况|嗯+|啊+|哦+)"
+                    + "(欸|诶|呀|啊|吧|呢|唉|哦|了|的|啦|嘛)*[。，.…!！?？~～\\s]*$");
+
+    public boolean isUncertain(String text) {
+        return text != null && UNCERTAIN.matcher(text.trim()).matches();
+    }
+
+    /** 答不上来时的简化追问 */
+    public String simpleQuestion(List<String> missing) {
+        if (missing == null || missing.isEmpty()) return "";
+        return SIMPLE_QUESTIONS.getOrDefault(missing.get(0), QUESTIONS.get(missing.get(0)));
+    }
+
     static {
         QUESTIONS.put("部位", "具体是哪个位置不舒服？比如额头、胸口、肚子左边？");
         QUESTIONS.put("时长", "这个情况大概多久了？几个小时，还是好几天了？");
@@ -280,6 +318,7 @@ public class TriageAgent {
         if (departments.isEmpty()) departments = guessDepartments(slots, text);
 
         List<String> missing = missingSlots(slots, text);
+        boolean uncertain = isUncertain(text);
         /*
          * 已经问过一轮的槽位，只要用户答过（哪怕答的是"最近"这种被判模糊的词），
          * 就不再问同一句。
@@ -288,8 +327,13 @@ public class TriageAgent {
          * 但用户可能答"好久了""说不好"这类确实抽不出时长的说法 —— 那时若还
          * 照原样追问，就变成"问了→答了→还问"。宁可少一个槽位，也不能让用户
          * 觉得系统没在听。
+         *
+         * 但"答不上来"要区别对待：说"不知道欸"不等于"已经回答过"，
+         * 那时把问题简化成二选一再问一次（见 simpleQuestion），
+         * 而不是拿"最近"这个模糊值当已答、直接跳到结论 ——
+         * 用户会觉得"我说不知道，你怎么就开始下结论了"。
          */
-        if (round >= 1) {
+        if (round >= 1 && !uncertain) {
             List<String> filtered = new ArrayList<>();
             for (String k : missing) {
                 String v = slots.get(k);
@@ -316,9 +360,9 @@ public class TriageAgent {
         Set<String> seen = new LinkedHashSet<>();
         departments.removeIf(d -> !seen.add(d.getName()));
 
-        // 缺槽位且未达上限 → 追问
+        // 缺槽位且未达上限 → 追问（答不上来时换简化问法，不用模型那句、也不重复原句）
         if (!missing.isEmpty() && round < MAX_CLARIFY_ROUNDS) {
-            String question = pickQuestion(llmAsk, missing, slots);
+            String question = uncertain ? simpleQuestion(missing) : pickQuestion(llmAsk, missing, slots);
             events.add(AgentEvent.builder().type("clarify").question(question).missing(missing).build());
             Map<String, Object> degraded = usedLlm ? null
                     : degrade("槽位与科室由本地规则表推算", "rule-table");
@@ -332,8 +376,12 @@ public class TriageAgent {
 
         // 追问到上限仍未集齐
         if (!missing.isEmpty() && round >= MAX_CLARIFY_ROUNDS) {
-            events.add(AgentEvent.caveat("已询问 " + MAX_CLARIFY_ROUNDS
-                    + " 轮，症状信息仍不完整。以下建议仅供参考，建议直接到门诊导诊台说明情况。"));
+            events.add(AgentEvent.caveat(uncertain
+                    // 用户明确说估不出来，先认下来再给方向，比"已询问 N 轮"有人味
+                    ? "具体时间说不太清也没关系，先按你现在说的这些给个方向；"
+                      + "如果之后想起来更清楚的情况，再到门诊跟医生说一下。"
+                    : "已询问 " + MAX_CLARIFY_ROUNDS
+                      + " 轮，症状信息仍不完整。以下建议仅供参考，建议直接到门诊导诊台说明情况。"));
         }
 
         events.add(AgentEvent.builder().type("department_card").departments(

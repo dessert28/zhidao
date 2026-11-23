@@ -152,4 +152,39 @@ class ChatOrchestratorTest {
         assertTrue(out.events().stream().anyMatch(e -> "token".equals(e.getType())),
                 "应当给出可读答复");
     }
+
+    @Test
+    @DisplayName("健康档案不参与分诊：档案里的血糖/过敏不能变成科室")
+    void healthProfileDoesNotPolluteDepartments() {
+        ChatRequest r = new ChatRequest();
+        r.setTurnId("p1");
+        r.setText("【我的健康档案】年龄 32 岁；慢病：血糖偏高；过敏史：青霉素、皮肤易过敏。\n\n最近老是头晕");
+        r.setQuestion("最近老是头晕");
+        r.setRound(1);
+        r.setKnownSlots(new java.util.HashMap<>(java.util.Map.of(
+                "部位", "头", "性质", "头晕", "时长", "最近")));
+
+        ChatOrchestrator.TurnResult out = orchestrator.run(r);
+
+        java.util.List<String> names = out.events().stream()
+                .filter(e -> "department_card".equals(e.getType()))
+                .flatMap(e -> e.getDepartments().stream())
+                .map(d -> String.valueOf(d.get("name")))
+                .toList();
+        assertTrue(names.contains("神经内科"), "主诉该指向神经内科，实际=" + names);
+        assertFalse(names.contains("内分泌科"), "档案里的血糖偏高不是本轮症状，实际=" + names);
+        assertFalse(names.contains("皮肤科"), "档案里的过敏史不是本轮症状，实际=" + names);
+    }
+
+    @Test
+    @DisplayName("用户在评价系统时先认下来，不要继续分诊")
+    void systemMetaIsAcknowledged() {
+        ChatRequest r = req("你怎么只说一句话");
+        r.setRound(1);
+        ChatOrchestrator.TurnResult out = orchestrator.run(r);
+
+        assertTrue(out.events().stream().anyMatch(e -> "token".equals(e.getType())
+                && e.getText().contains("抱歉")), "应当承认刚才在打转");
+        assertFalse(hasEvent(out, "clarify"), "不该继续追问");
+    }
 }

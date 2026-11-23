@@ -66,14 +66,29 @@ public class ChatOrchestrator {
         String text = req.getText() == null ? "" : req.getText();
         String turnId = req.getTurnId() != null ? req.getTurnId() : UUID.randomUUID().toString();
 
+        /*
+         * 分诊只看「主诉」，不看 text。
+         *
+         * text 里可能拼了健康档案（前端 composeRequestText 把档案放在问题前面）。
+         * 用 text 抽槽位/排科室会把档案里的慢病当成此刻的症状 ——
+         * 真机实测：「最近老是头晕」带了"血糖偏高、皮肤易过敏"的档案，
+         * 结果给出「神经内科 + 内分泌科 + 皮肤科」，理由还写着"症状指向皮肤"。
+         * 那是档案里的过敏史，不是他这会儿在说的症状。
+         *
+         * question 是脱敏后的纯问题（前端一直有传），检索分支仍然用 text ——
+         * 那边确实需要档案背景（"我能吃什么"要知道你在吃什么药）。
+         */
+        String complaint = req.getQuestion() != null && !req.getQuestion().isBlank()
+                ? req.getQuestion() : text;
+
         // 会话状态：从请求恢复
         Map<String, String> sessionSlots = new HashMap<>();
         if (req.getKnownSlots() != null) sessionSlots.putAll(req.getKnownSlots());
         int sessionRound = req.getRound() != null ? req.getRound() : 0;
-        String userQuestion = req.getQuestion() != null ? req.getQuestion() : text;
+        String userQuestion = complaint;
 
         /* 第 0 步：红线前置，不经 LLM */
-        RedFlagRule.RedFlagResult red = redFlagRule.check(text);
+        RedFlagRule.RedFlagResult red = redFlagRule.check(complaint);
         if (red.hit() != null) {
             events.add(AgentEvent.builder().type("emergency").redFlag(
                     Map.of("type", red.hit().getType(), "guidance", red.hit().getGuidance())).build());
@@ -93,6 +108,16 @@ public class ChatOrchestrator {
                 events.add(AgentEvent.token(refusal));
                 return done(events, turnId, started, sessionSlots, sessionRound, false);
             }
+        }
+
+        /* 元对话：用户在评价系统本身，不是在说症状 */
+        if (chatRules.mentionsSystemMeta(userQuestion)) {
+            events.add(AgentEvent.plan("done", "用户在反馈系统的表现，不是新的就医需求", List.of()));
+            events.add(AgentEvent.token(
+                    "抱歉，刚才我自己在打转：一直问同一件事，回答也都是同一段，换谁都会觉得没在听。\n\n"
+                    + "你可以直接说「哪里不舒服 + 大概多久了」，我一次把科室给你；"
+                    + "想先了解该做什么检查、要不要去医院，也可以直接问。"));
+            return done(events, turnId, started, sessionSlots, sessionRound, false);
         }
 
         /* 话题切换 */
@@ -171,15 +196,15 @@ public class ChatOrchestrator {
 
         /* 按决策分发 */
         switch (decision == null ? "" : decision) {
-            case "triage" -> sessionRound = runTriageBranch(text, sessionSlots, sessionRound, events);
+            case "triage" -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events);
             case "retrieve" -> runRetrievalBranch(text, events);
             case "schedule" -> runScheduleBranch(events);
-            case "multi" -> runMultiBranch(text, plannedAgents, sessionSlots, sessionRound, events);
+            case "multi" -> runMultiBranch(complaint, text, plannedAgents, sessionSlots, sessionRound, events);
             case "done" -> {
                 if (!injection.isEmpty()) events.add(AgentEvent.token(refusal));
                 else events.add(AgentEvent.token("好的。有哪里不舒服，或者想确认该挂哪个科，随时告诉我。"));
             }
-            default -> sessionRound = runTriageBranch(text, sessionSlots, sessionRound, events);
+            default -> sessionRound = runTriageBranch(complaint, sessionSlots, sessionRound, events);
         }
         return done(events, turnId, started, sessionSlots, sessionRound, false);
     }
@@ -272,17 +297,23 @@ public class ChatOrchestrator {
                 + "确认挂号需你本人操作，AI 不会替你占号。"));
     }
 
-    /** multi 分支：按固定顺序串行执行 triage → retrieval */
-    private void runMultiBranch(String text, List<String> plannedAgents,
+    /**
+     * multi 分支：按固定顺序串行执行 triage → retrieval。
+     *
+     * <p>两条链路吃的文本不同：分诊只看主诉（{@code complaint}），
+     * 检索要带健康档案（{@code text}）—— 档案里"血糖偏高"对回答
+     * "我能吃什么"有用，对判断挂哪个科是干扰。
+     */
+    private void runMultiBranch(String complaint, String text, List<String> plannedAgents,
                                 Map<String, String> slots, int round, List<AgentEvent> events) {
         SupervisorAgent.MultiPlan plan = supervisor.resolveMultiPlan(plannedAgents);
         if (!plan.triage() && !plan.retrieval() && !plan.scheduleAlone()) {
-            runTriageBranch(text, slots, round, events);
+            runTriageBranch(complaint, slots, round, events);
             return;
         }
         List<AgentEvent> triageBuf = new ArrayList<>();
         List<AgentEvent> retrievalBuf = new ArrayList<>();
-        if (plan.triage()) runTriageBranch(text, slots, round, triageBuf);
+        if (plan.triage()) runTriageBranch(complaint, slots, round, triageBuf);
         if (plan.retrieval()) runRetrievalBranch(text, retrievalBuf);
         events.addAll(triageBuf);
         boolean blocked = triageBuf.stream().anyMatch(e -> "emergency".equals(e.getType()));

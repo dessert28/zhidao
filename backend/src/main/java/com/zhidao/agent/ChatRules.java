@@ -104,6 +104,24 @@ public class ChatRules {
         return true;
     }
 
+    /**
+     * 用户是不是在评价"这套系统"本身，而不是在说症状。
+     *
+     * <p>真机对话里出现「你怎么只说一句话」「是不是坏了」「答非所问」——
+     * 这些是元对话。以前会被当成新的主诉送进分诊，于是又得到一段一模一样的
+     * 科室建议，看起来像系统彻底没在听。
+     *
+     * <p>判据刻意窄：必须有明确的"对系统说话"特征，
+     * 避免把「我怎么这么晕」这类真实主诉吃掉。
+     */
+    private static final Pattern SYSTEM_META = Pattern.compile(
+            "你怎么(只|老是|总是|又|还)|你只会|听不懂|答非所问|是不是坏|机器人|复读|重复(了|一遍)"
+                    + "|只说一句|就这一句|没在听|你倒是|你搞错|说的不对|不是这个意思");
+
+    public boolean mentionsSystemMeta(String text) {
+        return text != null && SYSTEM_META.matcher(text).find();
+    }
+
     /* 情绪路径常量 —— 对照 topic.ts */
     public static final String EMOTION_COMFORT =
             "听你这么说，这段时间心里肯定不好受。这种难受是真实的，也值得被认真对待，不用一个人硬扛。";

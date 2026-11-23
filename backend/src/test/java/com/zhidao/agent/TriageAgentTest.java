@@ -204,4 +204,30 @@ class TriageAgentTest {
         assertEquals("头晕好几个小时确实难受，是一直晕还是一阵一阵的？",
                 out.getPayload().getNextQuestion());
     }
+
+    @Test
+    @DisplayName("答「不知道欸」：把问题问简单，而不是直接下结论")
+    void uncertainAnswerGetsSimplerQuestion() {
+        Map<String, String> known = new java.util.LinkedHashMap<>(Map.of(
+                "部位", "头", "性质", "头晕", "时长", "最近"));
+        AgentOutput<TriagePayload> out = agent.run("不知道欸", known, 1, null);
+
+        assertEquals(AgentOutput.NEED_CLARIFY, out.getStatus(), "说不清不等于答过了");
+        assertTrue(out.getPayload().getNextQuestion().contains("没关系"),
+                "应当先安抚再给一个更好答的版本，实际=" + out.getPayload().getNextQuestion());
+        assertNotEquals("这个情况大概多久了？几个小时，还是好几天了？",
+                out.getPayload().getNextQuestion());
+    }
+
+    @Test
+    @DisplayName("连续说不清到上限：认下来说不清，再给方向")
+    void uncertainAtLimitGivesGentleCaveat() {
+        Map<String, String> known = new java.util.LinkedHashMap<>(Map.of(
+                "部位", "头", "性质", "头晕", "时长", "最近"));
+        AgentOutput<TriagePayload> out = agent.run("真说不好", known, 2, null);
+
+        assertEquals(AgentOutput.OK, out.getStatus());
+        assertTrue(out.getEvents().stream().anyMatch(e -> "caveat".equals(e.getType())
+                && e.getText().contains("说不太清也没关系")));
+    }
 }
