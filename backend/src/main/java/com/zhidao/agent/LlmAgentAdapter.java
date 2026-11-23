@@ -47,6 +47,14 @@ public class LlmAgentAdapter {
     /** 单次调用上限，对照 TS 的 CALL_TIMEOUT_MS = 12s */
     private static final long TIMEOUT_SECONDS = 12;
 
+    /** 连续失败多少次后熔断；熔断多久 */
+    private static final int FAIL_THRESHOLD = 3;
+    private static final long COOLDOWN_MS = 60_000L;
+
+    private final java.util.concurrent.atomic.AtomicInteger consecutiveFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long cooldownUntil = 0;
+
     /** 调用线程池：daemon，避免阻塞 JVM 退出 */
     private static final ExecutorService CALL_POOL = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "llm-call");
@@ -68,9 +76,15 @@ public class LlmAgentAdapter {
         this.objectMapper = objectMapper;
     }
 
-    /** 当前是否接了真模型（没 Key 时编排器不注入任何 LLM 依赖） */
+    /**
+     * 当前是否该走模型（没 Key、或刚熔断时返回 false，编排器直接走规则）。
+     *
+     * <p>熔断的意义：模型不可用时（Key 错、断网、走了代理挂住）每次调用都要等满
+     * 12 秒才降级，用户看到的是"每说一句都卡十几秒，最后给个关键词答案"。
+     * 连续失败三次就够了 —— 接下来一分钟直接走规则，秒回，一分钟后再试。
+     */
     public boolean available() {
-        return config.isConfigured();
+        return config.isConfigured() && System.currentTimeMillis() >= cooldownUntil;
     }
 
     /* ==================== 1. Supervisor 规划 ==================== */
@@ -193,17 +207,32 @@ public class LlmAgentAdapter {
             if (obj == null) {
                 log.warn("[llm] 输出不是合法 JSON 对象，降级到规则 costMs={}",
                         System.currentTimeMillis() - start);
+                noteFailure();
+            } else {
+                consecutiveFailures.set(0);
             }
             return obj;
         } catch (java.util.concurrent.TimeoutException e) {
             if (future != null) future.cancel(true);
             log.warn("[llm] 调用超时（{}s），降级到规则", TIMEOUT_SECONDS);
+            noteFailure();
             return null;
         } catch (Exception e) {
             // 只记类型，不记 prompt（里面有患者症状）
             log.warn("[llm] 调用失败，降级到规则 type={} costMs={}",
                     e.getClass().getSimpleName(), System.currentTimeMillis() - start);
+            noteFailure();
             return null;
+        }
+    }
+
+    /** 记一次失败，到阈值就熔断一分钟 —— 见 {@link #available()} */
+    private void noteFailure() {
+        if (consecutiveFailures.incrementAndGet() >= FAIL_THRESHOLD) {
+            cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS;
+            consecutiveFailures.set(0);
+            log.warn("[llm] 连续 {} 次失败，熔断 {}s：接下来直接走规则，不再等待超时",
+                    FAIL_THRESHOLD, COOLDOWN_MS / 1000);
         }
     }
 

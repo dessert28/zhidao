@@ -25,7 +25,15 @@ import java.util.regex.Pattern;
 @Component
 public class TriageAgent {
 
-    private static final int MAX_CLARIFY_ROUNDS = 3;
+    /**
+     * 最多追问轮次。
+     *
+     * <p>原本是 3（对齐 TS 版）。真机验证发现一个问题后改成 2：模型不可用时
+     * （本机网络需要代理、请求超时降级）"最近老是头晕 → 问时长 → 答'好几个小时了'
+     * → 还问时长"会连问三次同一句话，用户完全卡住。现在第二轮问完就出建议，
+     * 配合下面"已有值不再追问"的过滤，保证同一个问题最多问两次。
+     */
+    private static final int MAX_CLARIFY_ROUNDS = 2;
     private static final double MIN_CONFIDENCE = 0.5;
 
     private static final List<String> SLOT_KEYS = List.of("部位", "时长", "性质", "诱因", "伴随");
@@ -44,8 +52,18 @@ public class TriageAgent {
                 Pattern.compile("(牙|口腔|咽喉|嗓子|耳朵|鼻子|眼睛|眼)"),
                 Pattern.compile("(皮肤|全身)")));
         SLOT_PATTERNS.put("时长", List.of(
-                Pattern.compile("(\\d+|[一二两三四五六七八九十半几]+)\\s*(分钟|小时|天|周|个?月|年)"),
-                Pattern.compile("(昨天|前天|今天|早上|晚上|刚才|持续|最近|一直|几天)")));
+                /*
+                 * 中文里"时长"的表达远比数字+单位复杂，真机验证时最典型的一句
+                 * "好几个小时了"原来的两条正则都匹配不上（"几"后面跟的是"个"，
+                 * 而第一组要求数字紧跟单位）→ 判成没说时长 → 反复追问同一句。
+                 *
+                 * 这里放开三处：① "个/多"这类量词插词 ② 钟头/礼拜这类口语单位
+                 * ③ "几/数/半/两"这类约数。宁可抽得宽一点，也不能把用户答过的
+                 * 话当没听到。
+                 */
+                Pattern.compile("(\\d+|[一二两三四五六七八九十半几数]+)\\s*个?\\s*多?\\s*"
+                        + "(分钟|小时|钟头|天|日|周|星期|礼拜|个?月|年)"),
+                Pattern.compile("(昨天|前天|今天|早上|晚上|刚才|半天|一会儿|几下|持续|最近|一直|几天)")));
         SLOT_PATTERNS.put("性质", List.of(
                 Pattern.compile("(疼|痛|酸|胀|麻|痒|烧灼|刺痛|钝痛|绞痛|隐痛|剧痛|闷|堵)"),
                 Pattern.compile("(咳嗽|发热|发烧|呕吐|腹泻|便秘|头晕|乏力|失眠|心慌|气短)")));
@@ -235,6 +253,23 @@ public class TriageAgent {
         if (departments.isEmpty()) departments = guessDepartments(slots, text);
 
         List<String> missing = missingSlots(slots, text);
+        /*
+         * 已经问过一轮的槽位，只要用户答过（哪怕答的是"最近"这种被判模糊的词），
+         * 就不再问同一句。
+         *
+         * 这是防死循环的第二道锁：第一道是上面的正则（能抽出"好几个小时"），
+         * 但用户可能答"好久了""说不好"这类确实抽不出时长的说法 —— 那时若还
+         * 照原样追问，就变成"问了→答了→还问"。宁可少一个槽位，也不能让用户
+         * 觉得系统没在听。
+         */
+        if (round >= 1) {
+            List<String> filtered = new ArrayList<>();
+            for (String k : missing) {
+                String v = slots.get(k);
+                if (v == null || v.isEmpty()) filtered.add(k);
+            }
+            missing = filtered;
+        }
         double confidence = computeConfidence(slots, departments);
 
         // 低置信：给 Top3 + 兜底，去重

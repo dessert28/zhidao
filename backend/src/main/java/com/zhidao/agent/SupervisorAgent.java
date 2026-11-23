@@ -124,7 +124,12 @@ public class SupervisorAgent {
             try {
                 Object first = planFn.apply(text, false);
                 parsed = parsePlan(first);
-                if (parsed == null) {
+                /*
+                 * 只有"模型回了、但不合格"才值得带着提示再问一次。
+                 * first == null 表示调用失败/超时 —— 再问一次就是再等一个超时窗口，
+                 * 实测把一轮对话从 12 秒拖成 24 秒，用户感知是卡死而不是降级。
+                 */
+                if (first != null && parsed == null) {
                     Object second = planFn.apply(text, true);
                     parsed = parsePlan(second);
                 }

@@ -100,4 +100,60 @@ class TriageAgentTest {
         assertTrue(depts.size() <= 3);
         assertTrue(depts.stream().anyMatch(d -> d.getName().equals("心血管内科")));
     }
+
+    /* ---------------- 真机验证补的回归：时长口语表达 + 不死循环 ---------------- */
+
+    @Test
+    @DisplayName("时长的口语表达都要抽得到（'好几个小时' 曾经抽不到，导致反复追问）")
+    void colloquialDuration() {
+        Map<String, String> expect = new java.util.LinkedHashMap<>();
+        expect.put("好几个小时了", "几个小时");
+        expect.put("大概两三个小时", "两三个小时");
+        expect.put("1个多小时", "1个多小时");
+        expect.put("半个多小时", "半个多小时");
+        expect.put("两天了", "两天");
+        expect.put("一个星期", "一个星期");
+        expect.put("半个月", "半个月");
+
+        for (Map.Entry<String, String> e : expect.entrySet()) {
+            Map<String, String> slots = agent.extractSlots(e.getKey());
+            assertEquals(e.getValue(), slots.get("时长"),
+                    "抽不到时长会让系统重复追问同一句：" + e.getKey());
+        }
+    }
+
+    @Test
+    @DisplayName("第二轮用户答了时长 → 采纳并出科室，不再追问")
+    void secondRoundAcceptsDuration() {
+        Map<String, String> known = new java.util.LinkedHashMap<>(
+                Map.of("部位", "头", "时长", "最近", "性质", "头晕"));
+        AgentOutput<TriagePayload> out = agent.run("好几个小时了", known, 1, null);
+
+        assertEquals(AgentOutput.OK, out.getStatus(), "不应再返回 need_clarify");
+        assertEquals("几个小时", out.getPayload().getCollectedSymptoms().get("时长"));
+        assertFalse(out.getPayload().getDepartments().isEmpty());
+        assertTrue(out.getEvents().stream().anyMatch(e -> "department_card".equals(e.getType())));
+    }
+
+    @Test
+    @DisplayName("第二轮仍抽不到时长（'好久了'）→ 也不能再问同一句，直接给建议")
+    void secondRoundNeverRepeatsQuestion() {
+        Map<String, String> known = new java.util.LinkedHashMap<>(
+                Map.of("部位", "头", "时长", "最近", "性质", "头晕"));
+        AgentOutput<TriagePayload> out = agent.run("好久了", known, 1, null);
+
+        assertNotEquals(AgentOutput.NEED_CLARIFY, out.getStatus(),
+                "用户已经答过，即使抽不出也不能循环追问");
+        assertFalse(out.getPayload().getDepartments().isEmpty());
+    }
+
+    @Test
+    @DisplayName("追问到第 3 轮（round=2）直接出建议并带 caveat，最多问两次")
+    void stopsAskingAfterTwoRounds() {
+        Map<String, String> known = new java.util.LinkedHashMap<>(Map.of("部位", "头"));
+        AgentOutput<TriagePayload> out = agent.run("说不好", known, 2, null);
+
+        assertEquals(AgentOutput.OK, out.getStatus());
+        assertTrue(out.getEvents().stream().anyMatch(e -> "caveat".equals(e.getType())));
+    }
 }

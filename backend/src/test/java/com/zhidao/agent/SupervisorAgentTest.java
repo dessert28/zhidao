@@ -107,4 +107,39 @@ class SupervisorAgentTest {
                 agent.auditSupervisorTools(List.of("get_session_state", "create_order")));
         assertTrue(agent.auditSupervisorTools(List.of("get_user_profile", "resume_pending_task")).isEmpty());
     }
+
+    @Test
+    @DisplayName("模型调用失败（返回 null）不重试：重试等于再等一个超时窗口")
+    void planFailureIsNotRetried() {
+        int[] calls = {0};
+        SupervisorAgent.PlanFn failing = (text, retryHint) -> {
+            calls[0]++;
+            return null; // 超时/网络失败的表现
+        };
+
+        var out = agent.run("我头晕", failing);
+
+        assertEquals(1, calls[0], "失败只应尝试一次，否则一轮对话要等两个超时窗口");
+        assertEquals("triage", out.getPayload().getDecision(), "失败后走规则路由");
+        assertNotNull(out.getDegraded(), "降级要标记出来，前端能看到");
+    }
+
+    @Test
+    @DisplayName("模型回了但不合格 → 带提示重试一次")
+    void invalidPlanIsRetriedOnce() {
+        int[] calls = {0};
+        SupervisorAgent.PlanFn flaky = (text, retryHint) -> {
+            calls[0]++;
+            // 第一次给非法内容，第二次给合法计划
+            if (calls[0] == 1) return java.util.Map.of("decision", "乱写的");
+            return java.util.Map.of("decision", "retrieve", "agents", List.of("retrieval"),
+                    "reason", "在问知识");
+        };
+
+        var out = agent.run("空腹血糖高要注意什么", flaky);
+
+        assertEquals(2, calls[0]);
+        assertEquals("retrieve", out.getPayload().getDecision());
+        assertNull(out.getDegraded());
+    }
 }
