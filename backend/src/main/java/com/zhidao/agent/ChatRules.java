@@ -79,6 +79,31 @@ public class ChatRules {
         return !knownBlob.contains(hit.substring(0, Math.min(2, hit.length())));
     }
 
+    /**
+     * 是否像"知识提问"（问检查、问原因、问怎么办），而不是补充症状。
+     *
+     * <p>解决的是真机遇到的一个死结：分诊追问阶段（round&gt;0）编排器会无条件
+     * 短路成"继续采集症状"，于是用户问「检查原因」「要做什么检查」这种问题时，
+     * 系统仍然当他在补症状 —— 抽不到新槽位，就把同一段科室建议再念一遍，
+     * 用户看到的是"每句话都回同一段"。后台其实每次都调了模型，只是模型
+     * 根本没被问到这个问题。
+     *
+     * <p>判据刻意保守：只认"疑问特征词 + 不含新症状描述"。
+     * 用户答「好久了」「有点恶心」不会命中；答「头晕要做哪些检查」会命中，
+     * 交回 Supervisor 走检索分支。
+     */
+    private static final Pattern KNOWLEDGE_QUESTION = Pattern.compile(
+            "做什么检查|做哪些检查|查什么|检查什么|检查原因|怎么检查|什么原因|为什么|怎么回事"
+                    + "|怎么办|怎么治|如何治|要不要|能不能|可以吗|严重吗|要紧吗|会好吗|多久能好"
+                    + "|注意什么|注意哪些|吃什么药|用什么药|挂哪个?科|看什么科|需不需要");
+
+    public boolean looksLikeKnowledgeQuestion(String text) {
+        if (text == null || text.length() < 2) return false;
+        if (!KNOWLEDGE_QUESTION.matcher(text).find()) return false;
+        // 纯症状补充句（"头晕得厉害怎么办"这种仍算提问；"头很晕"不含疑问词，已排除）
+        return true;
+    }
+
     /* 情绪路径常量 —— 对照 topic.ts */
     public static final String EMOTION_COMFORT =
             "听你这么说，这段时间心里肯定不好受。这种难受是真实的，也值得被认真对待，不用一个人硬扛。";

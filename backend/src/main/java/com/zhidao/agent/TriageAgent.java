@@ -157,10 +157,30 @@ public class TriageAgent {
 
     /** 追问话术 —— 对照 buildQuestion，一次最多问两个 */
     public String buildQuestion(List<String> missing) {
+        return buildQuestion(missing, Map.of());
+    }
+
+    /**
+     * 带上已采集槽位的追问 —— 让话术不像复读机。
+     *
+     * <p>原来无论用户说什么，问时长永远是"这个情况大概多久了？"。
+     * 真机对话里连问三次同一句，用户直接认为系统没在听。
+     * 知道症状是"头晕"时改说「头晕」大概多久了？成本为零，
+     * 但能让人确定自己刚才那句被读到了。
+     */
+    public String buildQuestion(List<String> missing, Map<String, String> slots) {
         if (missing.isEmpty()) return "";
+        String nature = slots == null ? "" : slots.getOrDefault("性质", "");
+        if (nature == null) nature = "";
+        nature = nature.trim();
         List<String> ask = new ArrayList<>();
         for (String k : missing.subList(0, Math.min(2, missing.size()))) {
-            ask.add(QUESTIONS.get(k));
+            String q = QUESTIONS.get(k);
+            if (!nature.isEmpty() && !nature.equals(q)) {
+                if (k.equals("时长")) q = "「" + nature + "」大概多久了？几个小时，还是好几天了？";
+                else if (k.equals("部位")) q = "「" + nature + "」具体在哪个位置？比如额头、胸口、肚子左边？";
+            }
+            ask.add(q);
         }
         return String.join("\n", ask);
     }
@@ -291,7 +311,7 @@ public class TriageAgent {
 
         // 缺槽位且未达上限 → 追问
         if (!missing.isEmpty() && round < MAX_CLARIFY_ROUNDS) {
-            String question = buildQuestion(missing);
+            String question = buildQuestion(missing, slots);
             events.add(AgentEvent.builder().type("clarify").question(question).missing(missing).build());
             Map<String, Object> degraded = usedLlm ? null
                     : degrade("槽位与科室由本地规则表推算", "rule-table");

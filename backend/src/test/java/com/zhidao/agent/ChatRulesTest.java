@@ -78,4 +78,18 @@ class ChatRulesTest {
         assertEquals("暂时无法判断该挂哪个科，建议到门诊导诊台说明情况。",
                 rules.summarizeTriage(List.of()));
     }
+
+    @Test
+    @DisplayName("知识提问识别：问检查/原因/怎么办命中，补症状不命中")
+    void knowledgeQuestionDetection() {
+        assertTrue(rules.looksLikeKnowledgeQuestion("检查原因"));
+        assertTrue(rules.looksLikeKnowledgeQuestion("头晕要做哪些检查"));
+        assertTrue(rules.looksLikeKnowledgeQuestion("这个严重吗"));
+        assertTrue(rules.looksLikeKnowledgeQuestion("挂哪个科"));
+
+        assertFalse(rules.looksLikeKnowledgeQuestion("好久了"));
+        assertFalse(rules.looksLikeKnowledgeQuestion("还有点恶心"));
+        assertFalse(rules.looksLikeKnowledgeQuestion("好几个小时了"));
+        assertFalse(rules.looksLikeKnowledgeQuestion(""));
+    }
 }

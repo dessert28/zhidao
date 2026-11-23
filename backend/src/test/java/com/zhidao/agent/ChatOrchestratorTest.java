@@ -121,4 +121,35 @@ class ChatOrchestratorTest {
         assertEquals(1, out.sessionRound(), "追问后轮次+1");
         assertTrue(out.sessionSlots().containsKey("部位"));
     }
+
+    @Test
+    @DisplayName("分诊给出结论后 round 归零，不能一直停在追问态")
+    void roundResetsAfterTriageDone() {
+        ChatRequest r = req("最近老是头晕");
+        r.setRound(1);
+        r.setKnownSlots(new java.util.HashMap<>(java.util.Map.of(
+                "部位", "头", "性质", "头晕", "时长", "最近")));
+        ChatOrchestrator.TurnResult out = orchestrator.run(r);
+
+        assertFalse(hasEvent(out, "clarify"), "答了时长就该出结论");
+        assertTrue(hasEvent(out, "department_card"));
+        assertEquals(0, out.sessionRound(),
+                "分诊结束后 round 必须归零：否则追问上限失效，且之后每句都被强制续采");
+    }
+
+    @Test
+    @DisplayName("追问中问「检查原因」交回调度，不被硬当成补充症状")
+    void knowledgeQuestionDuringClarify() {
+        ChatRequest r = req("检查原因");
+        r.setRound(1);
+        r.setKnownSlots(new java.util.HashMap<>(java.util.Map.of(
+                "部位", "头", "性质", "头晕", "时长", "几个小时")));
+        ChatOrchestrator.TurnResult out = orchestrator.run(r);
+
+        boolean forcedClarify = out.events().stream().anyMatch(e -> "plan".equals(e.getType())
+                && e.getReason() != null && e.getReason().startsWith("继续采集症状信息"));
+        assertFalse(forcedClarify, "知识提问不该走「继续采集症状」短路");
+        assertTrue(out.events().stream().anyMatch(e -> "token".equals(e.getType())),
+                "应当给出可读答复");
+    }
 }

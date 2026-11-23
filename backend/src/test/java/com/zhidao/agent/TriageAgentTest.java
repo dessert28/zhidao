@@ -67,7 +67,8 @@ class TriageAgentTest {
         AgentOutput<TriagePayload> out = agent.run("最近有点头晕");
         assertEquals(AgentOutput.NEED_CLARIFY, out.getStatus());
         assertEquals("最近", out.getPayload().getCollectedSymptoms().get("时长"));
-        assertEquals("这个情况大概多久了？几个小时，还是好几天了？", out.getPayload().getNextQuestion());
+        // 话术带上已抽到的症状（「头晕」），不再是固定复读「这个情况」
+        assertEquals("「头晕」大概多久了？几个小时，还是好几天了？", out.getPayload().getNextQuestion());
         assertEquals(0.86, out.getConfidence(), 0.001);
     }
 
@@ -155,5 +156,19 @@ class TriageAgentTest {
 
         assertEquals(AgentOutput.OK, out.getStatus());
         assertTrue(out.getEvents().stream().anyMatch(e -> "caveat".equals(e.getType())));
+    }
+
+    @Test
+    @DisplayName("追问话术带上已知症状，不是固定复读「这个情况」")
+    void questionMentionsKnownSymptom() {
+        assertEquals("这个情况大概多久了？几个小时，还是好几天了？",
+                agent.buildQuestion(List.of("时长")));
+        assertEquals("「头晕」大概多久了？几个小时，还是好几天了？",
+                agent.buildQuestion(List.of("时长"), Map.of("性质", "头晕")));
+        assertEquals("「头晕」具体在哪个位置？比如额头、胸口、肚子左边？",
+                agent.buildQuestion(List.of("部位"), Map.of("性质", "头晕")));
+        // 性质本身缺的时候没有可引用的词，退回原话术
+        assertEquals("是怎么个难受法？针扎一样疼、闷闷地胀，还是酸麻？",
+                agent.buildQuestion(List.of("性质"), Map.of()));
     }
 }

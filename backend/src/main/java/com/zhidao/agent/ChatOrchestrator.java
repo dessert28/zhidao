@@ -127,8 +127,14 @@ public class ChatOrchestrator {
                     List.of("triage")));
         }
 
-        /* 追问连续性 */
-        boolean continuingClarify = sessionRound > 0 && !switched;
+        /* 追问连续性 —— round>0 表示上一轮还在采集症状 */
+        boolean knowledgeBreak = sessionRound > 0 && !switched
+                && chatRules.looksLikeKnowledgeQuestion(text);
+        boolean continuingClarify = sessionRound > 0 && !switched
+                // 但"追问中"不等于"用户说的每句都是补症状"：
+                // 问「检查原因」「头晕要做哪些检查」要交回调度走检索，
+                // 否则会被硬当成补槽位，抽不到新东西就把同一段话再念一遍。
+                && !knowledgeBreak;
         String decision;
         List<String> plannedAgents = List.of();
         if (continuingClarify) {
@@ -136,7 +142,15 @@ public class ChatOrchestrator {
                     List.of("triage")));
             decision = "triage";
         } else if (!switched) {
-            AgentOutput<SupervisorPayload> plan = supervisor.run(userQuestion,
+            /*
+             * 追问阶段被打断成知识提问时，把已知症状一起交给调度。
+             *
+             * 用户是在"头晕、持续几个小时"的上下文里问「检查原因」的，
+             * 单看这三个字谁都判不出在问什么 —— 实测模型直接给"信息不足"。
+             * 补上上下文后它才知道这是在问"头晕该做什么检查"。
+             */
+            String planInput = knowledgeBreak ? withKnownSlots(userQuestion, sessionSlots) : userQuestion;
+            AgentOutput<SupervisorPayload> plan = supervisor.run(planInput,
                     llm.available() ? llm::plan : null);
             events.addAll(plan.getEvents());
             if (plan.getStatus().equals(AgentOutput.FAILED)
@@ -186,8 +200,16 @@ public class ChatOrchestrator {
                 sessionSlots.put(e.getKey(), v.trim());
             }
         }
+        /*
+         * 轮次语义：round 只表示"已经追问过几次"，分诊一旦给出结论就归零。
+         *
+         * 原来这里 OK 时返回 sessionRound（不增不减），后果是 round 永远停在 1：
+         * ① 「最多追问 2 轮」的上限失效 —— 永远到不了 2，缺槽位就能无限问下去；
+         * ② 之后用户说的每一句都被 continuingClarify 短路成"继续采集症状"，
+         *    连"检查原因"这种明确的知识提问也被强行分诊，答复永远是同一段。
+         * 实测就是"后台每次都调了模型，界面上每句都回同一句话"。
+         */
         if (out.getStatus().equals(AgentOutput.NEED_CLARIFY)) return sessionRound + 1;
-        if (out.getStatus().equals(AgentOutput.BLOCKED)) return sessionRound;
 
         String answer = chatRules.summarizeTriage(out.getPayload().getDepartments());
         events.add(AgentEvent.token(answer));
@@ -208,7 +230,7 @@ public class ChatOrchestrator {
                         + "，预约日期 " + intent.date() + "。请点「去挂号」确认时段。"));
             }
         }
-        return sessionRound;
+        return 0;
     }
 
     /** 检索分支 —— 对照 runRetrievalBranch */
@@ -272,8 +294,18 @@ public class ChatOrchestrator {
         runScheduleBranch(events);
     }
 
-    private Map<String, Object> deptMap(String name, double conf, String reason) {
-        Map<String, Object> m = new LinkedHashMap<>();
+    /** 给短问句补上已知症状上下文，供调度判断意图（不改动原始 text） */
+    private String withKnownSlots(String question, Map<String, String> slots) {
+        if (slots == null || slots.isEmpty()) return question;
+        String brief = slots.entrySet().stream()
+                .filter(e -> e.getValue() != null && !e.getValue().isBlank())
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .reduce((a, b) -> a + "，" + b).orElse("");
+        if (brief.isEmpty()) return question;
+        return question + "（接上一轮，已知症状：" + brief + "）";
+    }
+
+    private Map<String, Object> deptMap(String name, double conf, String reason) {        Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", name);
         m.put("confidence", conf);
         m.put("reason", reason);
